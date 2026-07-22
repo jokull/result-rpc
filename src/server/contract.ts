@@ -1,0 +1,798 @@
+import type {
+  AnyErrorDefinition,
+  AnyTaggedError,
+  ErrorDefinition,
+  ErrorOf,
+} from "../error.js";
+import { ServerInternal } from "../framework-errors.js";
+import { err, ok, type Result } from "../result.js";
+import type { InputOf, WireCodec, WireValue } from "../wire.js";
+
+export type ErrorDefinitionMap = Readonly<Record<string, AnyErrorDefinition>>;
+export type ErrorUnion<TDefinitions extends ErrorDefinitionMap> = ErrorOf<
+  TDefinitions[keyof TDefinitions]
+>;
+
+type MaybePromise<T> = T | Promise<T>;
+
+export interface InternalErrorEvent {
+  readonly incidentId: string;
+  readonly phase: "input" | "context" | "middleware" | "handler" | "output" | "error";
+  readonly cause: unknown;
+  readonly procedurePath?: string;
+}
+
+export interface ExecutionOptions<TRootContext> {
+  readonly context: TRootContext;
+  readonly procedurePath?: string;
+  readonly onInternalError?: (event: InternalErrorEvent) => void;
+}
+
+declare const middlewareNextResult: unique symbol;
+type MiddlewareNextResult = Result<unknown, AnyTaggedError> & {
+  readonly [middlewareNextResult]: true;
+};
+
+interface MiddlewareNext<TContext> {
+  (options: {
+    readonly context: TContext;
+  }): Promise<MiddlewareNextResult>;
+}
+
+export interface MiddlewareHandlerArgs<
+  TInputContext,
+  TOutputContext,
+  TDefinitions extends ErrorDefinitionMap,
+> {
+  readonly context: TInputContext;
+  readonly errors: TDefinitions;
+  readonly next: MiddlewareNext<TOutputContext>;
+}
+
+export type MiddlewareHandler<
+  TInputContext,
+  TOutputContext,
+  TDefinitions extends ErrorDefinitionMap,
+> = (
+  args: MiddlewareHandlerArgs<TInputContext, TOutputContext, TDefinitions>,
+) => MaybePromise<Result<unknown, ErrorUnion<TDefinitions>> | MiddlewareNextResult>;
+
+type ErasedMiddlewareHandler = (args: {
+  readonly context: unknown;
+  readonly errors: ErrorDefinitionMap;
+  readonly next: (options: { readonly context: unknown }) => Promise<Result<unknown, AnyTaggedError>>;
+}) => MaybePromise<Result<unknown, AnyTaggedError>>;
+
+interface RuntimeMiddleware {
+  readonly definitions: ErrorDefinitionMap;
+  readonly handler: ErasedMiddlewareHandler;
+}
+
+export interface Middleware<
+  TInputContext,
+  TOutputContext,
+  TDefinitions extends ErrorDefinitionMap,
+> {
+  readonly _kind: "middleware";
+  readonly definitions: TDefinitions;
+  readonly handler: ErasedMiddlewareHandler;
+  readonly _types?: {
+    readonly inputContext: TInputContext;
+    readonly outputContext: TOutputContext;
+    readonly error: ErrorUnion<TDefinitions>;
+  };
+}
+
+export class MiddlewareBuilder<
+  TInputContext,
+  TOutputContext = TInputContext,
+  TDefinitions extends ErrorDefinitionMap = {},
+> {
+  constructor(private readonly definitions: TDefinitions = {} as TDefinitions) {}
+
+  errors<const TNewDefinitions extends ErrorDefinitionMap>(
+    definitions: TNewDefinitions,
+  ): MiddlewareBuilder<TInputContext, TOutputContext, TDefinitions & TNewDefinitions> {
+    assertDefinitionsCanMerge(this.definitions, definitions);
+    return new MiddlewareBuilder({ ...this.definitions, ...definitions });
+  }
+
+  use(
+    handler: MiddlewareHandler<TInputContext, TOutputContext, TDefinitions>,
+  ): Middleware<TInputContext, TOutputContext, TDefinitions> {
+    return Object.freeze({
+      _kind: "middleware" as const,
+      definitions: this.definitions,
+      handler: handler as ErasedMiddlewareHandler,
+    });
+  }
+}
+
+export interface ProcedureHandlerArgs<
+  TContext,
+  TInput,
+  TDefinitions extends ErrorDefinitionMap,
+> {
+  readonly context: TContext;
+  readonly input: TInput;
+  readonly errors: TDefinitions;
+}
+
+export interface ProcedureManifest<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+> {
+  readonly kind: TKind;
+  readonly input: WireCodec<TInput, WireValue>;
+  readonly output: WireCodec<TOutput, WireValue>;
+  readonly definitions: TDefinitions;
+  readonly middlewares: readonly RuntimeMiddleware[];
+  readonly handler: (
+    args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
+  ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>;
+  readonly _rootContext?: TRootContext;
+}
+
+export interface ProcedureContractManifest<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+> {
+  readonly kind: TKind;
+  readonly input: WireCodec<TInput, WireValue>;
+  readonly output: WireCodec<TOutput, WireValue>;
+  readonly definitions: TDefinitions;
+  readonly _rootContext?: TRootContext;
+}
+
+export interface ProcedureContract<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+> {
+  readonly _kind: "procedure-contract";
+  readonly _def: ProcedureContractManifest<TRootContext, TInput, TOutput, TDefinitions, TKind>;
+}
+
+export interface Procedure<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+> {
+  readonly _kind: "procedure";
+  readonly _def: ProcedureManifest<TRootContext, TInput, TOutput, TDefinitions, TKind>;
+}
+
+export interface SubscriptionProcedureManifest<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+> extends ProcedureContractManifest<TRootContext, TInput, TOutput, TDefinitions, "subscription"> {
+  readonly middlewares: readonly RuntimeMiddleware[];
+  readonly handler: (
+    args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
+  ) => MaybePromise<AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>>;
+}
+
+export interface SubscriptionProcedure<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+> {
+  readonly _kind: "subscription-procedure";
+  readonly _def: SubscriptionProcedureManifest<TRootContext, TInput, TOutput, TDefinitions>;
+}
+
+export type AnyUnaryProcedure = Procedure<any, any, any, any, "query" | "mutation">;
+export type AnySubscriptionProcedure = SubscriptionProcedure<any, any, any, any>;
+export type AnyProcedure = AnyUnaryProcedure | AnySubscriptionProcedure;
+export type AnyProcedureContract = ProcedureContract<any, any, any, any>;
+
+type MiddlewareOutput<TMiddleware> = TMiddleware extends Middleware<unknown, infer TOutput, ErrorDefinitionMap>
+  ? TOutput
+  : never;
+
+type MiddlewareDefinitions<TMiddleware> = TMiddleware extends Middleware<unknown, unknown, infer TDefinitions>
+  ? TDefinitions
+  : never;
+
+export class ProcedureBuilder<
+  TRootContext,
+  TContext = TRootContext,
+  TInput = never,
+  TOutput = never,
+  TDefinitions extends ErrorDefinitionMap = {},
+> {
+  constructor(
+    private readonly inputCodec?: WireCodec<TInput, WireValue>,
+    private readonly outputCodec?: WireCodec<TOutput, WireValue>,
+    private readonly definitions: TDefinitions = {} as TDefinitions,
+    private readonly middlewares: readonly RuntimeMiddleware[] = [],
+  ) {}
+
+  input<TNewInput, TEncoded extends WireValue>(
+    codec: WireCodec<TNewInput, TEncoded>,
+  ): ProcedureBuilder<TRootContext, TContext, TNewInput, TOutput, TDefinitions> {
+    return new ProcedureBuilder(
+      codec as WireCodec<TNewInput, WireValue>,
+      this.outputCodec,
+      this.definitions,
+      this.middlewares,
+    );
+  }
+
+  output<TNewOutput, TEncoded extends WireValue>(
+    codec: WireCodec<TNewOutput, TEncoded>,
+  ): ProcedureBuilder<TRootContext, TContext, TInput, TNewOutput, TDefinitions> {
+    return new ProcedureBuilder(
+      this.inputCodec,
+      codec as WireCodec<TNewOutput, WireValue>,
+      this.definitions,
+      this.middlewares,
+    );
+  }
+
+  errors<const TNewDefinitions extends ErrorDefinitionMap>(
+    definitions: TNewDefinitions,
+  ): ProcedureBuilder<
+    TRootContext,
+    TContext,
+    TInput,
+    TOutput,
+    TDefinitions & TNewDefinitions
+  > {
+    assertDefinitionsCanMerge(this.definitions, definitions);
+    return new ProcedureBuilder(
+      this.inputCodec,
+      this.outputCodec,
+      { ...this.definitions, ...definitions },
+      this.middlewares,
+    );
+  }
+
+  use<TOutputContext, TMiddlewareDefinitions extends ErrorDefinitionMap>(
+    middleware: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
+  ): ProcedureBuilder<
+    TRootContext,
+    TOutputContext,
+    TInput,
+    TOutput,
+    TDefinitions & TMiddlewareDefinitions
+  > {
+    assertDefinitionsCanMerge(this.definitions, middleware.definitions);
+    const definitions = {
+      ...this.definitions,
+      ...middleware.definitions,
+    } as TDefinitions & TMiddlewareDefinitions;
+    return new ProcedureBuilder<
+      TRootContext,
+      TOutputContext,
+      TInput,
+      TOutput,
+      TDefinitions & TMiddlewareDefinitions
+    >(
+      this.inputCodec,
+      this.outputCodec,
+      definitions,
+      [...this.middlewares, middleware as unknown as RuntimeMiddleware],
+    );
+  }
+
+  query(): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "query">;
+  query(
+    handler: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, "query">;
+  query(
+    handler?: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ):
+    | ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "query">
+    | Procedure<TRootContext, TInput, TOutput, TDefinitions, "query"> {
+    return handler === undefined
+      ? this.finishContract("query")
+      : this.finish("query", handler);
+  }
+
+  mutation(): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "mutation">;
+  mutation(
+    handler: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, "mutation">;
+  mutation(
+    handler?: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ):
+    | ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "mutation">
+    | Procedure<TRootContext, TInput, TOutput, TDefinitions, "mutation"> {
+    return handler === undefined
+      ? this.finishContract("mutation")
+      : this.finish("mutation", handler);
+  }
+
+  subscription(): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "subscription"> {
+    return this.finishContract("subscription");
+  }
+
+  private finishContract<TKind extends "query" | "mutation" | "subscription">(
+    kind: TKind,
+  ): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, TKind> {
+    if (!this.inputCodec || !this.outputCodec) {
+      throw new TypeError("A procedure requires input and output codecs");
+    }
+    return Object.freeze({
+      _kind: "procedure-contract" as const,
+      _def: Object.freeze({
+        kind,
+        input: this.inputCodec,
+        output: this.outputCodec,
+        definitions: this.definitions,
+      }),
+    });
+  }
+
+  private finish<TKind extends "query" | "mutation">(
+    kind: TKind,
+    handler: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, TKind> {
+    if (!this.inputCodec || !this.outputCodec) {
+      throw new TypeError("A procedure requires input and output codecs");
+    }
+    return Object.freeze({
+      _kind: "procedure" as const,
+      _def: Object.freeze({
+        kind,
+        input: this.inputCodec,
+        output: this.outputCodec,
+        definitions: this.definitions,
+        middlewares: this.middlewares,
+        handler: handler as ProcedureManifest<TRootContext, TInput, TOutput, TDefinitions>["handler"],
+      }),
+    });
+  }
+}
+
+export class ProcedureImplementer<
+  TRootContext,
+  TContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+> {
+  constructor(
+    private readonly contract: ProcedureContract<
+      TRootContext,
+      TInput,
+      TOutput,
+      TDefinitions,
+      TKind
+    >,
+    private readonly middlewares: readonly RuntimeMiddleware[] = [],
+  ) {}
+
+  use<TOutputContext, TMiddlewareDefinitions extends ErrorDefinitionMap>(
+    middleware: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
+  ): ProcedureImplementer<TRootContext, TOutputContext, TInput, TOutput, TDefinitions, TKind> {
+    assertDefinitionsAreDeclared(this.contract._def.definitions, middleware.definitions);
+    return new ProcedureImplementer(
+      this.contract,
+      [...this.middlewares, middleware as unknown as RuntimeMiddleware],
+    );
+  }
+
+  handler(
+    this: ProcedureImplementer<TRootContext, TContext, TInput, TOutput, TDefinitions, "query" | "mutation">,
+    handler: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, "query" | "mutation"> {
+    return Object.freeze({
+      _kind: "procedure" as const,
+      _def: Object.freeze({
+        ...this.contract._def,
+        middlewares: this.middlewares,
+        handler: handler as ProcedureManifest<
+          TRootContext,
+          TInput,
+          TOutput,
+          TDefinitions
+        >["handler"],
+      }),
+    });
+  }
+
+  stream(
+    this: ProcedureImplementer<TRootContext, TContext, TInput, TOutput, TDefinitions, "subscription">,
+    handler: (
+      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
+    ) => MaybePromise<AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>>,
+  ): SubscriptionProcedure<TRootContext, TInput, TOutput, TDefinitions> {
+    return Object.freeze({
+      _kind: "subscription-procedure" as const,
+      _def: Object.freeze({
+        ...this.contract._def,
+        kind: "subscription" as const,
+        middlewares: this.middlewares,
+        handler: handler as SubscriptionProcedureManifest<
+          TRootContext,
+          TInput,
+          TOutput,
+          TDefinitions
+        >["handler"],
+      }),
+    });
+  }
+}
+
+export interface RouterRecord {
+  readonly [key: string]: AnyProcedure | RouterRecord;
+}
+
+export interface ContractRouterRecord {
+  readonly [key: string]: AnyProcedureContract | ContractRouterRecord;
+}
+
+export interface RouterContract<TRootContext, TRecord extends ContractRouterRecord> {
+  readonly _kind: "router-contract";
+  readonly record: TRecord;
+  readonly procedures: ReadonlyMap<string, AnyProcedureContract>;
+  readonly _rootContext?: TRootContext;
+}
+
+export interface Router<TRootContext, TRecord extends RouterRecord> {
+  readonly _kind: "router";
+  readonly record: TRecord;
+  readonly procedures: ReadonlyMap<string, AnyProcedure>;
+  readonly _rootContext?: TRootContext;
+}
+
+const createRouter = <TRootContext, const TRecord extends RouterRecord>(
+  record: TRecord,
+): Router<TRootContext, TRecord> => {
+  const procedures = new Map<string, AnyProcedure>();
+  const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure =>
+    "_kind" in value
+    && (value._kind === "procedure" || value._kind === "subscription-procedure");
+  const visit = (node: RouterRecord, prefix: readonly string[]) => {
+    for (const [key, value] of Object.entries(node)) {
+      const path = [...prefix, key];
+      if (isProcedure(value)) procedures.set(path.join("."), value);
+      else visit(value, path);
+    }
+  };
+  visit(record, []);
+  return Object.freeze({ _kind: "router" as const, record, procedures });
+};
+
+const createRouterContract = <
+  TRootContext,
+  const TRecord extends ContractRouterRecord,
+>(record: TRecord): RouterContract<TRootContext, TRecord> => {
+  const procedures = new Map<string, AnyProcedureContract>();
+  const isProcedureContract = (
+    value: AnyProcedureContract | ContractRouterRecord,
+  ): value is AnyProcedureContract =>
+    "_kind" in value && value._kind === "procedure-contract";
+  const visit = (node: ContractRouterRecord, prefix: readonly string[]) => {
+    for (const [key, value] of Object.entries(node)) {
+      const path = [...prefix, key];
+      if (isProcedureContract(value)) procedures.set(path.join("."), value);
+      else visit(value, path);
+    }
+  };
+  visit(record, []);
+  return Object.freeze({ _kind: "router-contract" as const, record, procedures });
+};
+
+export interface RpcFactory<TRootContext> {
+  procedure(): ProcedureBuilder<TRootContext>;
+  middleware<TAddedContext = {}>(): MiddlewareBuilder<
+    TRootContext,
+    TRootContext & TAddedContext
+  >;
+  router<const TRecord extends RouterRecord>(record: TRecord): Router<TRootContext, TRecord>;
+  contract<const TRecord extends ContractRouterRecord>(
+    record: TRecord,
+  ): RouterContract<TRootContext, TRecord>;
+  implement<
+    TInput,
+    TOutput,
+    TDefinitions extends ErrorDefinitionMap,
+    TKind extends "query" | "mutation" | "subscription",
+  >(
+    contract: ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, TKind>,
+  ): ProcedureImplementer<TRootContext, TRootContext, TInput, TOutput, TDefinitions, TKind>;
+}
+
+const factory = <TRootContext>(): RpcFactory<TRootContext> => ({
+  procedure: () => new ProcedureBuilder<TRootContext>(),
+  middleware: <TAddedContext = {}>() =>
+    new MiddlewareBuilder<TRootContext, TRootContext & TAddedContext>(),
+  router: (record) => createRouter<TRootContext, typeof record>(record),
+  contract: (record) => createRouterContract<TRootContext, typeof record>(record),
+  implement: (contract) => new ProcedureImplementer(contract),
+});
+
+export const rpc = Object.assign(factory<unknown>(), {
+  context: <TRootContext>() => factory<TRootContext>(),
+});
+
+export const assertDefinitionsCanMerge = (
+  left: ErrorDefinitionMap,
+  right: ErrorDefinitionMap,
+): void => {
+  const byTag = new Map<string, AnyErrorDefinition>();
+  for (const definition of Object.values(left)) byTag.set(definition.tag, definition);
+  for (const definition of Object.values(right)) {
+    const existing = byTag.get(definition.tag);
+    if (existing && existing !== definition) {
+      throw new TypeError(`Conflicting definitions for error tag ${definition.tag}`);
+    }
+    byTag.set(definition.tag, definition);
+  }
+};
+
+export const assertDefinitionsAreDeclared = (
+  declared: ErrorDefinitionMap,
+  contributed: ErrorDefinitionMap,
+): void => {
+  const declaredByTag = new Map(
+    Object.values(declared).map((definition) => [definition.tag, definition] as const),
+  );
+  for (const definition of Object.values(contributed)) {
+    if (declaredByTag.get(definition.tag) !== definition) {
+      throw new TypeError(
+        `Middleware error ${definition.tag} is not declared by the procedure contract`,
+      );
+    }
+  }
+};
+
+const incidentId = (): string => `inc_${crypto.randomUUID()}`;
+
+const internalFailure = (
+  phase: InternalErrorEvent["phase"],
+  cause: unknown,
+  options: ExecutionOptions<unknown>,
+): Result<never, ReturnType<typeof ServerInternal>> => {
+  const id = incidentId();
+  options.onInternalError?.({
+    incidentId: id,
+    phase,
+    cause,
+    ...(options.procedurePath === undefined ? {} : { procedurePath: options.procedurePath }),
+  });
+  return err(ServerInternal({ incidentId: id }));
+};
+
+export const executeProcedure = async <
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+>(
+  procedure: Procedure<TRootContext, TInput, TOutput, TDefinitions>,
+  input: TInput,
+  options: ExecutionOptions<TRootContext>,
+): Promise<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal>>> => {
+  let decodedInput: ReturnType<typeof procedure._def.input.decode>;
+  try {
+    const encodedInput = procedure._def.input.encode(input);
+    if (!encodedInput.ok) return internalFailure("input", encodedInput.issues, options);
+    decodedInput = procedure._def.input.decode(encodedInput.value);
+    if (!decodedInput.ok) return internalFailure("input", decodedInput.issues, options);
+  } catch (cause) {
+    return internalFailure("input", cause, options);
+  }
+
+  const dispatch = async (
+    index: number,
+    context: unknown,
+  ): Promise<Result<unknown, AnyTaggedError>> => {
+    const middleware = procedure._def.middlewares[index];
+    if (middleware) {
+      try {
+        return await middleware.handler({
+          context,
+          errors: middleware.definitions,
+          next: ({ context: nextContext }) => dispatch(index + 1, nextContext),
+        });
+      } catch (cause) {
+        return internalFailure("middleware", cause, options);
+      }
+    }
+    try {
+      return await procedure._def.handler({
+        context,
+        input: decodedInput.value,
+        errors: procedure._def.definitions,
+      });
+    } catch (cause) {
+      return internalFailure("handler", cause, options);
+    }
+  };
+
+  const result = await dispatch(0, options.context);
+  if (
+    result === null
+    || typeof result !== "object"
+    || !("ok" in result)
+    || typeof result.ok !== "boolean"
+  ) return internalFailure("handler", result, options);
+  if (result.ok) {
+    try {
+      const encoded = procedure._def.output.encode(result.value as TOutput);
+      if (!encoded.ok) return internalFailure("output", encoded.issues, options);
+      const decoded = procedure._def.output.decode(encoded.value);
+      if (!decoded.ok) return internalFailure("output", decoded.issues, options);
+      return { ok: true, value: decoded.value };
+    } catch (cause) {
+      return internalFailure("output", cause, options);
+    }
+  }
+
+  if (
+    result.error === null
+    || typeof result.error !== "object"
+    || !("_tag" in result.error)
+    || typeof result.error._tag !== "string"
+  ) return internalFailure("error", result.error, options);
+  if (ServerInternal.is(result.error)) {
+    const decodedInternal = ServerInternal.decode(result.error);
+    return decodedInternal.ok
+      ? err(decodedInternal.value)
+      : internalFailure("error", result.error, options);
+  }
+  let normalizedError: AnyTaggedError;
+  try {
+    const definition = Object.values(procedure._def.definitions).find(
+      (candidate) => candidate.tag === result.error._tag,
+    );
+    if (!definition || definition.policy.visibility !== "public") {
+      return internalFailure("error", result.error, options);
+    }
+    const decoded = definition.decode(result.error);
+    if (!decoded.ok) return internalFailure("error", result.error, options);
+    normalizedError = decoded.value;
+  } catch (cause) {
+    return internalFailure("error", cause, options);
+  }
+  return err(normalizedError as ErrorUnion<TDefinitions>);
+};
+
+export async function* executeSubscription<
+  TRootContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+>(
+  procedure: SubscriptionProcedure<TRootContext, TInput, TOutput, TDefinitions>,
+  input: TInput,
+  options: ExecutionOptions<TRootContext>,
+): AsyncGenerator<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal>>> {
+  const encodedInput = procedure._def.input.encode(input);
+  if (!encodedInput.ok) {
+    yield internalFailure("input", encodedInput.issues, options);
+    return;
+  }
+  const decodedInput = procedure._def.input.decode(encodedInput.value);
+  if (!decodedInput.ok) {
+    yield internalFailure("input", decodedInput.issues, options);
+    return;
+  }
+
+  const prepareContext = async (
+    index: number,
+    context: unknown,
+  ): Promise<Result<unknown, AnyTaggedError>> => {
+    const middleware = procedure._def.middlewares[index];
+    if (!middleware) return { ok: true, value: context };
+    try {
+      return await middleware.handler({
+        context,
+        errors: middleware.definitions,
+        next: ({ context: nextContext }) => prepareContext(index + 1, nextContext),
+      });
+    } catch (cause) {
+      return internalFailure("middleware", cause, options);
+    }
+  };
+
+  const prepared = await prepareContext(0, options.context);
+  if (!prepared.ok) {
+    if (ServerInternal.is(prepared.error)) {
+      const decoded = ServerInternal.decode(prepared.error);
+      yield decoded.ok
+        ? err(decoded.value)
+        : internalFailure("error", prepared.error, options);
+    }
+    else {
+      const definition = Object.values(procedure._def.definitions).find(
+        (candidate) => candidate.tag === prepared.error._tag,
+      );
+      const decoded = definition?.policy.visibility === "public"
+        ? definition.decode(prepared.error)
+        : undefined;
+      yield decoded?.ok
+        ? err(decoded.value as ErrorUnion<TDefinitions>)
+        : internalFailure("error", prepared.error, options);
+    }
+    return;
+  }
+
+  let iterable: AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>;
+  try {
+    iterable = await procedure._def.handler({
+      context: prepared.value,
+      input: decodedInput.value,
+      errors: procedure._def.definitions,
+    });
+  } catch (cause) {
+    yield internalFailure("handler", cause, options);
+    return;
+  }
+
+  try {
+    for await (const result of iterable) {
+      if (result.ok) {
+        const encoded = procedure._def.output.encode(result.value);
+        if (!encoded.ok) {
+          yield internalFailure("output", encoded.issues, options);
+          return;
+        }
+        const decoded = procedure._def.output.decode(encoded.value);
+        if (!decoded.ok) {
+          yield internalFailure("output", decoded.issues, options);
+          return;
+        }
+        yield ok(decoded.value);
+        continue;
+      }
+      const definition = Object.values(procedure._def.definitions).find(
+        (candidate) => candidate.tag === result.error._tag,
+      );
+      const decoded = definition?.policy.visibility === "public"
+        ? definition.decode(result.error)
+        : undefined;
+      if (!decoded?.ok) {
+        yield internalFailure("error", result.error, options);
+      } else {
+        yield err(decoded.value as ErrorUnion<TDefinitions>);
+      }
+      return;
+    }
+  } catch (cause) {
+    yield internalFailure("handler", cause, options);
+  }
+}
+
+export type ProcedureInput<TProcedure> = TProcedure extends { readonly _def: ProcedureContractManifest<any, infer TInput, any, any, any> }
+  ? TInput
+  : never;
+export type ProcedureOutput<TProcedure> = TProcedure extends { readonly _def: ProcedureContractManifest<any, any, infer TOutput, any, any> }
+  ? TOutput
+  : never;
+export type ProcedureError<TProcedure> = TProcedure extends { readonly _def: ProcedureContractManifest<any, any, any, infer TDefinitions, any> }
+  ? ErrorUnion<TDefinitions>
+  : never;
+export type RouterContext<TRouter> = TRouter extends Router<infer TContext, RouterRecord>
+  ? TContext
+  : never;
