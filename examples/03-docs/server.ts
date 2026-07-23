@@ -8,6 +8,7 @@ import {
   SessionLayer,
   DocCodec,
   DocEventCodec,
+  DocForbidden,
   DocLocked,
   DocNotFound,
   ViewerLayer,
@@ -48,7 +49,11 @@ export const Audit = defineService("audit", {
   create: ({ db }) => {
     const lines: string[] = [];
     return {
-      log: (line: string) => void (lines.push(line), db),
+      /** Resolves the doc title through its db dependency for readable lines. */
+      log: async (actorId: string, verb: string, docId: string) => {
+        const doc = await db.doc(docId);
+        lines.push(`${actorId} ${verb} "${doc?.title ?? docId}"`);
+      },
       lines,
     };
   },
@@ -59,7 +64,7 @@ export const Audit = defineService("audit", {
 interface RequestContext {
   readonly sessionToken: string | undefined;
   readonly db: DocDb;
-  readonly audit: { log: (line: string) => void };
+  readonly audit: { log: (actorId: string, verb: string, docId: string) => Promise<void> };
 }
 
 export const app = rpc.context<RequestContext>();
@@ -92,7 +97,7 @@ const docById = protectedProcedure
 const renameDoc = protectedProcedure
   .input(wire.object({ id: wire.string, title: wire.string }))
   .output(DocCodec)
-  .errors({ DocNotFound, DocLocked })
+  .errors({ DocNotFound, DocLocked, DocForbidden })
   .mutation(async ({ input, context, errors }) => {
     const doc = await context.db.doc(input.id);
     if (!doc) return err(errors.DocNotFound({ docId: input.id }));
@@ -101,11 +106,14 @@ const renameDoc = protectedProcedure
     if (lockedBy && lockedBy !== context.viewer.id) {
       return err(errors.DocLocked({ lockedBy }));
     }
-    if (doc.ownerId !== context.viewer.id) return err(errors.Unauthorized());
+    // Not-the-owner is 403, a domain outcome for the form — never
+    // errors.Unauthorized(), which the viewer shell would answer with a
+    // sign-in redirect.
+    if (doc.ownerId !== context.viewer.id) return err(errors.DocForbidden());
 
     const renamed = { ...doc, title: input.title };
     await context.db.saveDoc(renamed);
-    context.audit.log(`${context.viewer.id} renamed ${doc.id}`);
+    await context.audit.log(context.viewer.id, "renamed", doc.id);
     return ok(renamed);
   });
 

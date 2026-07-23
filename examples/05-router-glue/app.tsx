@@ -22,7 +22,7 @@ import {
   routeShell,
   type ResultRouterContext,
 } from "./router-glue.js";
-import { SessionLayer, DocLocked, DocNotFound, ViewerLayer } from "../03-docs/domain.js";
+import { SessionLayer, DocForbidden, DocLocked, DocNotFound, ViewerLayer } from "../03-docs/domain.js";
 import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: one chain, defined at module level ----------------------------------------
@@ -169,8 +169,9 @@ function DocMissing() {
   return latest ? <p role="alert">No doc named {latest.data.docId}.</p> : null;
 }
 
-const renameMessages = errorCatalog({ DocLocked }, {
+const renameMessages = errorCatalog({ DocLocked, DocForbidden }, {
   "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+  "doc/forbidden": () => "Only the owner can rename this doc",
 });
 
 function DocDetail() {

@@ -24,6 +24,14 @@ export const DocLocked = error({
   httpStatus: "conflict",
 });
 
+/**
+ * 403, not 401. `Unauthorized` belongs to the viewer layer and is claimed by
+ * its shell (whose reaction is a sign-in redirect) — using it for an ownership
+ * check would sign the user out. Forbidden is a domain outcome the component
+ * renders.
+ */
+export const DocForbidden = error({ tag: "doc/forbidden", httpStatus: "forbidden" });
+
 export const authErrors = { Unauthorized, SessionExpired };
 
 // -- codecs ---------------------------------------------------------------------

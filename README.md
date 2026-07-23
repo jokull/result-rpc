@@ -373,6 +373,12 @@ const renameDoc = protectedProcedure
   .mutation(/* ... */)                     // the auth union rides in with the base
 ```
 
+Middleware definitions also join the handler's `errors` bag, so a handler can
+return a middleware-contributed error without re-importing it — but choose
+deliberately there: `errors.Unauthorized()` from an ownership check would hand
+a 403-shaped outcome to whatever shell owns the auth union (whose reaction is
+a sign-in redirect). Not-the-owner is its own domain error.
+
 In contract-first code, middleware errors must already be present in the
 shared contract; `app.implement(...).use(...)` rejects an undeclared
 contribution. The code-first convenience form unions middleware definitions
@@ -1039,13 +1045,18 @@ On the server, context grows and narrows monotonically through the chain:
 const session = SessionLayer.middleware(app, ({ context }) =>
   ok(await userFromCookie(context)))     // User | null — never fails
 
-const requireViewer = ViewerLayer.middleware(app)  // no resolver: derived
+// No resolver: the refinement is derived. Passing `session` bundles the
+// parent, so one `.use(requireViewer)` pulls the whole chain in order.
+const requireViewer = ViewerLayer.middleware(app, session)
 
 app.procedure()
-  .use(session)                          // context.viewer: User | null
-  .use(requireViewer)                    // context.viewer: User
+  .use(requireViewer)                    // session runs first: viewer is User
   .query(({ context }) => ok(greet(context.viewer)))
 ```
+
+(`ViewerLayer.middleware(app)` without the parent also works when the input
+context already carries the session value — the bundled form is the usual
+one.)
 
 On the client the same shape appears as nested providers — the optional shell
 claims nothing and provides the nullable value; the required shell claims
@@ -1068,8 +1079,8 @@ ViewerShell.use()    // User
 
 ### Keeping it honest
 
-Narrowing this cheap can quietly become swallowing. The absorbed set is a
-value:
+Narrowing this cheap can quietly become swallowing, so both halves of the
+claim are assertable. The absorbed set is a runtime value:
 
 ```ts
 AuthShell.claimedTags
@@ -1078,8 +1089,25 @@ AuthShell.claimedTags
 //  "client/offline", "client/network-failure", "client/timeout"]
 ```
 
-Assert on it in a type test or a unit test so that adding an
-application-namespace tag to a shell is a deliberate, reviewable act.
+and the component-visible union is a compile-time probe — a two-line pattern
+that pins exactly what a component can be asked to render, forever. This is
+the artifact tRPC cannot produce: a test asserting which error codes a call
+site can surface.
+
+```ts
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
+type Assert<T extends true> = T
+
+// doc.byId resolves nine possible failures; under the onion the page sees one.
+const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" })
+type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"]
+export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>
+```
+
+Add an application-namespace tag to a shell and the probe breaks — narrowing
+stays a deliberate, reviewable act. `examples/03-docs/app.test.tsx` runs these
+against the full onion.
 
 ## Bring your own router
 
@@ -1396,6 +1424,28 @@ Parity mode runs the same codecs and undeclared-error checks as the remote
 protocol. A separate test transport covers malformed envelopes, 5xx responses,
 timeouts, offline behavior, and batch failures.
 
+And when a test should cross the real wire — protocol, serializer, HTTP
+statuses and all — the fetch handler *is* the fetch, no server process
+required. The examples run their full React trees this way:
+
+```ts
+const handler = createFetchHandler({ router, createContext: () => context })
+
+const client = createClient({
+  router,
+  transport: fetchTransport({
+    url: "https://example.test/rpc",
+    fetch: (input, init) => handler(new Request(input, init)),
+  }),
+})
+
+// full round-trip: devalue envelope, HTTP status, rich values intact
+const events = await collect(client.doc.events({ id: "doc_1" }))
+expect(events[0]).toEqual(ok({ docId: "doc_1", kind: "renamed", at: new Date("2026-01-01") }))
+```
+
+Note the `Date` inside the assertion — it crossed the wire as a `Date`.
+
 ## Observability
 
 The footgun: a Sentry event that says `TRPCClientError: UNAUTHORIZED` with a
@@ -1560,9 +1610,10 @@ with its own tests:
 2. **02-todo** — mutations, optimistic updates, the basic onion, an error
    catalog over a shell-narrowed union.
 3. **03-docs** — the whole system: a service graph, optional→required layers,
-   a five-shell onion, a feature shell, subscriptions, and a defect boundary.
-   Its compile-time probes assert the payoff directly: under the full onion, a
-   mutation declaring nine failure tags presents exactly one.
+   a four-shell onion, a rendered subscription, and a defect boundary. Its
+   compile-time probes assert the payoff directly: under the full onion, a
+   query resolving nine possible failures presents exactly `doc/not-found`,
+   and a mutation presents exactly its three domain outcomes.
 4. **04-router** — TanStack Router integration by hand: routes are shells.
    Pathless layouts mount the session and viewer layers, a route claims its
    feature error, `errorComponent` receives escalated defects, `onError`

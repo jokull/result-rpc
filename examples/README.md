@@ -8,7 +8,7 @@ An escalation ladder. Each rung is a self-contained app with runtime tests
 | --- | --- | --- |
 | `01-hello` | greeting service | minimal path: one error, one query, provider + hook |
 | `02-todo` | todo list | mutations, optimistic rollback, app/defect shells, `errorCatalog` |
-| `03-docs` | shared-docs workspace | `defineService` graph, `defineLayer` + `require`, five-layer onion, feature shell, subscription, escalation boundary |
+| `03-docs` | shared-docs workspace | `defineService` graph, `defineLayer` + `require`, four-shell onion, rendered subscription, escalation boundary, compile-time union probes |
 | `04-router` | docs + TanStack Router | routes-as-shells by hand: module-level shells via `procedure:` selectors, `onError` navigation, loaders prefetching the layer cascade |
 | `05-router-glue` | docs on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — proof no router package is needed |
 | `06-sentry` | billing form + Sentry stub | all four observability taps into one sink: wire breadcrumbs, claim trail with owner, severity-routed server capture, incident-id correlation across the wire |
@@ -19,7 +19,8 @@ routes mount the session and viewer shells, the doc route claims
 loader prefetches its layer's context procedure — the first committed paint
 renders session, viewer, and doc with no fallback states.
 
-Rung 3's test file ends with compile-time probes: the rename mutation — which
-declares `Unauthorized | DocNotFound | DocLocked` plus six transport tags —
-has a component-visible failure union of exactly `"doc/locked"`, and the doc
-query's is `never`.
+Rung 3's test file ends with compile-time probes: the doc query — which
+resolves nine possible failures — has a component-visible union of exactly
+`"doc/not-found"`, and the rename mutation presents exactly its three domain
+outcomes (`doc/not-found | doc/locked | doc/forbidden`). Domain errors stay
+with the component; only the framework tiers are claimed above.

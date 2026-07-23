@@ -4,17 +4,28 @@
  *   AppShell      transport failures pause → one connectivity banner
  *   DefectShell   protocol/internal defects escalate → error boundary
  *   SessionShell  provides User | null (public pages render inside this)
- *   ViewerShell   narrows to User, owns the auth union → sign-in redirect
- *   DocShell     feature layer: claims doc/not-found → route-level missing page
+ *   ViewerShell   narrows to User, owns the auth union → sign-in reaction
  *
- * The payoff: `rename` declares Unauthorized | DocNotFound | DocLocked plus
- * six transport tags — and the form below branches on exactly one: DocLocked.
+ * The payoff: `doc.byId` resolves nine possible failures — and DocPage
+ * switch-matches exactly one: `doc/not-found`. `doc.rename` resolves eleven —
+ * and the form branches on exactly its three domain outcomes. Every framework
+ * tag is owned by a named shell above, and the type probes in app.test.tsx
+ * assert both unions.
+ *
+ * Shells are module constants: `procedure:` takes a selector, resolved through
+ * the mounted provider's client at render time, so nothing here needs a live
+ * client to be declared.
  */
 import { Component, type ReactNode } from "react";
 import { defectErrors, errorCatalog, transportErrors } from "../../src/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
-import { defineShell, layerShell, ResultRpcProvider } from "../../src/react/index.js";
-import { SessionLayer, DocLocked, DocNotFound, ViewerLayer } from "./domain.js";
+import {
+  defineShell,
+  layerShell,
+  ResultRpcProvider,
+  useResultClient,
+} from "../../src/react/index.js";
+import { SessionLayer, DocForbidden, DocLocked, DocNotFound, ViewerLayer } from "./domain.js";
 import { docRouter } from "./server.js";
 
 // -- client -----------------------------------------------------------------------
@@ -26,7 +37,7 @@ export const makeDocClient = (fetch: typeof globalThis.fetch) =>
   });
 export type DocClient = ReturnType<typeof makeDocClient>;
 
-// -- the onion ----------------------------------------------------------------------
+// -- the onion (module-level: no client required to declare it) ---------------------
 
 export const AppShell = defineShell({
   name: "docs-app",
@@ -41,34 +52,25 @@ export const DefectShell = defineShell({
   effect: "escalate",
 });
 
-export const makeShells = (client: DocClient, onSignIn: () => void) => {
-  const SessionShell = layerShell(SessionLayer, {
-    from: DefectShell,
-    procedure: client.auth.whoami,
-  });
-  const ViewerShell = layerShell(ViewerLayer, {
-    from: SessionShell,
-    procedure: client.auth.me,
-    onError: onSignIn,
-  });
-  const DocShell = defineShell({
-    name: "doc-route",
-    from: ViewerShell,
-    claims: { DocNotFound },
-    effect: "pause",
-  });
-  return { SessionShell, ViewerShell, DocShell };
-};
-export type Shells = ReturnType<typeof makeShells>;
+export const SessionShell = layerShell(SessionLayer, {
+  from: DefectShell,
+  procedure: (client: DocClient) => client.auth.whoami,
+});
+
+/** A real app redirects to /login here; tests observe the counter. */
+export const signInReactions = { count: 0 };
+
+export const ViewerShell = layerShell(ViewerLayer, {
+  from: SessionShell,
+  procedure: (client: DocClient) => client.auth.me,
+  onError: () => {
+    signInReactions.count += 1;
+  },
+});
 
 // -- app ------------------------------------------------------------------------------
 
-export function DocsApp({ client, shells, docId }: {
-  client: DocClient;
-  shells: Shells;
-  docId: string;
-}) {
-  const { SessionShell, ViewerShell, DocShell } = shells;
+export function DocsApp({ client, docId }: { client: DocClient; docId: string }) {
   return (
     <ResultRpcProvider client={client}>
       <AppShell.Provider>
@@ -76,12 +78,10 @@ export function DocsApp({ client, shells, docId }: {
           <Boundary>
             <ConnectivityBanner />
             <SessionShell.Provider fallback={<p>starting…</p>}>
-              <Greeting shells={shells} />
+              <Greeting />
               <ViewerShell.Provider fallback={<p>signing in…</p>}>
-                <DocShell.Provider>
-                  <DocMissingNotice shells={shells} />
-                  <DocPage client={client} shells={shells} docId={docId} />
-                </DocShell.Provider>
+                <DocPage docId={docId} />
+                <DocActivity docId={docId} />
               </ViewerShell.Provider>
             </SessionShell.Provider>
           </Boundary>
@@ -97,57 +97,78 @@ function ConnectivityBanner() {
 }
 
 /** Public: renders for signed-out visitors too — the session value is nullable here. */
-function Greeting({ shells }: { shells: Shells }) {
-  const viewer = shells.SessionShell.use();
+function Greeting() {
+  const viewer = SessionShell.use();
   return <header>{viewer ? `Welcome back, ${viewer.name}` : "Welcome, guest"}</header>;
-}
-
-/** The route-level owner of doc/not-found. */
-function DocMissingNotice({ shells }: { shells: Shells }) {
-  const { latest } = shells.DocShell.useHeld();
-  if (!latest) return null;
-  return <p role="alert">Doc {latest.data.docId} does not exist.</p>;
 }
 
 // -- the page ------------------------------------------------------------------------
 
-const renameMessages = errorCatalog({ DocLocked }, {
+const renameMessages = errorCatalog({ DocNotFound, DocLocked, DocForbidden }, {
+  "doc/not-found": () => "This doc was deleted while you were editing",
   "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+  "doc/forbidden": () => "Only the owner can rename this doc",
 });
 
-export function DocPage({ client, shells, docId }: {
-  client: DocClient;
-  shells: Shells;
-  docId: string;
-}) {
-  const { DocShell, ViewerShell } = shells;
+export function DocPage({ docId }: { docId: string }) {
+  const client = useResultClient<DocClient>();
   const viewer = ViewerShell.use(); // User — guaranteed, not User | null
-  const doc = DocShell.useQuery(client.doc.byId, { id: docId });
+  const doc = ViewerShell.useQuery(client.doc.byId, { id: docId });
 
-  const rename = DocShell.useMutation(client.doc.rename);
-  // rename failure union here: DocLocked. Everything else is owned above.
+  const rename = ViewerShell.useMutation(client.doc.rename);
+  // rename failure union here: exactly the three declared domain outcomes —
+  // DocNotFound | DocLocked | DocForbidden. The framework tags are owned above.
 
-  if (doc.state !== "success") return <p>Loading doc…</p>;
+  switch (doc.state) {
+    case "pending":
+      return <p>Loading doc…</p>;
 
+    case "failure":
+      // doc/not-found — the page's own domain error; anything else is a type error
+      return <p role="alert">Doc {doc.result.error.data.docId} does not exist.</p>;
+
+    case "success":
+      return (
+        <article>
+          <h1>{doc.result.value.title}</h1>
+          <p>Planned by {viewer.name}</p>
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
+            // claimed/cancelled rejections are control flow, not outcomes
+            void rename.mutate({ id: docId, title: field.value }).catch(() => undefined);
+          }}>
+            <input name="title" defaultValue={doc.result.value.title} />
+            {rename.state === "failure" && (
+              <p role="alert">{renameMessages(rename.result.error)}</p>
+            )}
+          </form>
+        </article>
+      );
+  }
+}
+
+/** The same union, streaming: connection state lives beside the latest Result. */
+function DocActivity({ docId }: { docId: string }) {
+  const client = useResultClient<DocClient>();
+  const events = ViewerShell.useSubscription(client.doc.events, { id: docId });
+  if (!events.result?.ok) return null;
   return (
-    <article>
-      <h1>{doc.result.value.title}</h1>
-      <p>Planned by {viewer.name}</p>
-      <form onSubmit={(event) => {
-        event.preventDefault();
-        const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
-        void rename.mutate({ id: docId, title: field.value });
-      }}>
-        <input name="title" defaultValue={doc.result.value.title} />
-        {rename.state === "failure" && (
-          <p role="alert">{renameMessages(rename.result.error)}</p>
-        )}
-      </form>
-    </article>
+    <p>
+      Last activity: {events.result.value.kind} on {events.result.value.at.toDateString()}
+    </p>
   );
 }
 
 // -- defect boundary --------------------------------------------------------------------
+
+const defectMessages = errorCatalog(defectErrors, {
+  "client/http-failure": () => "The server answered outside the protocol.",
+  "client/protocol-violation": () => "The server sent a malformed response.",
+  "client/decode-failure": () => "The response did not match its contract.",
+  "server/bad-request": () => "The request was malformed.",
+  "server/internal": (failure) => `Server incident ${failure.data.incidentId}.`,
+});
 
 class Boundary extends Component<{ children?: ReactNode }, { caught?: unknown }> {
   override state: { caught?: unknown } = {};
@@ -156,7 +177,8 @@ class Boundary extends Component<{ children?: ReactNode }, { caught?: unknown }>
   }
   override render() {
     if (this.state.caught === undefined) return this.props.children;
-    const tag = (this.state.caught as { _tag?: string })._tag ?? "unknown";
-    return <p role="alert">Something broke ({tag}). Reload to continue.</p>;
+    // escalated values are structural TaggedErrors, so the catalog still applies
+    const message = defectMessages(this.state.caught as Parameters<typeof defectMessages>[0]);
+    return <p role="alert">{message} Reload to continue.</p>;
   }
 }
