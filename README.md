@@ -204,11 +204,14 @@ export const docErrors = defineErrors("doc", {
 docErrors.notFound({ docId })  // { _tag: "doc/not-found", data: { docId } }
 ```
 
-The returned map is the grouping currency everything else takes — procedure
-`.errors()`, middleware, shells, catalogs — and `pickErrors(docErrors,
-"locked")` selects the subset a procedure actually declares. Grouping is by
-value, not by string prefix: the namespace exists for human uniqueness and the
-reserved framework carve-out, nothing else.
+The returned map is the shape everything else accepts: procedure `.errors()`,
+middleware `.errors()`, and shell `claims:` all take a map of definitions, so
+one exported map is declared once and reused on both sides of the wire.
+`pickErrors(docErrors, "locked")` selects the subset a procedure actually
+declares. Grouping is always by these values, never by matching on the tag
+string — the namespace prefix exists only so tags stay unique and readable.
+Four namespaces are reserved for the framework's own errors: `client/`,
+`server/`, `protocol/`, and `control/`; `error()` rejects tags that use them.
 
 `retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an
 empty object codec — a domain error is a tag and an HTTP status until it needs
@@ -699,8 +702,6 @@ properties made that design stick:
    that only caught opted-in throws would be useless.
 3. **Unclaimed errors fail loudly** rather than vanish.
 
-Nobody calls an error boundary "action at a distance." It is the contract.
-
 A shell is the same contract, transplanted from thrown render errors to
 failure *values*. A shell is a provider that claims a set of error tags. Any
 operation rendered beneath it — no matter which hook issued it — that fails
@@ -814,9 +815,9 @@ component state, the shell's guarantee — and every narrowed union derived from
 it — would be a lie. Ownership is positional or it is nothing.
 
 To genuinely own a claimed tag yourself, render outside the shell that owns
-it. That is not an escape hatch; it is the design. The login page lives
-outside `AuthShell` and handles `auth/session-expired` as an ordinary failure,
-because there is no session to guarantee there.
+it. The login page lives outside `AuthShell` and handles
+`auth/session-expired` as an ordinary failure, because there is no session to
+guarantee there.
 
 ### The chain is a value, not an inference
 
@@ -845,12 +846,26 @@ With `effect: "pause"` (the default):
   cached success exists it keeps rendering as `state: "success"`, stale, so a
   session blip does not blank the screen. If not, `state: "pending"`.
 - **Mutation** — state returns to `"idle"` and the pending `mutate` promise
-  rejects with the *same control sentinel as `mutation.cancel()`*. This is
-  cancellation semantics on purpose: the caller's continuation was written
-  against the narrowed union, so an outcome owned above it must not run it —
-  for the same reason an aborted request doesn't run your `.then`. A call
-  site that awaits `mutate` handles it exactly like cancellation, which it
-  already had to handle.
+  rejects with a **`claimed` control signal**: the caller's continuation was
+  written against the narrowed union, so an outcome owned above it must not
+  run it. The signal is the same *family* as cancellation — control flow,
+  never part of a recoverable union — but deliberately distinguishable,
+  because "you cancelled" and "a shell owns this outcome" are different
+  events. `isClaimed(reason)` identifies it and carries the claimed tag and
+  the owning shell's name (never the error value), so a form can render "you
+  were signed out" instead of silently resetting:
+
+  ```ts
+  import { isCancelled, isClaimed } from "result-rpc/client"
+
+  try {
+    await rename.mutate({ id, title })
+  } catch (reason) {
+    if (isClaimed(reason)) reason.data // { tag: "auth/session-expired", owner: "auth" }
+    else if (isCancelled(reason)) {}   // user cancelled; nothing happened for sure
+    else throw reason
+  }
+  ```
 - **Subscription** — `connection` becomes `"paused"` and `result` stays
   `undefined`.
 
@@ -980,11 +995,16 @@ export const AuthShell = layerShell(AuthLayer, {
 })
 ```
 
-`AuthShell.Provider` loads the value through the context procedure — rendering
-`fallback` until it resolves — provides it to the subtree, and claims the
-layer union. The load itself runs under the enclosing shells, so an offline
-blip during establishment pauses under the app shell like any other operation;
-only the layer's own errors reach `onError`.
+This **replaces** the hand-declared `AuthShell` from the shells section — same
+name, same claims, drop-in for every `AuthShell.useQuery` call site — and adds
+what the hand-rolled one couldn't have: `AuthShell.Provider` loads the value
+through the context procedure (rendering `fallback` until it resolves),
+provides it to the subtree, and auto-resumes held work when the value is
+re-established. `defineShell` remains the tool for shells that aren't backed
+by a context procedure — transport banners, defect boundaries. The load
+itself runs under the enclosing shells, so an offline blip during
+establishment pauses under the app shell like any other operation; only the
+layer's own errors reach `onError`.
 
 The middleware, the endpoint, and the shell all close over the same `provides`
 codec and the same error map. There is nothing left to keep in sync.
@@ -1114,14 +1134,14 @@ function RenameDoc({ id }: { id: string }) {
 
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
 `onFailure` or the returned state, and the `mutate` promise rejects with the
-control sentinel — cancellation semantics, as described under
+distinguishable `claimed` signal, as described under
 [What a claimed error does](#what-a-claimed-error-does-to-the-operation).
 
 Optimistic rollback runs before observers receive the final failure state.
 Cancellation is explicit because cancelling a request cannot guarantee that a
 server-side mutation did not happen: call `rename.cancel()`. Cancellation
 resets lifecycle state and rejects the pending `mutate` promise with the
-library control sentinel; it never appears as an operation `Err`.
+`cancelled` control sentinel; it never appears as an operation `Err`.
 
 ## Subscriptions keep lifecycle separate from failure
 
@@ -1305,11 +1325,12 @@ const pending = client.doc.byId(
 controller.abort()
 ```
 
-Internally result-rpc uses one tagged `control/cancelled` sentinel so
+Internally result-rpc uses a tagged `control/cancelled` sentinel so
 cancellation does not depend on platform-specific `AbortError` identity. It is
-control flow and is excluded from the recoverable error union. The same
-sentinel is what a shell-claimed mutation rejects with — one concept, one
-handler at the call site.
+control flow and is excluded from the recoverable error union. Its sibling,
+`control/claimed`, is what a shell-claimed mutation rejects with — the same
+family, one `catch` at the call site, and `isCancelled`/`isClaimed` to tell
+the two events apart when the UX differs.
 
 ## Server-side calls keep wire parity
 
@@ -1455,6 +1476,80 @@ tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
 The query engine uses `@tanstack/query-core` privately. That is an engine
 choice, not part of the public API. Applications do not install or compose
 better-result, tRPC, or React Query around result-rpc.
+
+## Migrating from tRPC
+
+Migration is per-router, not big-bang. result-rpc is a separate endpoint with
+a separate client — it shares nothing with tRPC at runtime, so both stacks run
+side by side for as long as the migration takes:
+
+```ts
+// server: two handlers, two routes
+app.all("/api/trpc/*", trpcHandler)     // existing routers stay
+app.post("/rpc", resultRpcHandler)      // migrated routers move here
+
+// client: two clients during the transition
+export const trpc = createTRPCReact<LegacyRouter>()
+export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) })
+```
+
+The recommended first slice is **the auth layer plus one feature router** —
+small enough to finish in days, and it exercises the part tRPC cannot express
+(a shell owning session expiry) so the migration proves its value immediately
+instead of at the end.
+
+The concept mapping is mechanical:
+
+| tRPC | result-rpc |
+| --- | --- |
+| `initTRPC.context<Ctx>().create()` | `rpc.context<Ctx>()` |
+| `t.procedure.input(z...).query(fn)` | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `throw new TRPCError({ code })` | `return err(errors.SomeError({...}))` |
+| `t.middleware` + `ctx` spread | `app.middleware<Added>().errors({...}).use(...)` |
+| `protectedProcedure` | `app.procedure().use(authenticated)` — same pattern |
+| `httpBatchLink` | `batchFetchTransport` |
+| `@trpc/react-query` hooks | `useResultQuery` / shell hooks |
+| `errorFormatter` | gone — error data is a wire codec, not a formatted shape |
+| adapter `onError` | `onError` + `onInternalError` on `createFetchHandler` |
+| `createCaller` | `createServerClient` (parity mode) |
+| `queryClient.setDefaultOptions({ onError })` | a shell |
+
+Two things have no tRPC equivalent and are the actual work: every procedure
+declares its error union (this is where the two-failure-channel debt gets paid
+down, one procedure at a time), and interceptor logic moves into shells. There
+is no codemod; each procedure is a five-minute mechanical rewrite.
+
+During coexistence the two stacks keep **separate caches** — a result-rpc
+mutation does not invalidate tRPC queries or vice versa. Migrate whole
+features, not halves of one screen, and the seam stays invisible.
+
+## Sharp edges
+
+Named here so they are not discovered at 2am:
+
+- **Reference identity under hot reload.** Services, middleware dedup, and the
+  error-tag registry all key on module-constant reference identity. HMR that
+  re-evaluates a definition module creates new identities; the router build
+  will reject a tag re-registered with a different definition rather than
+  silently duplicating it, but the reliable dev-mode rule is: keep
+  definitions in leaf modules and let edits to them trigger a full reload.
+  Two copies of result-rpc in one bundle (monorepo resolution mistakes) break
+  identity the same way they break React context — dedupe the package.
+- **No React Query devtools.** The cache engine is `@tanstack/query-core`
+  used privately, so the React Query devtools, persisters, and ESLint plugin
+  do not apply. The current inspection surface is the client `onEvent` stream
+  (every call, failure, retry, and claim, with its owning shell); a dedicated
+  devtools panel — including "which shell claimed this error and why" — is
+  planned but not shipped.
+- **Control-flow rejections.** `await mutate(...)` can reject with
+  `cancelled` or `claimed`. Call sites that await mutations need the same
+  `try/catch` discipline they need for aborts; fire-and-forget call sites
+  (`void mutate(...)`) should `.catch(() => {})` the control signals.
+- **The contract is a value.** Unlike tRPC's type-only client, the browser
+  bundle carries the contract's codecs and the devalue serializer. That is
+  the price of rich values and client-side validation; it is a real number of
+  kilobytes, and worth measuring in your bundle before committing.
+- **Two caches during a tRPC coexistence period** — see the migration section.
 
 ## Examples
 

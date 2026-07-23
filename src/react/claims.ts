@@ -74,8 +74,16 @@ export const useAmbientClaim = (
 /** Reads the mounted scope for imperative checks (mutation promises). */
 export const useClaimScope = (): readonly ClaimEntry[] => useContext(ClaimScopeContext);
 
-export const scopeClaims = (entries: readonly ClaimEntry[], tag: string): boolean =>
-  entries.some((entry) => entry.tags.has(tag));
+/** Innermost mounted owner of a tag, if any (scope is outermost-first). */
+export const claimOwner = (
+  entries: readonly ClaimEntry[],
+  tag: string,
+): ClaimEntry | undefined => {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]!.tags.has(tag)) return entries[index];
+  }
+  return undefined;
+};
 
 /**
  * The non-terminal projection of a claimed query failure: stale success keeps

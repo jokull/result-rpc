@@ -19,6 +19,27 @@ export const isCancelled = (value: unknown): value is typeof cancelled =>
   && "_tag" in value
   && value._tag === "control/cancelled";
 
+/**
+ * The control sentinel a shell-claimed mutation rejects with. Same family as
+ * `cancelled` — control flow, never part of a recoverable union — but
+ * distinguishable, because "you cancelled" and "an enclosing shell owns this
+ * outcome" are different events. Carries the claimed tag and the owning
+ * shell's name for diagnostics; never the error value itself.
+ */
+export const claimed = (info: { readonly tag: string; readonly owner: string }) =>
+  Object.freeze({
+    _tag: "control/claimed" as const,
+    data: Object.freeze({ tag: info.tag, owner: info.owner }),
+  });
+
+export type ClaimedSignal = ReturnType<typeof claimed>;
+
+export const isClaimed = (value: unknown): value is ClaimedSignal =>
+  value !== null
+  && typeof value === "object"
+  && "_tag" in value
+  && value._tag === "control/claimed";
+
 export interface TransportResponse {
   readonly status: number;
   readonly contentType: string | null;

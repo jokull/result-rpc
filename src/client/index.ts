@@ -13,10 +13,13 @@ export type {
 
 export {
   cancelled,
+  claimed,
   batchFetchTransport,
   fetchTransport,
   isCancelled,
+  isClaimed,
 } from "./transport.js";
+export type { ClaimedSignal } from "./transport.js";
 export type {
   ClientTransport,
   BatchFetchTransportOptions,

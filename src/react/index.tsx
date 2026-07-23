@@ -11,15 +11,15 @@ import {
 } from "react";
 import type { AnyTaggedError } from "../error.js";
 import type { Result } from "../result.js";
-import { cancelled } from "../client/transport.js";
+import { claimed } from "../client/transport.js";
 import {
   getClientEventListener,
   getClientIdentity,
   getProcedureClientMetadata,
 } from "../client/client.js";
 import {
+  claimOwner,
   pauseQueryProjection,
-  scopeClaims,
   useAmbientClaim,
   useClaimScope,
   type AmbientClaim,
@@ -292,9 +292,12 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
   const [mutate] = useState(() => async (input: ProcedureClientInput<TProcedureClient>) => {
     const result = await stateRef.current.mutate(input);
     // The caller's continuation must not run on an outcome an enclosing shell
-    // owns; reject with the control sentinel, exactly like cancellation.
-    if (!result.ok && scopeClaims(scopeRef.current, (result.error as AnyTaggedError)._tag)) {
-      throw cancelled;
+    // owns. Cancellation semantics, but a distinguishable signal: "you
+    // cancelled" and "a shell owns this outcome" are different events.
+    if (!result.ok) {
+      const tag = (result.error as AnyTaggedError)._tag;
+      const owner = claimOwner(scopeRef.current, tag);
+      if (owner) throw claimed({ tag, owner: owner.name });
     }
     return result;
   });
