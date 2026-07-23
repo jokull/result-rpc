@@ -8,7 +8,7 @@
  */
 import { createElement, type ReactNode } from "react";
 import { Outlet, RouterProvider, type AnyRouter } from "@tanstack/react-router";
-import type { QueryRuntime } from "../../src/query/index.js";
+import type { QueryRuntime } from "../../src/react/index.js";
 import {
   createQueryRuntime,
   getLayerProcedureResolver,

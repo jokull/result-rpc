@@ -122,18 +122,15 @@ Target package:
 npm install result-rpc
 ```
 
-The library ships as one versioned package with focused exports:
+The library ships as one versioned package with focused exports — the root is
+everything isomorphic (the contract language), and each runtime has one entry:
 
 ```ts
-import { error, errorCatalog, err, ok, wire, defineLayer, defineService } from "result-rpc"
-import { rpc, type RouterInputs, type RouterOutputs } from "result-rpc/contract"
-import { createFetchHandler, resolveServices } from "result-rpc/server"
+import { rpc, error, errorCatalog, err, ok, wire, defineLayer, defineService, resolveServices, type RouterInputs, type RouterOutputs } from "result-rpc"
+import { createFetchHandler } from "result-rpc/server"
 import { batchFetchTransport, createClient } from "result-rpc/client"
 import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react"
 ```
-
-`result-rpc/query` remains available when the runtime is needed directly (SSR
-prefetch, framework-neutral integrations); React apps rarely import it.
 
 ## Define errors once
 
@@ -212,8 +209,7 @@ actual encoder and decoder.
 ## Define the shared contract
 
 ```ts
-import { wire, type InputOf } from "result-rpc"
-import { rpc } from "result-rpc/contract"
+import { rpc, wire, type InputOf } from "result-rpc"
 import { TripNotFound, Unauthorized } from "./errors"
 
 interface AppContext {
@@ -414,7 +410,7 @@ error, so requirements are checked, not hoped for.
 
 The layer factory uses the same mechanism: `ViewerLayer.middleware(app, session)`
 bundles the parent, so `.use(requireViewer)` and
-`ViewerLayer.implement(app, contract, requireViewer)` are each one call.
+`ViewerLayer.procedure(app, contract, requireViewer)` are each one call.
 
 ## Create the router and server
 
@@ -945,7 +941,7 @@ const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
 export const whoamiContract = AuthLayer.contract(app)
 // query: {} -> User, errors = the layer union — safe in the shared contract
 
-export const whoami = AuthLayer.implement(app, whoamiContract, authenticated)
+export const whoami = AuthLayer.procedure(app, whoamiContract, authenticated)
 // handler is derived: it returns context.user, so the procedure cannot
 // disagree with the middleware about the value or the union
 ```
@@ -1326,7 +1322,8 @@ await runtime.prefetch(serverClient.trip.byId, { id })
 
 const dehydrated = runtime.dehydrate()
 
-return <ResultRpcHydration state={dehydrated}>{children}</ResultRpcHydration>
+// Browser
+return <ResultRpcProvider client={client} hydrate={dehydrated}>{children}</ResultRpcProvider>
 ```
 
 The cache format is versioned and each hydrated success is validated against its

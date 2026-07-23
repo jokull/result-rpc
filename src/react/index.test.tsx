@@ -5,7 +5,8 @@ import { ok, wire } from "../index.js";
 import { createClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime, type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
-import { createFetchHandler, rpc } from "../server/index.js";
+import { createFetchHandler } from "../server/index.js";
+import { rpc } from "../server/contract.js";
 import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import {
   ResultRpcProvider,

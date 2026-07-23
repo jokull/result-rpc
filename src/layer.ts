@@ -72,23 +72,20 @@ export interface Layer<
   ): ProcedureContract<TContext, {}, TValue, TDefinitions, "query">;
 
   /**
-   * Implements the context procedure from the layer middleware. The handler is
-   * derived — it returns the value the middleware placed in context — so the
-   * procedure cannot disagree with the middleware about either the value or the
-   * union.
-   */
-  implement<TContext>(
-    app: RpcFactory<TContext>,
-    contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
-    ...middlewares: readonly AnyMiddlewareLike[]
-  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
-
-  /**
-   * Contract + implementation in one step for code-first routers: the context
-   * procedure derived from the middleware chain.
+   * The context procedure, implemented from the layer's middleware chain. The
+   * handler is derived — it returns the value the middleware placed in
+   * context — so the procedure cannot disagree with the middleware about
+   * either the value or the union. Code-first routers pass just the chain;
+   * contract-first routers pass the shared contract (from `layer.contract`)
+   * ahead of it.
    */
   procedure<TContext>(
     app: RpcFactory<TContext>,
+    ...middlewares: readonly AnyMiddlewareLike[]
+  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
+  procedure<TContext>(
+    app: RpcFactory<TContext>,
+    contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
     ...middlewares: readonly AnyMiddlewareLike[]
   ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
 
@@ -162,16 +159,18 @@ export interface RequiredLayer<
     app: RpcFactory<TContext>,
   ): ProcedureContract<TContext, {}, TValue, TDefinitions, "query">;
 
-  /** Pass the full middleware chain: parent middleware first, then this one. */
-  implement<TContext>(
-    app: RpcFactory<TContext>,
-    contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
-    ...middlewares: readonly AnyMiddlewareLike[]
-  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
-
-  /** Contract + implementation in one step for code-first routers. */
+  /**
+   * The context procedure. Pass the full middleware chain — parent middleware
+   * first, then this one — with the shared contract ahead of it when
+   * contract-first.
+   */
   procedure<TContext>(
     app: RpcFactory<TContext>,
+    ...middlewares: readonly AnyMiddlewareLike[]
+  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
+  procedure<TContext>(
+    app: RpcFactory<TContext>,
+    contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
     ...middlewares: readonly AnyMiddlewareLike[]
   ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
 }
@@ -259,16 +258,24 @@ export const defineLayer = <
         .errors(options.errors)
         .query() as ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
 
-    implement: <TContext>(
-      app: RpcFactory<TContext>,
-      contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
-      ...middlewares: readonly AnyMiddlewareLike[]
-    ) => implementContextProcedure(app, contract, options.key, middlewares),
-
     procedure: <TContext>(
       app: RpcFactory<TContext>,
-      ...middlewares: readonly AnyMiddlewareLike[]
-    ) => implementContextProcedure(app, layer.contract(app), options.key, middlewares),
+      ...chain: readonly (
+        | ProcedureContract<TContext, {}, TValue, TDefinitions, "query">
+        | AnyMiddlewareLike
+      )[]
+    ) => {
+      const [contract, middlewares] = splitContract(chain) as [
+        ProcedureContract<TContext, {}, TValue, TDefinitions, "query"> | undefined,
+        readonly AnyMiddlewareLike[],
+      ];
+      return implementContextProcedure(
+        app,
+        contract ?? layer.contract(app),
+        options.key,
+        middlewares,
+      );
+    },
 
     require: (refineOptions) => {
       if (Object.keys(refineOptions.errors).length === 0) {
@@ -312,20 +319,25 @@ export const defineLayer = <
             .errors(refineOptions.errors)
             .query(),
 
-        implement: <TContext>(
-          app: RpcFactory<TContext>,
-          contract: ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query">,
-          ...middlewares: readonly AnyMiddlewareLike[]
-        ) => implementContextProcedure(app, contract, options.key, middlewares),
         procedure: <TContext>(
           app: RpcFactory<TContext>,
-          ...middlewares: readonly AnyMiddlewareLike[]
-        ) => implementContextProcedure(
-          app,
-          refined.contract(app) as unknown as ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query">,
-          options.key,
-          middlewares,
-        ),
+          ...chain: readonly (
+            | ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query">
+            | AnyMiddlewareLike
+          )[]
+        ) => {
+          const [contract, middlewares] = splitContract(chain) as [
+            ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query"> | undefined,
+            readonly AnyMiddlewareLike[],
+          ];
+          return implementContextProcedure(
+            app,
+            contract
+              ?? (refined.contract(app) as unknown as ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query">),
+            options.key,
+            middlewares,
+          );
+        },
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return Object.freeze(refined) as any;
@@ -333,6 +345,18 @@ export const defineLayer = <
   };
 
   return Object.freeze(layer);
+};
+
+/** A leading contract in a `layer.procedure(...)` chain is optional; sniff it off. */
+const splitContract = (
+  chain: readonly unknown[],
+): [unknown | undefined, readonly AnyMiddlewareLike[]] => {
+  const [head, ...rest] = chain;
+  return head !== null
+    && typeof head === "object"
+    && (head as { readonly _kind?: unknown })._kind === "procedure-contract"
+    ? [head, rest as readonly AnyMiddlewareLike[]]
+    : [undefined, chain as readonly AnyMiddlewareLike[]];
 };
 
 const implementContextProcedure = <

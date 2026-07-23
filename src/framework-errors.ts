@@ -121,22 +121,23 @@ export const frameworkErrorDefinitions = {
   ClientDecodeFailure,
 } as const;
 
+// Each framework error exports its value and its error type under one name.
 export type ServerBadRequest = ReturnType<typeof ServerBadRequest>;
 export type ServerInternal = ReturnType<typeof ServerInternal>;
-export type Offline = ReturnType<typeof ClientOffline>;
-export type NetworkFailure = ReturnType<typeof ClientNetworkFailure>;
-export type Timeout = ReturnType<typeof ClientTimeout>;
-export type HttpFailure = ReturnType<typeof ClientHttpFailure>;
-export type ProtocolViolation = ReturnType<typeof ClientProtocolViolation>;
-export type DecodeFailure = ReturnType<typeof ClientDecodeFailure>;
+export type ClientOffline = ReturnType<typeof ClientOffline>;
+export type ClientNetworkFailure = ReturnType<typeof ClientNetworkFailure>;
+export type ClientTimeout = ReturnType<typeof ClientTimeout>;
+export type ClientHttpFailure = ReturnType<typeof ClientHttpFailure>;
+export type ClientProtocolViolation = ReturnType<typeof ClientProtocolViolation>;
+export type ClientDecodeFailure = ReturnType<typeof ClientDecodeFailure>;
 
 export type ClientBoundaryError =
-  | Offline
-  | NetworkFailure
-  | Timeout
-  | HttpFailure
-  | ProtocolViolation
-  | DecodeFailure;
+  | ClientOffline
+  | ClientNetworkFailure
+  | ClientTimeout
+  | ClientHttpFailure
+  | ClientProtocolViolation
+  | ClientDecodeFailure;
 
 /** Maps codec issues into `server/bad-request` data: paths and messages only, never values. */
 export const badRequestFromIssues = (cause: unknown): ServerBadRequest => {

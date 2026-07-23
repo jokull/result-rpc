@@ -2,9 +2,8 @@
  * Rung 3, server: services supply the process graph, layers supply the request
  * chain, and handlers read like the business rules they implement.
  */
-import { err, ok, wire } from "../../src/index.js";
-import { defineService, resolveServices, createFetchHandler } from "../../src/server/index.js";
-import { rpc } from "../../src/contract/index.js";
+import { defineService, err, ok, resolveServices, rpc, wire } from "../../src/index.js";
+import { createFetchHandler } from "../../src/server/index.js";
 import {
   SessionLayer,
   TripCodec,

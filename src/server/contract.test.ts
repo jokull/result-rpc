@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { deserialize, err, error, ok, serialize, wire } from "../index.js";
-import { createFetchHandler, executeProcedure, rpc } from "./index.js";
+import { createFetchHandler } from "./index.js";
+import { executeProcedure, rpc } from "./contract.js";
 import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
 
 interface TestContext {

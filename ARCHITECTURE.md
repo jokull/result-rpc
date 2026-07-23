@@ -100,11 +100,8 @@ import {
   matchError,
   error,
   wire,
-} from "result-rpc"
-
-import {
   rpc,
-} from "result-rpc/contract"
+} from "result-rpc"
 
 import {
   createFetchHandler,
@@ -119,11 +116,7 @@ import {
 
 import {
   createQueryRuntime,
-} from "result-rpc/query"
-
-import {
   ResultRpcProvider,
-  ResultRpcHydration,
   useResultQuery,
   useResultSuspenseQuery,
   useResultMutation,
@@ -134,6 +127,10 @@ import {
   createTestClient,
 } from "result-rpc/testing"
 ```
+
+The root entry is the contract language — everything safe on both sides of the
+wire (results, codecs, errors, layers, services, `rpc` builders). Each runtime
+then has exactly one entry: `/server`, `/client`, `/react`, `/testing`.
 
 Subpath exports are organizational boundaries, not independently versioned
 packages. Contracts, server, client, and UI cannot drift onto incompatible protocol
@@ -820,9 +817,10 @@ derivations close over that one declaration:
 
 - `layer.middleware(app, resolve)` — server middleware adding the value to
   context under the key and contributing the union;
-- `layer.contract(app)` / `layer.implement(app, contract, ...middlewares)` — the
-  context procedure (`{} -> value` with the layer union) whose handler is
-  derived: it returns the value the middleware placed in context;
+- `layer.procedure(app, ...middlewares)` — the context procedure (`{} -> value`
+  with the layer union) whose handler is derived: it returns the value the
+  middleware placed in context. Contract-first routers pass the shared
+  `layer.contract(app)` ahead of the chain;
 - `layerShell(layer, { from, procedure, onError })` — the React sibling: its
   Provider loads the value through the context procedure under the enclosing
   shells, provides it, and claims the layer union.

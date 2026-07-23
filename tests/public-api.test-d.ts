@@ -1,7 +1,7 @@
 import {
   type InputOf,
   type ClientBoundaryError,
-  type ServerBadRequestError,
+  type ServerBadRequest,
   type Result,
   ServerInternal,
   err,
@@ -12,8 +12,8 @@ import {
   matchError,
 } from "../src/index.js";
 import { createClient } from "../src/client/index.js";
-import { createQueryRuntime, type QueryState } from "../src/query/index.js";
-import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/contract/index.js";
+import { createQueryRuntime, type QueryState } from "../src/react/index.js";
+import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
 import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, transportErrors } from "../src/index.js";
 import { defineShell, layerShell, type HandledBy, type ValueOf } from "../src/react/index.js";
 
@@ -135,7 +135,7 @@ type CallError = CallResult extends Result<unknown, infer E> ? E : never;
 type ExpectedError =
   | ReturnType<typeof Missing>
   | ReturnType<typeof ServerInternal>
-  | ServerBadRequestError
+  | ServerBadRequest
   | ClientBoundaryError;
 
 export type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;
@@ -372,7 +372,7 @@ const needsViewer = r
 void needsViewer
 
 // A middleware whose input demands context the procedure cannot supply is rejected.
-declare const demandsViewer: import("../src/contract/index.js").Middleware<
+declare const demandsViewer: import("../src/index.js").Middleware<
   { viewer: Viewer },
   { viewer: Viewer; ok: true },
   {}

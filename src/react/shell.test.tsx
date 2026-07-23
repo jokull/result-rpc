@@ -5,7 +5,8 @@ import { defectErrors, err, error, ok, transportErrors, wire } from "../index.js
 import { createClient, type ClientEvent } from "../client/client.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
-import { createFetchHandler, rpc } from "../server/index.js";
+import { createFetchHandler } from "../server/index.js";
+import { rpc } from "../server/contract.js";
 import { ResultRpcProvider, defineShell, useResultQuery } from "./index.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })

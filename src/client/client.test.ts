@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, serialize, wire } from "../index.js";
-import { createFetchHandler, rpc } from "../server/index.js";
+import { createFetchHandler } from "../server/index.js";
+import { rpc } from "../server/contract.js";
 import { createClient, type ClientEvent } from "./client.js";
 import {
   batchFetchTransport,

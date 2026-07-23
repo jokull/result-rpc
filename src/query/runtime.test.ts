@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
 import { createClient } from "../client/client.js";
 import { cancelled, fetchTransport, type ClientTransport } from "../client/transport.js";
-import { createFetchHandler, rpc } from "../server/index.js";
+import { createFetchHandler } from "../server/index.js";
+import { rpc } from "../server/contract.js";
 import type { AnyTaggedError } from "../error.js";
 import { createQueryRuntime, type QueryState, type ResultQueryObserver } from "./runtime.js";
 

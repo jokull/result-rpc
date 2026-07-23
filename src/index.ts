@@ -43,6 +43,35 @@ export type {
 export { defineLayer } from "./layer.js";
 export type { AnyLayer, DefineLayerOptions, Layer, LayerErrors, LayerShape, LayerValue, RequiredLayer } from "./layer.js";
 
+export { rpc } from "./server/contract.js";
+export type {
+  AnyProcedure,
+  AnyProcedureContract,
+  AnySubscriptionProcedure,
+  AnyUnaryProcedure,
+  ContractRouterRecord,
+  ErrorDefinitionMap,
+  ErrorUnion,
+  Middleware,
+  MiddlewareHandler,
+  Procedure,
+  ProcedureContract,
+  ProcedureContractManifest,
+  ProcedureError,
+  ProcedureInput,
+  ProcedureOutput,
+  Router,
+  RouterContract,
+  RouterContext,
+  RouterErrors,
+  RouterInputs,
+  RouterOutputs,
+  RouterRecord,
+  RpcFactory,
+  SubscriptionProcedure,
+  SubscriptionProcedureManifest,
+} from "./server/contract.js";
+
 export { wire } from "./wire.js";
 export type {
   CodecIssue,
@@ -55,17 +84,10 @@ export type {
   WireValue,
 } from "./wire.js";
 
-export {
-  deserialize,
-  DEFAULT_MAX_ERROR_BYTES,
-  DEFAULT_MAX_WIRE_BYTES,
-  isSerializable,
-  SERIALIZER_NAME,
-  SERIALIZER_VERSION,
-  serialize,
-} from "./serializer.js";
+export { deserialize, DEFAULT_MAX_WIRE_BYTES, serialize } from "./serializer.js";
 export type { SerializationOptions, SerializationResult } from "./serializer.js";
 
+// Each framework error is both the definition (value) and its error type.
 export {
   ClientDecodeFailure,
   ClientHttpFailure,
@@ -78,14 +100,4 @@ export {
   ServerInternal,
   transportErrors,
 } from "./framework-errors.js";
-export type {
-  ClientBoundaryError,
-  DecodeFailure,
-  HttpFailure,
-  NetworkFailure,
-  Offline,
-  ProtocolViolation,
-  ServerBadRequest as ServerBadRequestError,
-  ServerInternal as ServerInternalError,
-  Timeout,
-} from "./framework-errors.js";
+export type { ClientBoundaryError } from "./framework-errors.js";

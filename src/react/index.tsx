@@ -56,6 +56,19 @@ export type SubscriptionProcedureClientLike = ((
 
 import { createQueryRuntime } from "../query/runtime.js";
 export { createQueryRuntime };
+export type {
+  CreateQueryRuntimeOptions,
+  DehydratedQueryRuntime,
+  FetchState,
+  MutationOptions,
+  MutationState,
+  QueryOptions,
+  QueryRuntime,
+  QueryState,
+  SubscriptionConnection,
+  SubscriptionOptions,
+  SubscriptionState,
+} from "../query/runtime.js";
 export { defineShell, getLayerProcedureResolver, layerShell } from "./shell.js";
 
 /** Zero-input procedures may omit the input argument entirely. */
@@ -85,9 +98,14 @@ export type {
 
 const RuntimeContext = createContext<QueryRuntime | undefined>(undefined);
 
-export type ResultRpcProviderProps =
-  | { readonly runtime: QueryRuntime; readonly client?: undefined; readonly children?: ReactNode }
-  | { readonly client: object; readonly runtime?: undefined; readonly children?: ReactNode };
+export type ResultRpcProviderProps = (
+  | { readonly runtime: QueryRuntime; readonly client?: undefined }
+  | { readonly client: object; readonly runtime?: undefined }
+) & {
+  /** SSR-dehydrated cache state, applied once per distinct value. */
+  readonly hydrate?: DehydratedQueryRuntime;
+  readonly children?: ReactNode;
+};
 
 /**
  * Provides the query runtime. Pass `client` to let the provider own a runtime
@@ -97,7 +115,13 @@ export type ResultRpcProviderProps =
 export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
   const [owned] = useState(() =>
     props.runtime ?? createQueryRuntime({ client: props.client }));
-  return createElement(RuntimeContext.Provider, { value: props.runtime ?? owned }, props.children);
+  const runtime = props.runtime ?? owned;
+  const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
+  if (props.hydrate !== undefined && hydrated.current !== props.hydrate) {
+    runtime.hydrate(props.hydrate);
+    hydrated.current = props.hydrate;
+  }
+  return createElement(RuntimeContext.Provider, { value: runtime }, props.children);
 };
 
 const useRuntime = (): QueryRuntime => {
@@ -133,21 +157,6 @@ const useClaimNotifier = (procedure: Function) => {
       effect: entry.effect,
     });
   }, [listener, path]);
-};
-
-export interface ResultRpcHydrationProps {
-  readonly state: DehydratedQueryRuntime;
-  readonly children?: ReactNode;
-}
-
-export const ResultRpcHydration = ({ state, children }: ResultRpcHydrationProps) => {
-  const runtime = useRuntime();
-  const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
-  if (hydrated.current !== state) {
-    runtime.hydrate(state);
-    hydrated.current = state;
-  }
-  return children;
 };
 
 const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLike>(

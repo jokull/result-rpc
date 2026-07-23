@@ -29,7 +29,7 @@ import {
   ResultRpcProvider,
   useResultClient,
 } from "../../src/react/index.js";
-import type { QueryRuntime } from "../../src/query/index.js";
+import type { QueryRuntime } from "../../src/react/index.js";
 import { SessionLayer, TripLocked, TripNotFound, ViewerLayer } from "../03-trips/domain.js";
 import type { TripClient } from "../03-trips/ui.js";
 

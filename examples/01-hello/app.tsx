@@ -4,8 +4,8 @@
  * One query, one domain error, no shells. The point of this example is to feel
  * how many concepts stand between "npm install" and a rendered result.
  */
-import { err, error, ok, wire } from "../../src/index.js";
-import { createFetchHandler, rpc } from "../../src/server/index.js";
+import { err, error, ok, rpc, wire } from "../../src/index.js";
+import { createFetchHandler } from "../../src/server/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
 import { ResultRpcProvider, useResultQuery } from "../../src/react/index.js";
 

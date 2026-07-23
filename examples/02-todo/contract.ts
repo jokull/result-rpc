@@ -1,8 +1,7 @@
 /**
  * Rung 2, shared contract: a todo list with domain errors worth branching on.
  */
-import { defineErrors, pickErrors, wire, type InputOf } from "../../src/index.js";
-import { rpc } from "../../src/contract/index.js";
+import { defineErrors, pickErrors, rpc, wire, type InputOf } from "../../src/index.js";
 
 /** One declaration per namespace; keys become tags (`todo/not-found`, ...). */
 export const todoErrors = defineErrors("todo", {

@@ -12,7 +12,8 @@ import {
 import { createClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
-import { createFetchHandler, rpc } from "../server/index.js";
+import { createFetchHandler } from "../server/index.js";
+import { rpc } from "../server/contract.js";
 import { ResultRpcProvider, defineShell, layerShell } from "./index.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -58,7 +59,7 @@ const authenticated = AuthLayer.middleware(app, async ({ context, errors }) =>
 const whoamiContract = AuthLayer.contract(app);
 
 // server: its implementation is the middleware's context value, nothing else
-const whoami = AuthLayer.implement(app, whoamiContract, authenticated);
+const whoami = AuthLayer.procedure(app, whoamiContract, authenticated);
 
 const tripById = app.procedure()
   .input(wire.object({ id: wire.string }))
@@ -262,8 +263,8 @@ describe("layer factory", () => {
     const sessionContract = SessionLayer.contract(cookieApp);
     const viewerContract = ViewerLayer.contract(cookieApp);
     const cookieRouter = cookieApp.router({
-      session: SessionLayer.implement(cookieApp, sessionContract, session),
-      viewer: ViewerLayer.implement(cookieApp, viewerContract, session, requireViewer),
+      session: SessionLayer.procedure(cookieApp, sessionContract, session),
+      viewer: ViewerLayer.procedure(cookieApp, viewerContract, session, requireViewer),
       greet: cookieApp.procedure()
         .input(wire.object({}))
         .output(wire.string)

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
-import { createServerClient, rpc } from "./index.js";
+import { createServerClient } from "./index.js";
+import { rpc } from "./contract.js";
 
 const Missing = error({
   tag: "parity/missing",

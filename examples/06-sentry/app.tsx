@@ -11,8 +11,8 @@
  * `server/internal` value the client received: one failure, correlated across
  * the wire without any request-id plumbing.
  */
-import { defectErrors, defineErrors, err, errorCatalog, ok, pickErrors, transportErrors, wire } from "../../src/index.js";
-import { createFetchHandler, rpc } from "../../src/server/index.js";
+import { defectErrors, defineErrors, err, errorCatalog, ok, pickErrors, rpc, transportErrors, wire } from "../../src/index.js";
+import { createFetchHandler } from "../../src/server/index.js";
 import { createClient, fetchTransport, type ClientEvent } from "../../src/client/index.js";
 import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
 import type { SentryLike } from "./sentry.js";
