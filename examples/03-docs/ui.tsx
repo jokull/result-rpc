@@ -5,43 +5,43 @@
  *   DefectShell   protocol/internal defects escalate → error boundary
  *   SessionShell  provides User | null (public pages render inside this)
  *   ViewerShell   narrows to User, owns the auth union → sign-in redirect
- *   TripShell     feature layer: claims trip/not-found → route-level missing page
+ *   DocShell     feature layer: claims doc/not-found → route-level missing page
  *
- * The payoff: `rename` declares Unauthorized | TripNotFound | TripLocked plus
- * six transport tags — and the form below branches on exactly one: TripLocked.
+ * The payoff: `rename` declares Unauthorized | DocNotFound | DocLocked plus
+ * six transport tags — and the form below branches on exactly one: DocLocked.
  */
 import { Component, type ReactNode } from "react";
 import { defectErrors, errorCatalog, transportErrors } from "../../src/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
 import { defineShell, layerShell, ResultRpcProvider } from "../../src/react/index.js";
-import { SessionLayer, TripLocked, TripNotFound, ViewerLayer } from "./domain.js";
-import { tripRouter } from "./server.js";
+import { SessionLayer, DocLocked, DocNotFound, ViewerLayer } from "./domain.js";
+import { docRouter } from "./server.js";
 
 // -- client -----------------------------------------------------------------------
 
-export const makeTripClient = (fetch: typeof globalThis.fetch) =>
+export const makeDocClient = (fetch: typeof globalThis.fetch) =>
   createClient({
-    router: tripRouter,
+    router: docRouter,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
   });
-export type TripClient = ReturnType<typeof makeTripClient>;
+export type DocClient = ReturnType<typeof makeDocClient>;
 
 // -- the onion ----------------------------------------------------------------------
 
 export const AppShell = defineShell({
-  name: "trips-app",
+  name: "docs-app",
   claims: transportErrors,
   effect: "pause",
 });
 
 export const DefectShell = defineShell({
-  name: "trips-defect",
+  name: "docs-defect",
   from: AppShell,
   claims: defectErrors,
   effect: "escalate",
 });
 
-export const makeShells = (client: TripClient, onSignIn: () => void) => {
+export const makeShells = (client: DocClient, onSignIn: () => void) => {
   const SessionShell = layerShell(SessionLayer, {
     from: DefectShell,
     procedure: client.auth.whoami,
@@ -51,24 +51,24 @@ export const makeShells = (client: TripClient, onSignIn: () => void) => {
     procedure: client.auth.me,
     onError: onSignIn,
   });
-  const TripShell = defineShell({
-    name: "trip-route",
+  const DocShell = defineShell({
+    name: "doc-route",
     from: ViewerShell,
-    claims: { TripNotFound },
+    claims: { DocNotFound },
     effect: "pause",
   });
-  return { SessionShell, ViewerShell, TripShell };
+  return { SessionShell, ViewerShell, DocShell };
 };
 export type Shells = ReturnType<typeof makeShells>;
 
 // -- app ------------------------------------------------------------------------------
 
-export function TripsApp({ client, shells, tripId }: {
-  client: TripClient;
+export function DocsApp({ client, shells, docId }: {
+  client: DocClient;
   shells: Shells;
-  tripId: string;
+  docId: string;
 }) {
-  const { SessionShell, ViewerShell, TripShell } = shells;
+  const { SessionShell, ViewerShell, DocShell } = shells;
   return (
     <ResultRpcProvider client={client}>
       <AppShell.Provider>
@@ -78,10 +78,10 @@ export function TripsApp({ client, shells, tripId }: {
             <SessionShell.Provider fallback={<p>starting…</p>}>
               <Greeting shells={shells} />
               <ViewerShell.Provider fallback={<p>signing in…</p>}>
-                <TripShell.Provider>
-                  <TripMissingNotice shells={shells} />
-                  <TripPage client={client} shells={shells} tripId={tripId} />
-                </TripShell.Provider>
+                <DocShell.Provider>
+                  <DocMissingNotice shells={shells} />
+                  <DocPage client={client} shells={shells} docId={docId} />
+                </DocShell.Provider>
               </ViewerShell.Provider>
             </SessionShell.Provider>
           </Boundary>
@@ -102,43 +102,43 @@ function Greeting({ shells }: { shells: Shells }) {
   return <header>{viewer ? `Welcome back, ${viewer.name}` : "Welcome, guest"}</header>;
 }
 
-/** The route-level owner of trip/not-found. */
-function TripMissingNotice({ shells }: { shells: Shells }) {
-  const { latest } = shells.TripShell.useHeld();
+/** The route-level owner of doc/not-found. */
+function DocMissingNotice({ shells }: { shells: Shells }) {
+  const { latest } = shells.DocShell.useHeld();
   if (!latest) return null;
-  return <p role="alert">Trip {latest.data.tripId} does not exist.</p>;
+  return <p role="alert">Doc {latest.data.docId} does not exist.</p>;
 }
 
 // -- the page ------------------------------------------------------------------------
 
-const renameMessages = errorCatalog({ TripLocked }, {
-  "trip/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+const renameMessages = errorCatalog({ DocLocked }, {
+  "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
 });
 
-export function TripPage({ client, shells, tripId }: {
-  client: TripClient;
+export function DocPage({ client, shells, docId }: {
+  client: DocClient;
   shells: Shells;
-  tripId: string;
+  docId: string;
 }) {
-  const { TripShell, ViewerShell } = shells;
+  const { DocShell, ViewerShell } = shells;
   const viewer = ViewerShell.use(); // User — guaranteed, not User | null
-  const trip = TripShell.useQuery(client.trip.byId, { id: tripId });
+  const doc = DocShell.useQuery(client.doc.byId, { id: docId });
 
-  const rename = TripShell.useMutation(client.trip.rename);
-  // rename failure union here: TripLocked. Everything else is owned above.
+  const rename = DocShell.useMutation(client.doc.rename);
+  // rename failure union here: DocLocked. Everything else is owned above.
 
-  if (trip.state !== "success") return <p>Loading trip…</p>;
+  if (doc.state !== "success") return <p>Loading doc…</p>;
 
   return (
     <article>
-      <h1>{trip.result.value.title}</h1>
+      <h1>{doc.result.value.title}</h1>
       <p>Planned by {viewer.name}</p>
       <form onSubmit={(event) => {
         event.preventDefault();
         const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
-        void rename.mutate({ id: tripId, title: field.value });
+        void rename.mutate({ id: docId, title: field.value });
       }}>
-        <input name="title" defaultValue={trip.result.value.title} />
+        <input name="title" defaultValue={doc.result.value.title} />
         {rename.state === "failure" && (
           <p role="alert">{renameMessages(rename.result.error)}</p>
         )}

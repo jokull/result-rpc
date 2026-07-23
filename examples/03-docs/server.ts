@@ -6,37 +6,37 @@ import { defineService, err, ok, resolveServices, rpc, wire } from "../../src/in
 import { createFetchHandler } from "../../src/server/index.js";
 import {
   SessionLayer,
-  TripCodec,
-  TripEventCodec,
-  TripLocked,
-  TripNotFound,
+  DocCodec,
+  DocEventCodec,
+  DocLocked,
+  DocNotFound,
   ViewerLayer,
-  type Trip,
+  type Doc,
   type User,
 } from "./domain.js";
 
 // -- services: the process-lifetime graph -----------------------------------------
 
-export interface TripDb {
+export interface DocDb {
   userBySession(token: string): Promise<User | undefined>;
-  trip(id: string): Promise<Trip | undefined>;
-  saveTrip(trip: Trip): Promise<void>;
+  doc(id: string): Promise<Doc | undefined>;
+  saveDoc(doc: Doc): Promise<void>;
   lockOwner(id: string): Promise<string | undefined>;
   events(id: string): readonly { kind: "renamed" | "locked"; at: Date }[];
 }
 
 export const Db = defineService("db", {
-  create: (): TripDb => {
+  create: (): DocDb => {
     const users = new Map<string, User>([["tok_1", { id: "u_1", name: "Jokull" }]]);
-    const trips = new Map<string, Trip>([
-      ["trip_1", { id: "trip_1", title: "Japan", ownerId: "u_1", startsAt: new Date("2026-10-01") }],
-      ["trip_2", { id: "trip_2", title: "Iceland", ownerId: "u_2", startsAt: new Date("2026-11-01") }],
+    const docs = new Map<string, Doc>([
+      ["doc_1", { id: "doc_1", title: "Roadmap", ownerId: "u_1", savedAt: new Date("2026-10-01") }],
+      ["doc_2", { id: "doc_2", title: "Budget", ownerId: "u_2", savedAt: new Date("2026-11-01") }],
     ]);
-    const locks = new Map<string, string>([["trip_2", "u_2"]]);
+    const locks = new Map<string, string>([["doc_2", "u_2"]]);
     return {
       userBySession: async (token) => users.get(token),
-      trip: async (id) => trips.get(id),
-      saveTrip: async (trip) => void trips.set(trip.id, trip),
+      doc: async (id) => docs.get(id),
+      saveDoc: async (doc) => void docs.set(doc.id, doc),
       lockOwner: async (id) => locks.get(id),
       events: () => [{ kind: "renamed", at: new Date("2026-01-01") }],
     };
@@ -58,7 +58,7 @@ export const Audit = defineService("audit", {
 
 interface RequestContext {
   readonly sessionToken: string | undefined;
-  readonly db: TripDb;
+  readonly db: DocDb;
   readonly audit: { log: (line: string) => void };
 }
 
@@ -79,55 +79,55 @@ const me = ViewerLayer.procedure(app, authenticated);
 /** The tRPC protectedProcedure pattern: builders are immutable, bases fork freely. */
 const protectedProcedure = app.procedure().use(authenticated);
 
-const tripById = protectedProcedure
+const docById = protectedProcedure
   .input(wire.object({ id: wire.string }))
-  .output(TripCodec)
-  .errors({ TripNotFound })
+  .output(DocCodec)
+  .errors({ DocNotFound })
   .query(async ({ input, context, errors }) => {
-    const trip = await context.db.trip(input.id);
-    if (!trip) return err(errors.TripNotFound({ tripId: input.id }));
-    return ok(trip);
+    const doc = await context.db.doc(input.id);
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }));
+    return ok(doc);
   });
 
-const renameTrip = protectedProcedure
+const renameDoc = protectedProcedure
   .input(wire.object({ id: wire.string, title: wire.string }))
-  .output(TripCodec)
-  .errors({ TripNotFound, TripLocked })
+  .output(DocCodec)
+  .errors({ DocNotFound, DocLocked })
   .mutation(async ({ input, context, errors }) => {
-    const trip = await context.db.trip(input.id);
-    if (!trip) return err(errors.TripNotFound({ tripId: input.id }));
+    const doc = await context.db.doc(input.id);
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }));
 
     const lockedBy = await context.db.lockOwner(input.id);
     if (lockedBy && lockedBy !== context.viewer.id) {
-      return err(errors.TripLocked({ lockedBy }));
+      return err(errors.DocLocked({ lockedBy }));
     }
-    if (trip.ownerId !== context.viewer.id) return err(errors.Unauthorized());
+    if (doc.ownerId !== context.viewer.id) return err(errors.Unauthorized());
 
-    const renamed = { ...trip, title: input.title };
-    await context.db.saveTrip(renamed);
-    context.audit.log(`${context.viewer.id} renamed ${trip.id}`);
+    const renamed = { ...doc, title: input.title };
+    await context.db.saveDoc(renamed);
+    context.audit.log(`${context.viewer.id} renamed ${doc.id}`);
     return ok(renamed);
   });
 
-const tripEvents = protectedProcedure
+const docEvents = protectedProcedure
   .input(wire.object({ id: wire.string }))
-  .output(TripEventCodec)
-  .errors({ TripNotFound })
+  .output(DocEventCodec)
+  .errors({ DocNotFound })
   .subscription();
 
-export const tripRouter = app.router({
+export const docRouter = app.router({
   auth: { whoami, me },
-  trip: {
-    byId: tripById,
-    rename: renameTrip,
-    events: app.implement(tripEvents).stream(async function* ({ input, context, errors }) {
-      const trip = await context.db.trip(input.id);
-      if (!trip) {
-        yield err(errors.TripNotFound({ tripId: input.id }));
+  doc: {
+    byId: docById,
+    rename: renameDoc,
+    events: app.implement(docEvents).stream(async function* ({ input, context, errors }) {
+      const doc = await context.db.doc(input.id);
+      if (!doc) {
+        yield err(errors.DocNotFound({ docId: input.id }));
         return;
       }
       for (const event of context.db.events(input.id)) {
-        yield ok({ tripId: input.id, ...event });
+        yield ok({ docId: input.id, ...event });
       }
     }),
   },
@@ -135,10 +135,10 @@ export const tripRouter = app.router({
 
 // -- wiring: resolve services once, close over them per request ----------------------
 
-export const createTripHandler = async () => {
+export const createDocHandler = async () => {
   const services = await resolveServices({ db: Db, audit: Audit });
   return createFetchHandler({
-    router: tripRouter,
+    router: docRouter,
     createContext: ({ request }) => ({
       ...services,
       sessionToken: request.headers.get("x-session") ?? undefined,

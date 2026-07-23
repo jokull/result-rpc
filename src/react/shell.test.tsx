@@ -22,7 +22,7 @@ const SessionExpired = error({
 
 const TripNotFound = error({
   tag: "trip/not-found",
-  data: wire.object({ tripId: wire.string }),
+  data: wire.object({ docId: wire.string }),
   httpStatus: 404,
   retry: "never",
   visibility: "public",
@@ -37,7 +37,7 @@ const trip = r.procedure()
   .errors({ SessionExpired, TripNotFound })
   .query(({ input, errors }) => {
     if (input.id === "expired") return err(errors.SessionExpired({}));
-    if (input.id === "missing") return err(errors.TripNotFound({ tripId: input.id }));
+    if (input.id === "missing") return err(errors.TripNotFound({ docId: input.id }));
     if (input.id === "boom") throw new Error("handler defect");
     return ok(input.id);
   });

@@ -107,7 +107,7 @@ The payload references are unchanged and unconstrained. `deserialize<T, E>` chec
 only the outer status and then asserts caller-provided types. A tagged error loses
 its prototype and guards after JSON; `Date` changes type; `BigInt` throws; and an
 object property containing `undefined` disappears. See
-`/Users/jokull/Forks/better-result/src/result.ts:433-476` and its limited round-trip
+`/Users/jokull/Forks/better-result/src/result.ts:433-476` and its limited round-doc
 tests at `src/result.test.ts:1636-1737`.
 
 tRPC has the analogous distinction between a configurable transformer and the
@@ -271,16 +271,16 @@ An error definition is a callable factory plus a runtime wire codec and policy.
 The value it creates is a frozen plain object:
 
 ```ts
-const TripNotFound = error({
-  tag: "trip/not-found",
-  data: wire.object({ tripId: wire.string }),
+const DocNotFound = error({
+  tag: "doc/not-found",
+  data: wire.object({ docId: wire.string }),
   httpStatus: 404,
   retry: "never",
   visibility: "public",
 })
 
-const failure = TripNotFound({ tripId: "trip_123" })
-// Readonly<{ _tag: "trip/not-found"; data: { tripId: string } }>
+const failure = DocNotFound({ docId: "doc_123" })
+// Readonly<{ _tag: "doc/not-found"; data: { docId: string } }>
 ```
 
 Properties:
@@ -315,7 +315,7 @@ wire values. Direct `yield* error` is deliberately unsupported because it requir
 putting `Symbol.iterator` on the error DTO.
 
 There is no public `Result.serialize`. The RPC codec encodes and decodes envelopes;
-tests assert the actual byte/JSON round trip.
+tests assert the actual byte/JSON round doc.
 
 ### Procedure contract and composition
 
@@ -326,22 +326,22 @@ const authenticated = rpc.middleware()
   .errors({ Unauthorized })
   .use(/* ... */)
 
-const getTrip = rpc.procedure()
+const getDoc = rpc.procedure()
   .use(authenticated)
-  .input(GetTripInput)
-  .output(Trip)
-  .errors({ TripNotFound })
+  .input(GetDocInput)
+  .output(Doc)
+  .errors({ DocNotFound })
   .query(async ({ input, errors }) => {
-    const trip = await findTrip(input.id)
-    if (!trip) return err(errors.TripNotFound({ tripId: input.id }))
-    return ok(trip)
+    const doc = await findDoc(input.id)
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }))
+    return ok(doc)
   })
 ```
 
 The handler's error type is exactly the composed declaration:
 
 ```ts
-Result<Trip, Unauthorized | TripNotFound>
+Result<Doc, Unauthorized | DocNotFound>
 ```
 
 Middleware maps merge into procedure maps. Tag collisions are errors unless the
@@ -394,11 +394,11 @@ An unknown tag is `client/protocol-violation`; known tag with bad data is
 The safe client is the default and always resolves recoverable outcomes:
 
 ```ts
-client.trip.get(input): Promise<
+client.doc.get(input): Promise<
   Result<
-    Trip,
+    Doc,
     Unauthorized |
-    TripNotFound |
+    DocNotFound |
     ServerInternal |
     ClientBoundaryError
   >
@@ -418,13 +418,13 @@ Internally:
 
 ```ts
 const queryFn = async () => {
-  const result = await client.trip.get(input)
+  const result = await client.doc.get(input)
   if (!result.ok) throw result.error
   return result.value
 }
 ```
 
-The query engine caches `Trip`, retries tagged transient failures, pauses work,
+The query engine caches `Doc`, retries tagged transient failures, pauses work,
 counts failures, and supports error boundaries. An initial implementation can map
 this onto private `@tanstack/query-core` primitives.
 
@@ -470,7 +470,7 @@ plus terminal `Result`, because reconnecting is not a terminal operation error.
 ### Minimum proof obligations for an MVP
 
 1. Compile-time tests reject non-tagged procedure errors and non-wire error data.
-2. Byte-level round trips cover every built-in and declared error.
+2. Byte-level round docs cover every built-in and declared error.
 3. Unknown tags, invalid data, unsupported serialized values, excessive encoded
    size, and hostile server payloads become sanitized protocol/decode tags.
 4. An undeclared server error never crosses the wire.

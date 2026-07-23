@@ -12,14 +12,14 @@ import { defineLayer, err, error, ok, wire, type InputOf } from "../../src/index
 export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: "unauthorized" });
 export const SessionExpired = error({ tag: "auth/session-expired", httpStatus: "unauthorized" });
 
-export const TripNotFound = error({
-  tag: "trip/not-found",
-  data: wire.object({ tripId: wire.string }),
+export const DocNotFound = error({
+  tag: "doc/not-found",
+  data: wire.object({ docId: wire.string }),
   httpStatus: "not-found",
 });
 
-export const TripLocked = error({
-  tag: "trip/locked",
+export const DocLocked = error({
+  tag: "doc/locked",
   data: wire.object({ lockedBy: wire.string }),
   httpStatus: "conflict",
 });
@@ -31,20 +31,20 @@ export const authErrors = { Unauthorized, SessionExpired };
 export const UserCodec = wire.object({ id: wire.string, name: wire.string });
 export type User = InputOf<typeof UserCodec>;
 
-export const TripCodec = wire.object({
+export const DocCodec = wire.object({
   id: wire.string,
   title: wire.string,
   ownerId: wire.string,
-  startsAt: wire.date,
+  savedAt: wire.date,
 });
-export type Trip = InputOf<typeof TripCodec>;
+export type Doc = InputOf<typeof DocCodec>;
 
-export const TripEventCodec = wire.object({
-  tripId: wire.string,
+export const DocEventCodec = wire.object({
+  docId: wire.string,
   kind: wire.union([wire.literal("renamed"), wire.literal("locked")] as const),
   at: wire.date,
 });
-export type TripEvent = InputOf<typeof TripEventCodec>;
+export type DocEvent = InputOf<typeof DocEventCodec>;
 
 // -- layers -----------------------------------------------------------------------
 

@@ -344,12 +344,12 @@ const kebabCase = (value: string): string =>
  * returned map is the grouping currency everything else takes: procedure
  * `.errors()`, middleware, shells, layers, and catalogs.
  *
- *     export const tripErrors = defineErrors("trip", {
- *       notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+ *     export const docErrors = defineErrors("trip", {
+ *       notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
  *       locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
  *     })
  *
- *     tripErrors.notFound({ tripId })  // { _tag: "trip/not-found", data: ... }
+ *     docErrors.notFound({ docId })  // { _tag: "trip/not-found", data: ... }
  */
 export const defineErrors = <
   const TNamespace extends string,

@@ -27,7 +27,7 @@ These are requirements, not aspirations:
 
 1. Every recoverable failure exposed to application code is a tagged structural
    value from a closed operation-specific union.
-2. Every tagged error round-trips through the versioned result-rpc serializer before
+2. Every tagged error round-docs through the versioned result-rpc serializer before
    it is created, transmitted, cached, persisted, or exposed.
 3. Error classes, application-defined prototypes, stacks, causes, arbitrary thrown
    values, and ambient `Error` types never appear in the public recoverable failure
@@ -141,11 +141,11 @@ or error-definition versions.
 ### Versioned transparent serializer
 
 The protocol uses a pinned devalue implementation behind a result-rpc serializer
-version. It transparently round-trips the values Svelte users expect: `undefined`,
+version. It transparently round-docs the values Svelte users expect: `undefined`,
 non-finite numbers, `-0`, `Date`, `BigInt`, `RegExp`, `Map`, `Set`, repeated
 references, cycles, URLs, array buffers, and typed arrays.
 When `Temporal` is installed or native in both runtimes, its standard value types
-round-trip through the same pinned profile as well.
+round-doc through the same pinned profile as well.
 
 Devalue does not promise format stability across releases, so its package version
 is not itself the protocol contract. result-rpc pins the implementation, sends a
@@ -232,7 +232,7 @@ Router composition compares definition identity and tag:
 
 - reusing the same definition is allowed;
 - two different definitions with the same tag are a startup error;
-- tags must be namespaced strings such as `trip/not-found`;
+- tags must be namespaced strings such as `doc/not-found`;
 - framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
   namespaces.
 
@@ -241,7 +241,7 @@ The `.is` method validates structure, exact tag, and data codec. It never uses
 
 ### Registry
 
-Tags are flat, namespaced strings (`trip/not-found`); hierarchy is deliberate
+Tags are flat, namespaced strings (`doc/not-found`); hierarchy is deliberate
 non-goal because grouping happens by value — the definition maps shared by
 procedures, middleware, shells, layers, and catalogs. The router build is the
 registry: it collects every declared definition, rejects a tag bound to two
@@ -883,8 +883,8 @@ Assert that:
 
 ### Codec and protocol tests
 
-- byte-level round trips for every built-in error;
-- rich-value and cyclic round trips, repeated identity, unsupported functions and
+- byte-level round docs for every built-in error;
+- rich-value and cyclic round docs, repeated identity, unsupported functions and
   classes, malformed serializer payloads, and resource limits;
 - hostile unknown tags and invalid payloads;
 - protocol version mismatch;

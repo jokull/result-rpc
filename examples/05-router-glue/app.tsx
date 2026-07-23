@@ -22,8 +22,8 @@ import {
   routeShell,
   type ResultRouterContext,
 } from "./router-glue.js";
-import { SessionLayer, TripLocked, TripNotFound, ViewerLayer } from "../03-trips/domain.js";
-import type { TripClient } from "../03-trips/ui.js";
+import { SessionLayer, DocLocked, DocNotFound, ViewerLayer } from "../03-docs/domain.js";
+import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: one chain, defined at module level ----------------------------------------
 
@@ -42,24 +42,24 @@ export const DefectShell = defineShell({
 
 export const SessionShell = layerShell(SessionLayer, {
   from: DefectShell,
-  procedure: (client: TripClient) => client.auth.whoami,
+  procedure: (client: DocClient) => client.auth.whoami,
 });
 
 export const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: (client: TripClient) => client.auth.me,
+  procedure: (client: DocClient) => client.auth.me,
   onError: () => void world.router.navigate({ to: "/signed-out" }),
 });
 
-export const TripShell = defineShell({
-  name: "fw-trip",
+export const DocShell = defineShell({
+  name: "fw-doc",
   from: ViewerShell,
-  claims: { TripNotFound },
+  claims: { DocNotFound },
 });
 
 // -- routes: each shell is spread straight into its route --------------------------------
 
-const rootRoute = createRootRouteWithContext<ResultRouterContext<TripClient>>()({
+const rootRoute = createRootRouteWithContext<ResultRouterContext<DocClient>>()({
   component: () => (
     <AppShell.Provider>
       <DefectShell.Provider>
@@ -105,29 +105,29 @@ const authedRoute = createRoute({
   ...routeShell(ViewerShell, { pending: <p>signing in…</p> }),
 });
 
-const tripRoute = createRoute({
+const docRoute = createRoute({
   getParentRoute: () => authedRoute,
-  path: "/trips/$tripId",
+  path: "/docs/$docId",
   loader: ({ context, params }) =>
-    context.runtime.prefetch(context.client.trip.byId, { id: params.tripId }),
-  ...routeShell(TripShell, {
+    context.runtime.prefetch(context.client.doc.byId, { id: params.docId }),
+  ...routeShell(DocShell, {
     layout: (outlet) => (
       <>
-        <TripMissing />
+        <DocMissing />
         {outlet}
       </>
     ),
-    component: TripDetail,
+    component: DocDetail,
   }),
 });
 
 const routeTree = rootRoute.addChildren([
-  sessionRoute.addChildren([indexRoute, signedOutRoute, authedRoute.addChildren([tripRoute])]),
+  sessionRoute.addChildren([indexRoute, signedOutRoute, authedRoute.addChildren([docRoute])]),
 ]);
 
 // -- world --------------------------------------------------------------------------------
 
-const buildRouter = (context: ResultRouterContext<TripClient>, initialPath: string) =>
+const buildRouter = (context: ResultRouterContext<DocClient>, initialPath: string) =>
   createRouter({
     routeTree,
     context,
@@ -136,12 +136,12 @@ const buildRouter = (context: ResultRouterContext<TripClient>, initialPath: stri
   });
 
 export let world: {
-  client: TripClient;
+  client: DocClient;
   runtime: ResultRouterContext["runtime"];
   router: ReturnType<typeof buildRouter>;
 };
 
-export const makeWorld = (client: TripClient, initialPath = "/") =>
+export const makeWorld = (client: DocClient, initialPath = "/") =>
   (world = createResultRouter({
     client,
     router: (context) => buildRouter(context, initialPath),
@@ -164,28 +164,28 @@ function Header() {
   return <header>{viewer ? `Hi ${viewer.name}` : "Hi guest"}</header>;
 }
 
-function TripMissing() {
-  const { latest } = TripShell.useHeld();
-  return latest ? <p role="alert">No trip named {latest.data.tripId}.</p> : null;
+function DocMissing() {
+  const { latest } = DocShell.useHeld();
+  return latest ? <p role="alert">No doc named {latest.data.docId}.</p> : null;
 }
 
-const renameMessages = errorCatalog({ TripLocked }, {
-  "trip/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+const renameMessages = errorCatalog({ DocLocked }, {
+  "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
 });
 
-function TripDetail() {
-  const { tripId } = tripRoute.useParams();
-  const client = useResultClient<TripClient>();
+function DocDetail() {
+  const { docId } = docRoute.useParams();
+  const client = useResultClient<DocClient>();
   const viewer = ViewerShell.use();
-  const trip = TripShell.useQuery(client.trip.byId, { id: tripId });
-  const rename = TripShell.useMutation(client.trip.rename);
+  const doc = DocShell.useQuery(client.doc.byId, { id: docId });
+  const rename = DocShell.useMutation(client.doc.rename);
 
-  if (trip.state !== "success") return <p>Loading…</p>;
+  if (doc.state !== "success") return <p>Loading…</p>;
   return (
     <article>
-      <h1>{trip.result.value.title}</h1>
+      <h1>{doc.result.value.title}</h1>
       <p>Viewer: {viewer.name}</p>
-      <button onClick={() => void rename.mutate({ id: tripId, title: "Renamed" })}>
+      <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>
         Rename
       </button>
       {rename.state === "failure" && (

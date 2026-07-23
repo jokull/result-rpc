@@ -219,16 +219,16 @@ describe("error registry", () => {
   });
 
   test("defineErrors derives tags from keys under one namespace", () => {
-    const tripErrors = defineErrors("trip2", {
-      notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+    const docErrors = defineErrors("trip2", {
+      notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
       titleTaken: { httpStatus: 409 },
     });
-    expect(tripErrors.notFound({ tripId: "t1" })).toEqual({
+    expect(docErrors.notFound({ docId: "t1" })).toEqual({
       _tag: "trip2/not-found",
-      data: { tripId: "t1" },
+      data: { docId: "t1" },
     });
-    expect(tripErrors.titleTaken()).toEqual({ _tag: "trip2/title-taken", data: {} });
-    expect(tripErrors.notFound.policy.retry).toBe("never");
+    expect(docErrors.titleTaken()).toEqual({ _tag: "trip2/title-taken", data: {} });
+    expect(docErrors.notFound.policy.retry).toBe("never");
     expect(() => defineErrors("client", { x: { httpStatus: 400 } }))
       .toThrow(/reserved framework namespace/);
     expect(() => defineErrors("a/b", { x: { httpStatus: 400 } }))

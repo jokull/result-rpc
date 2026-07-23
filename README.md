@@ -23,10 +23,10 @@ you wanted — typed errors, services, layers — at half the setup and a tenth 
 the weirdness, with hooks that read like the ones you already write.
 
 ```ts
-const query = useResultQuery(client.trip.byId, { id: "trip_123" })
+const query = useResultQuery(client.doc.byId, { id: "doc_123" })
 
 if (query.state === "failure") {
-  // TripNotFound | Unauthorized | ServerInternal | Offline |
+  // DocNotFound | Unauthorized | ServerInternal | Offline |
   // NetworkFailure | Timeout | HttpFailure | ProtocolViolation | DecodeFailure
   query.result.error
 }
@@ -40,10 +40,10 @@ branch on all of it, because the same union is narrowed by what the tree
 already takes responsibility for:
 
 ```ts
-const query = AuthShell.useQuery(client.trip.byId, { id: "trip_123" })
+const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" })
 
 if (query.state === "failure") {
-  // TripNotFound
+  // DocNotFound
   query.result.error
 }
 ```
@@ -83,11 +83,11 @@ failures come back somewhere else:
 
 ```ts
 const query = useQuery({
-  queryFn: () => rpc.trip.byId.query({ id }),
+  queryFn: () => rpc.doc.byId.query({ id }),
 })
 
 query.data
-// Result<Trip, TripNotFound | Unauthorized> | undefined
+// Result<Doc, DocNotFound | Unauthorized> | undefined
 
 query.error
 // TRPCClientError | null  — code buried in error.data?.code, cause stripped
@@ -102,8 +102,8 @@ wire.
 result-rpc makes the operation the unit of composition:
 
 ```ts
-type GetTripError =
-  | TripNotFound
+type GetDocError =
+  | DocNotFound
   | Unauthorized
   | ServerInternal
   | Offline
@@ -121,7 +121,7 @@ while handling caching, retries, pausing, hydration, and cancellation.
 ### Problem two: the 401 interceptor
 
 A complete union is honest, but exhaustiveness is not relevance. A component
-that renders a trip has business with `TripNotFound`. It has no business
+that renders a document has business with `DocNotFound`. It has no business
 deciding what happens when the network is down or the session is revoked
 mid-render. So every app that survives contact with production grows one of
 these:
@@ -180,15 +180,15 @@ both sides:
 ```ts
 import { error, wire } from "result-rpc"
 
-export const TripNotFound = error({
-  tag: "trip/not-found",
-  data: wire.object({ tripId: wire.string }),
+export const DocNotFound = error({
+  tag: "doc/not-found",
+  data: wire.object({ docId: wire.string }),
   httpStatus: 404,
 })
 
 export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 })
 
-export type TripNotFound = ReturnType<typeof TripNotFound>
+export type DocNotFound = ReturnType<typeof DocNotFound>
 export type Unauthorized = ReturnType<typeof Unauthorized>
 ```
 
@@ -196,16 +196,16 @@ Or declare a whole namespace at once — keys become tags, so the tag string is
 never written twice and cannot drift from the name:
 
 ```ts
-export const tripErrors = defineErrors("trip", {
-  notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+export const docErrors = defineErrors("doc", {
+  notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
   locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
 })
 
-tripErrors.notFound({ tripId })  // { _tag: "trip/not-found", data: { tripId } }
+docErrors.notFound({ docId })  // { _tag: "doc/not-found", data: { docId } }
 ```
 
 The returned map is the grouping currency everything else takes — procedure
-`.errors()`, middleware, shells, catalogs — and `pickErrors(tripErrors,
+`.errors()`, middleware, shells, catalogs — and `pickErrors(docErrors,
 "locked")` selects the subset a procedure actually declares. Grouping is by
 value, not by string prefix: the namespace exists for human uniqueness and the
 reserved framework carve-out, nothing else.
@@ -219,11 +219,11 @@ more. Data-free definitions are called with no arguments: `Unauthorized()`.
 Calling a definition creates the complete error value:
 
 ```ts
-const failure = TripNotFound({ tripId: "trip_123" })
+const failure = DocNotFound({ docId: "doc_123" })
 
 // Readonly<{
-//   _tag: "trip/not-found"
-//   data: { tripId: string }
+//   _tag: "doc/not-found"
+//   data: { docId: string }
 // }>
 ```
 
@@ -248,32 +248,32 @@ appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
 
 ```ts
 import { rpc, wire, type InputOf } from "result-rpc"
-import { TripNotFound, Unauthorized } from "./errors"
+import { DocNotFound, Unauthorized } from "./errors"
 
 interface AppContext {
-  trips: TripRepository
+  docs: DocRepository
   auth: AuthService
 }
 
 export const app = rpc.context<AppContext>()
 
-const TripCodec = wire.object({
+const DocCodec = wire.object({
   id: wire.string,
   title: wire.string,
-  startsAt: wire.date,
+  savedAt: wire.date,
 })
-type Trip = InputOf<typeof TripCodec>
+type Doc = InputOf<typeof DocCodec>
 
-export const getTripContract = app
+export const getDocContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(TripCodec)
-  .errors({ Unauthorized, TripNotFound })
+  .output(DocCodec)
+  .errors({ Unauthorized, DocNotFound })
   .query()
 
 export const appContract = app.contract({
-  trip: {
-    byId: getTripContract,
+  doc: {
+    byId: getDocContract,
   },
 })
 ```
@@ -294,24 +294,24 @@ the browser boundary, not a required style.)
 
 ```ts
 import { err, ok } from "result-rpc"
-import { app, getTripContract } from "./contract"
+import { app, getDocContract } from "./contract"
 
-export const getTrip = app
-  .implement(getTripContract)
+export const getDoc = app
+  .implement(getDocContract)
   .use(authenticated)
   .handler(async ({ input, errors, context }) => {
-    const trip = await context.trips.find(input.id)
+    const doc = await context.docs.find(input.id)
 
-    if (!trip) return err(errors.TripNotFound({ tripId: input.id }))
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }))
 
-    return ok(trip)
+    return ok(doc)
   })
 ```
 
 The handler must return the declared Result:
 
 ```ts
-Result<Trip, Unauthorized | TripNotFound>
+Result<Doc, Unauthorized | DocNotFound>
 ```
 
 Returning a different tag is a type error. Smuggling an undeclared or
@@ -327,7 +327,7 @@ the union:
 
 ```ts
 import { err } from "result-rpc"
-import { app } from "./trip"
+import { app } from "./doc"
 import { Unauthorized } from "./errors"
 
 const authenticated = app
@@ -345,8 +345,8 @@ const authenticated = app
     })
   })
 
-export const getTrip = app
-  .implement(getTripContract)
+export const getDoc = app
+  .implement(getDocContract)
   .use(authenticated)
   .handler(/* ... */)
 ```
@@ -354,7 +354,7 @@ export const getTrip = app
 The procedure now returns:
 
 ```ts
-Result<Trip, Unauthorized | TripNotFound>
+Result<Doc, Unauthorized | DocNotFound>
 ```
 
 Builders are immutable, so a base forks freely — the `protectedProcedure`
@@ -363,10 +363,10 @@ pattern is one line:
 ```ts
 const protectedProcedure = app.procedure().use(authenticated)
 
-const renameTrip = protectedProcedure
+const renameDoc = protectedProcedure
   .input(RenameInput)
-  .output(TripCodec)
-  .errors({ TripNotFound, TripLocked })   // only its own domain errors;
+  .output(DocCodec)
+  .errors({ DocNotFound, DocLocked })   // only its own domain errors;
   .mutation(/* ... */)                     // the auth union rides in with the base
 ```
 
@@ -454,12 +454,12 @@ const requireViewer = app.middleware<{ viewer: User }>()
 A mutation then demands exactly one thing:
 
 ```ts
-export const renameTrip = app.procedure()
+export const renameDoc = app.procedure()
   .input(RenameInput)
-  .output(TripCodec)
+  .output(DocCodec)
   .use(requireViewer)                    // session comes along, in order
   .mutation(({ context, input }) =>      // context.viewer: User
-    context.db.trips.rename(input, context.viewer))
+    context.db.docs.rename(input, context.viewer))
 ```
 
 `.use(session)` followed by `.use(requireViewer)` still runs `session` once —
@@ -472,20 +472,20 @@ checked, not hoped for.
 
 ```ts
 import { createFetchHandler } from "result-rpc/server"
-import { app, getTrip } from "./trip"
+import { app, getDoc } from "./doc"
 
 export const appRouter = app.router({
-  trip: {
-    byId: getTrip,
+  doc: {
+    byId: getDoc,
   },
 })
 
 export type AppRouter = typeof appRouter
 
 // Nested inference helpers mirror the router's shape — works on contracts too:
-// type Inputs = RouterInputs<AppRouter>;  Inputs["trip"]["byId"]  → { id: string }
-// type Outputs = RouterOutputs<AppRouter>; Outputs["trip"]["byId"] → Trip
-// type Errors = RouterErrors<AppRouter>;   Errors["trip"]["byId"]  → declared union
+// type Inputs = RouterInputs<AppRouter>;  Inputs["doc"]["byId"]  → { id: string }
+// type Outputs = RouterOutputs<AppRouter>; Outputs["doc"]["byId"] → Doc
+// type Errors = RouterErrors<AppRouter>;   Errors["doc"]["byId"]  → declared union
 
 export const handleRpc = createFetchHandler({
   router: appRouter,
@@ -493,7 +493,7 @@ export const handleRpc = createFetchHandler({
   createContext: ({ request }) => ({
     request,
     auth,
-    trips,
+    docs,
   }),
   onInternalError: ({ incidentId, phase, cause, procedurePath }) => {
     logger.error({ incidentId, phase, cause, procedurePath })
@@ -539,7 +539,7 @@ export const client = createClient({
   transport: batchFetchTransport({ url: "/rpc" }),
 })
 
-const result = await client.trip.byId({ id: "trip_123" })
+const result = await client.doc.byId({ id: "doc_123" })
 ```
 
 Calls issued in the same microtask share one HTTP request. Every batch item
@@ -552,9 +552,9 @@ is not rendered anywhere, so it never subtracts anything.
 
 ```ts
 Result<
-  Trip,
+  Doc,
   | Unauthorized
-  | TripNotFound
+  | DocNotFound
   | ServerInternal
   | Offline
   | NetworkFailure
@@ -573,8 +573,8 @@ middleware and shells use:
 ```ts
 import { errorCatalog } from "result-rpc"
 
-const message = errorCatalog({ TripNotFound, Unauthorized }, {
-  "trip/not-found": (e) => `Trip ${e.data.tripId} is gone`,
+const message = errorCatalog({ DocNotFound, Unauthorized }, {
+  "doc/not-found": (e) => `Doc ${e.data.docId} is gone`,
   "auth/unauthorized": () => "Sign in to continue",
 })
 ```
@@ -605,29 +605,29 @@ Query a procedure:
 import { useResultQuery } from "result-rpc/react"
 import { client } from "./client"
 
-export function TripPage({ id }: { id: string }) {
-  const trip = useResultQuery(client.trip.byId, { id })
+export function DocPage({ id }: { id: string }) {
+  const doc = useResultQuery(client.doc.byId, { id })
 
-  switch (trip.state) {
+  switch (doc.state) {
     case "pending":
-      return trip.fetch === "paused"
+      return doc.fetch === "paused"
         ? <OfflinePlaceholder />
-        : <TripSkeleton />
+        : <DocSkeleton />
 
     case "success":
       return (
-        <TripView
-          trip={trip.result.value}
-          refreshing={trip.fetch === "fetching"}
+        <DocView
+          doc={doc.result.value}
+          refreshing={doc.fetch === "fetching"}
         />
       )
 
     case "failure":
       return (
-        <TripFailure
-          error={trip.result.error}
-          previous={trip.previous}
-          retry={trip.refetch}
+        <DocFailure
+          error={doc.result.error}
+          previous={doc.previous}
+          retry={doc.refetch}
         />
       )
   }
@@ -637,8 +637,8 @@ export function TripPage({ id }: { id: string }) {
 There is no top-level `data | error` pair:
 
 ```ts
-trip.result
-// Ok<Trip> | Err<GetTripError> | undefined
+doc.result
+// Ok<Doc> | Err<GetDocError> | undefined
 ```
 
 The query engine still caches successful values, retries transient failures,
@@ -661,11 +661,11 @@ A refetch can fail while a cached value remains useful. That is represented
 explicitly:
 
 ```tsx
-if (trip.state === "failure" && trip.previous) {
+if (doc.state === "failure" && doc.previous) {
   return (
     <>
-      <TripView trip={trip.previous} stale />
-      <RefreshFailure error={trip.result.error} />
+      <DocView doc={doc.previous} stale />
+      <RefreshFailure error={doc.result.error} />
     </>
   )
 }
@@ -679,7 +679,7 @@ channel.
 When an operation is waiting for connectivity:
 
 ```ts
-trip.fetch === "paused"
+doc.fetch === "paused"
 ```
 
 This does not consume a retry or immediately become `client/offline`. An
@@ -716,7 +716,7 @@ otherwise assemble by hand:
 
 | What failed | Example tags | Natural owner | The map |
 | --- | --- | --- | --- |
-| The domain said no | `trip/not-found`, `auth/unauthorized` | the component, or an auth shell | your `defineErrors` maps |
+| The domain said no | `doc/not-found`, `auth/unauthorized` | the component, or an auth shell | your `defineErrors` maps |
 | The world flaked | `client/offline`, `client/timeout`, `client/network-failure` | an app shell with a banner | `transportErrors` |
 | The contract broke | `client/protocol-violation`, `client/decode-failure`, `server/internal` | a React error boundary | `defectErrors` |
 
@@ -770,16 +770,16 @@ Mount them as an onion:
 Inside `Routes`, an operation declaring nine tags presents one:
 
 ```tsx
-export function TripPage({ id }: { id: string }) {
+export function DocPage({ id }: { id: string }) {
   const { user } = AuthShell.use()      // User, not User | null
-  const trip = AuthShell.useQuery(client.trip.byId, { id })
+  const doc = AuthShell.useQuery(client.doc.byId, { id })
 
-  switch (trip.state) {
-    case "pending": return <TripSkeleton />
-    case "success": return <TripView trip={trip.result.value} viewer={user} />
+  switch (doc.state) {
+    case "pending": return <DocSkeleton />
+    case "success": return <DocView doc={doc.result.value} viewer={user} />
     case "failure":
-      // TripNotFound — and adding a case for anything else is a type error
-      return <TripMissing tripId={trip.result.error.data.tripId} />
+      // DocNotFound — and adding a case for anything else is a type error
+      return <DocMissing docId={doc.result.error.data.docId} />
   }
 }
 ```
@@ -1078,13 +1078,13 @@ context procedure before its route commits.
 import { useResultMutation } from "result-rpc/react"
 import { client } from "./client"
 
-function RenameTrip({ id }: { id: string }) {
-  const rename = useResultMutation(client.trip.rename, {
+function RenameDoc({ id }: { id: string }) {
+  const rename = useResultMutation(client.doc.rename, {
     optimistic: ({ title }, cache) => {
       const rollback = cache.update(
-        client.trip.byId,
+        client.doc.byId,
         { id },
-        trip => trip && { ...trip, title },
+        doc => doc && { ...doc, title },
       )
 
       return { rollback }
@@ -1096,14 +1096,14 @@ function RenameTrip({ id }: { id: string }) {
       context?.rollback()
     },
     onSettled: (result, _input, _context, cache) => {
-      if (result.ok) cache.invalidate(client.trip.byId, { id })
+      if (result.ok) cache.invalidate(client.doc.byId, { id })
     },
   })
 
   async function submit(title: string) {
     const result = await rename.mutate({ id, title })
 
-    if (!result.ok && result.error._tag === "trip/title-conflict") {
+    if (!result.ok && result.error._tag === "doc/title-conflict") {
       focusTitleField()
     }
   }
@@ -1129,24 +1129,24 @@ Declare the stream in the shared contract and attach its generator only on the
 server:
 
 ```ts
-export const tripEventsContract = app
+export const docEventsContract = app
   .procedure()
-  .input(wire.object({ tripId: wire.string }))
-  .output(TripEvent)
-  .errors({ Unauthorized, TripNotFound })
+  .input(wire.object({ docId: wire.string }))
+  .output(DocEvent)
+  .errors({ Unauthorized, DocNotFound })
   .subscription()
 
-export const tripEvents = app
-  .implement(tripEventsContract)
+export const docEvents = app
+  .implement(docEventsContract)
   .use(authenticated)
   .stream(async function* ({ input, errors, context }) {
-    const trip = await context.trips.find(input.tripId)
-    if (!trip) {
-      yield err(errors.TripNotFound({ tripId: input.tripId }))
+    const doc = await context.docs.find(input.docId)
+    if (!doc) {
+      yield err(errors.DocNotFound({ docId: input.docId }))
       return
     }
 
-    for await (const event of context.trips.events(input.tripId)) {
+    for await (const event of context.docs.events(input.docId)) {
       yield ok(event)
     }
   })
@@ -1157,10 +1157,10 @@ observes connection state independently from the latest event or terminal
 failure:
 
 ```tsx
-const events = useResultSubscription(client.trip.events, { tripId })
+const events = useResultSubscription(client.doc.events, { docId })
 
 events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed"
-events.result     // Ok<TripEvent> | Err<GetTripEventsError> | undefined
+events.result     // Ok<DocEvent> | Err<GetDocEventsError> | undefined
 ```
 
 `AuthShell.useSubscription` narrows the same way: a claimed terminal failure
@@ -1211,12 +1211,12 @@ Error definitions describe the encoded value, not an optimistic in-memory
 type:
 
 ```ts
-export const BookingConflict = error({
-  tag: "booking/conflict",
+export const SaveConflict = error({
+  tag: "doc/save-conflict",
   data: wire.object({
-    bookingId: wire.string,
-    conflictingDate: wire.date,
-    sequence: wire.bigint,
+    docId: wire.string,
+    theirSavedAt: wire.date,      // a real Date on both sides of the wire
+    revision: wire.bigint,        // a real BigInt, not a stringified one
   }),
   httpStatus: 409,
 })
@@ -1232,8 +1232,8 @@ and tagged error data transparently preserve:
 - cycles and repeated object identity
 
 ```ts
-const RichTrip = wire.object({
-  startsAt: wire.date,
+const RichDoc = wire.object({
+  savedAt: wire.date,
   revision: wire.bigint,
   pattern: wire.regexp,
   homepage: wire.url,
@@ -1244,7 +1244,7 @@ For a recursive or otherwise richer application type, validate serializer
 support at the boundary:
 
 ```ts
-const Graph = wire.serializable<TripGraph>()
+const Graph = wire.serializable<DocGraph>()
 ```
 
 Functions, symbols, unsupported class instances, and arbitrary `Error` causes
@@ -1297,8 +1297,8 @@ Direct calls accept an `AbortSignal`:
 ```ts
 const controller = new AbortController()
 
-const pending = client.trip.byId(
-  { id: "trip_123" },
+const pending = client.doc.byId(
+  { id: "doc_123" },
   { signal: controller.signal },
 )
 
@@ -1322,7 +1322,7 @@ const serverClient = createServerClient(appRouter, {
   context,
 })
 
-const result = await serverClient.trip.byId({ id: "trip_123" })
+const result = await serverClient.doc.byId({ id: "doc_123" })
 ```
 
 Parity mode executes locally but still applies input, output, and error
@@ -1336,7 +1336,7 @@ follow if profiling ever demands one.
 // Server
 const runtime = createQueryRuntime({ client: serverClient })
 
-await runtime.prefetch(serverClient.trip.byId, { id })
+await runtime.prefetch(serverClient.doc.byId, { id })
 
 const dehydrated = runtime.dehydrate()
 
@@ -1360,13 +1360,13 @@ const client = createTestClient(appRouter, {
   mode: "parity",
 })
 
-const result = await client.trip.byId({ id: "missing" })
+const result = await client.doc.byId({ id: "missing" })
 
 expect(result).toEqual({
   ok: false,
   error: {
-    _tag: "trip/not-found",
-    data: { tripId: "missing" },
+    _tag: "doc/not-found",
+    data: { docId: "missing" },
   },
 })
 ```
@@ -1434,7 +1434,7 @@ For inline observation of a single Result, the tap combinators return the
 original value unchanged:
 
 ```ts
-tapError(await client.trip.rename(input), (error) => log.warn(error._tag))
+tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
 // also: tap(result, fn), tapBoth(result, { ok, error })
 ```
 
@@ -1464,7 +1464,7 @@ with its own tests:
 1. **01-hello** — one query, one error, no shells: the minimal surface.
 2. **02-todo** — mutations, optimistic updates, the basic onion, an error
    catalog over a shell-narrowed union.
-3. **03-trips** — the whole system: a service graph, optional→required layers,
+3. **03-docs** — the whole system: a service graph, optional→required layers,
    a five-shell onion, a feature shell, subscriptions, and a defect boundary.
    Its compile-time probes assert the payoff directly: under the full onion, a
    mutation declaring nine failure tags presents exactly one.

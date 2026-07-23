@@ -29,7 +29,7 @@ const Unauthorized = error({
 
 const TripNotFound = error({
   tag: "trip/not-found",
-  data: wire.object({ tripId: wire.string }),
+  data: wire.object({ docId: wire.string }),
   httpStatus: 404,
   retry: "never",
   visibility: "public",
@@ -61,17 +61,17 @@ const whoamiContract = AuthLayer.contract(app);
 // server: its implementation is the middleware's context value, nothing else
 const whoami = AuthLayer.procedure(app, whoamiContract, authenticated);
 
-const tripById = app.procedure()
+const docById = app.procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .errors({ Unauthorized, TripNotFound })
   .use(authenticated)
   .query(({ input, errors, context }) => {
-    if (input.id === "missing") return err(errors.TripNotFound({ tripId: input.id }));
+    if (input.id === "missing") return err(errors.TripNotFound({ docId: input.id }));
     return ok(`${input.id}:${context.user.id}`);
   });
 
-const router = app.router({ auth: { whoami }, trip: { byId: tripById } });
+const router = app.router({ auth: { whoami }, trip: { byId: docById } });
 
 const clientFor = (sessionUserId: string | undefined) => {
   const handler = createFetchHandler({
@@ -111,13 +111,13 @@ describe("layer factory", () => {
     });
 
     let email: string | undefined;
-    let tripTag: string | undefined;
-    let tripValue: string | undefined;
+    let docTag: string | undefined;
+    let docValue: string | undefined;
     function Probe() {
       email = AuthShell.use().email;
       const trip = AuthShell.useQuery(client.trip.byId, { id: "trip_9" });
-      if (trip.state === "failure") tripTag = trip.result.error._tag;
-      if (trip.state === "success") tripValue = trip.result.value;
+      if (trip.state === "failure") docTag = trip.result.error._tag;
+      if (trip.state === "success") docValue = trip.result.value;
       return null;
     }
 
@@ -139,8 +139,8 @@ describe("layer factory", () => {
     // the guaranteed value came over the wire through the derived procedure
     expect(email).toBe("u_1@example.test");
     // the middleware ran under the trip procedure too and shaped its output
-    expect(tripValue).toBe("trip_9:u_1");
-    expect(tripTag).toBeUndefined();
+    expect(docValue).toBe("trip_9:u_1");
+    expect(docTag).toBeUndefined();
     expect(AuthShell.claimedTags).toContain("auth/unauthorized");
     expect(AuthShell.claimedTags).toContain("client/offline");
     await act(async () => renderer?.unmount());
