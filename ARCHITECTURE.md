@@ -787,15 +787,12 @@ and for router loader contexts.
 
 ## Router integration
 
-`result-rpc/router` treats @tanstack/react-router as an optional peer and owns
-only the authoring seam. `routeShell(shell, options)` produces route fragments
-(`component`, and for layer shells a `loader` reading `{ client, runtime }`
-from the router context) that spread into `createRoute` — TanStack's own
-generics for params and search stay untouched because the route is still
-created by TanStack. `createResultRouter` builds the client/runtime/router
-world and `ResultRouterProvider` mounts it. The layer-shell procedure resolver
-is exposed to this module through an internal registry
-(`getLayerProcedureResolver`); it is not public API.
+Deliberately none in the package. Shells are providers and hooks, so any
+router composes; the route-fragment pattern (shell Provider as route
+component, layer prefetch as route loader) lives as app-owned glue in
+`examples/05-framework/router-glue.tsx`. `getLayerProcedureResolver` is the
+one advanced export that makes such glue possible: it returns a layer shell's
+context-procedure resolver so integrations can derive loaders.
 
 ## Security and resource limits
 

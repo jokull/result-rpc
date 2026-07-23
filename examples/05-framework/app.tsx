@@ -21,7 +21,7 @@ import {
   ResultRouterProvider,
   routeShell,
   type ResultRouterContext,
-} from "../../src/router/index.js";
+} from "./router-glue.js";
 import { SessionLayer, TripLocked, TripNotFound, ViewerLayer } from "../03-trips/domain.js";
 import type { TripClient } from "../03-trips/ui.js";
 

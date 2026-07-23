@@ -51,7 +51,7 @@ export type SubscriptionProcedureClientLike = ((
 
 import { createQueryRuntime } from "../query/runtime.js";
 export { createQueryRuntime };
-export { defineShell, layerShell } from "./shell.js";
+export { defineShell, getLayerProcedureResolver, layerShell } from "./shell.js";
 
 /** Zero-input procedures may omit the input argument entirely. */
 export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =

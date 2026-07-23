@@ -975,35 +975,16 @@ AuthShell.handledTags
 Assert on it in a type test or a unit test so that adding an application-namespace
 tag to a shell is a deliberate, reviewable act.
 
-## The router surface
+## Bring your own router
 
-`result-rpc/router` fuses shells with TanStack Router (an optional peer
-dependency — the routing engine, params, search params, and preloading stay
-native). A shell emits a route fragment: its Provider as the route `component`,
-and — for layer shells — a `loader` that prefetches the layer's context
-procedure before the route commits:
-
-```tsx
-import { createResultRouter, ResultRouterProvider, routeShell } from "result-rpc/router"
-
-const authedRoute = createRoute({
-  getParentRoute: () => sessionRoute,
-  id: "authed",
-  ...routeShell(ViewerShell, { pending: <p>signing in…</p> }),
-})
-
-const world = createResultRouter({
-  client,
-  router: (context) => createRouter({ routeTree, context }),
-})
-
-<ResultRouterProvider world={world} />
-```
-
-Every route below `authedRoute` renders with `viewer: User` guaranteed, the
-auth union subtracted, and the viewer already fetched by the time the route
-commits. `routeShell` also takes `layout:` (wrap the outlet in banners or
-notices owned by the layer) and `component:` (leaf routes that own their page).
+result-rpc deliberately ships no router integration: shells are providers and
+hooks, so they compose with any router (TanStack Router, Next, Waku, React
+Native navigation) without the library knowing routers exist. The natural
+mapping — layout route = shell, route loader = `runtime.prefetch`,
+`errorComponent` = escalate target — is roughly sixty lines of app-owned glue;
+`examples/05-framework/router-glue.tsx` is a complete copy-paste integration
+for TanStack Router, including auto-derived loaders that prefetch a layer's
+context procedure before its route commits.
 
 ## Mutations return the same Result state
 
@@ -1315,10 +1296,10 @@ with its own tests:
    feature error, `errorComponent` receives escalated defects, `onError`
    navigates, and layout loaders prefetch each layer's context procedure so the
    first paint has no fallback states.
-5. **05-framework** — rung 4 rebuilt on `result-rpc/router`: `routeShell`
-   fragments spread into `createRoute`, so one declaration per layer produces
-   both the provider component and the prefetch loader. The diff between rungs
-   4 and 5 is the framework's value proposition.
+5. **05-framework** — rung 4 rebuilt on app-owned glue
+   (`router-glue.tsx`, ~60 lines): `routeShell` fragments spread into
+   `createRoute`, so one declaration per layer produces both the provider
+   component and the prefetch loader — proof the integration needs no package.
 
 ## Design and verification
 
