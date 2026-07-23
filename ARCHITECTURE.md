@@ -700,7 +700,18 @@ A shell is a declared layer of failure ownership. `defineShell` takes an error
 definition map, an effect, an optional handler, and an optional `provide` that
 builds the value the layer guarantees. `from:` links it to its enclosing layer.
 
-Narrowing is carried by the shell *value*, not by tree position:
+Claiming and narrowing are two halves with different carriers:
+
+**Claiming is ambient.** A mounted shell provider registers a claim entry in a
+scope context; every base hook (`useResultQuery`, `useResultMutation`,
+`useResultSubscription`, suspense) consults the mounted scope, innermost owner
+first. A claimed tag therefore never becomes a terminal failure anywhere
+beneath its owner, regardless of which hook observed it — the shell is a
+monitor on all procedure activity below it, keyed purely by the wire contract's
+tags, with no knowledge of the procedures involved. `useActive()` aggregates
+everything absorbed, not just shell-hook traffic.
+
+**Narrowing is carried by the shell *value*, not by tree position:**
 
 - the accumulated handled set is computed at the type level by walking `from:`,
   so `Shell.useQuery` returns `ExcludeTags<ProcedureError, Handled>` without any
@@ -709,7 +720,10 @@ Narrowing is carried by the shell *value*, not by tree position:
   layer's handler, so the subtraction is not a claim the type system takes on
   faith from context;
 - mount position is verified at runtime — a provider outside its `from:` layer
-  throws, and a claimed error with no mounted claimant throws.
+  throws, and shell hooks eagerly assert their whole chain is mounted, so the
+  narrowed union can never outrun its owners. Plain hooks outside any provider
+  keep the full union and surface every failure; their union under a provider
+  is a sound over-approximation (it may list tags that can no longer surface).
 
 Definition-time checks reject a tag claimed twice in one chain and a shell that
 claims nothing.

@@ -703,6 +703,21 @@ export function TripPage({ id }: { id: string }) {
 }
 ```
 
+### Shells monitor everything beneath them
+
+Absorption does not depend on which hook issued the operation. A component deep
+in the tree calling plain `useResultQuery` still cannot surface
+`auth/session-expired` as a failure under `AuthShell` — the mounted shell claims
+it ambiently, pauses or escalates it, and counts it in `useActive()`. The wire
+contract is the whole interface: shells own tags, not procedures.
+
+What the shell *hooks* add is the type: `AuthShell.useQuery` subtracts the
+claimed tags from the union and eagerly asserts the whole chain is mounted.
+Plain hooks keep the full union — a sound over-approximation under a provider,
+and exactly the truth outside one. Shells are error boundaries generalized to
+values: selective by tag, non-destructive when pausing, and `escalate` converts
+a claimed value back into a throw for the real boundary machinery.
+
 ### The layers are a value chain, not a tree position
 
 `from:` makes the accumulated set a property of the shell value. `AuthShell` is

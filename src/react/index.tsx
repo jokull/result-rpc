@@ -11,6 +11,14 @@ import {
 } from "react";
 import type { AnyTaggedError } from "../error.js";
 import type { Result } from "../result.js";
+import { cancelled } from "../client/transport.js";
+import {
+  pauseQueryProjection,
+  scopeClaims,
+  useAmbientClaim,
+  useClaimScope,
+  type AmbientClaim,
+} from "./claims.js";
 import type { ResultSubscription } from "../client/client.js";
 import { serialize } from "../serializer.js";
 import type {
@@ -116,13 +124,16 @@ export const ResultRpcHydration = ({ state, children }: ResultRpcHydrationProps)
   return children;
 };
 
-export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
+const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLike>(
   procedure: TProcedureClient,
   ...rest: QueryHookArgs<TProcedureClient>
-): QueryState<
-  ProcedureClientOutput<TProcedureClient>,
-  ProcedureClientError<TProcedureClient>
-> => {
+): [
+  QueryState<
+    ProcedureClientOutput<TProcedureClient>,
+    ProcedureClientError<TProcedureClient>
+  >,
+  AmbientClaim | undefined,
+] => {
   const [input, options = {}] = rest as [
     ProcedureClientInput<TProcedureClient>,
     QueryOptions<ProcedureClientError<TProcedureClient>>?,
@@ -142,12 +153,32 @@ export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike
     ],
   );
   useEffect(() => () => observer.destroy(), [observer]);
-  return useSyncExternalStore(
+  const state = useSyncExternalStore(
     observer.subscribe,
     observer.getCurrentState,
     observer.getCurrentState,
   );
+  // Ambient monitor: a failure claimed by any mounted shell never surfaces as
+  // a terminal state, no matter which hook observed it.
+  const claim = useAmbientClaim(state.state === "failure" ? state.result.error : undefined);
+  return [
+    claim
+      ? (pauseQueryProjection(state) as QueryState<
+          ProcedureClientOutput<TProcedureClient>,
+          ProcedureClientError<TProcedureClient>
+        >)
+      : state,
+    claim,
+  ];
 };
+
+export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
+  procedure: TProcedureClient,
+  ...rest: QueryHookArgs<TProcedureClient>
+): QueryState<
+  ProcedureClientOutput<TProcedureClient>,
+  ProcedureClientError<TProcedureClient>
+> => useResultQueryWithClaim(procedure, ...rest)[0];
 
 export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
   QueryState<T, E>,
@@ -165,12 +196,14 @@ export const useResultSuspenseQuery = <TProcedureClient extends QueryProcedureCl
     ProcedureClientInput<TProcedureClient>,
     QueryOptions<ProcedureClientError<TProcedureClient>>?,
   ];
-  const state = useResultQuery(
+  const [state, claim] = useResultQueryWithClaim(
     procedure,
     ...([input, { ...options, enabled: true }] as QueryHookArgs<TProcedureClient>),
   );
   if (state.state === "pending") {
-    throw state.refetch().then(() => undefined);
+    // A claim-paused operation resumes when its owner's holdings change, not
+    // by refetching in a loop.
+    throw claim ? claim.entry.whenChanged() : state.refetch().then(() => undefined);
   }
   return state;
 };
@@ -203,11 +236,37 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
     ],
   );
   useEffect(() => () => observer.destroy(), [observer]);
-  return useSyncExternalStore(
+  const state = useSyncExternalStore(
     observer.subscribe,
     observer.getCurrentState,
     observer.getCurrentState,
   );
+  const scope = useClaimScope();
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const [mutate] = useState(() => async (input: ProcedureClientInput<TProcedureClient>) => {
+    const result = await stateRef.current.mutate(input);
+    // The caller's continuation must not run on an outcome an enclosing shell
+    // owns; reject with the control sentinel, exactly like cancellation.
+    if (!result.ok && scopeClaims(scopeRef.current, (result.error as AnyTaggedError)._tag)) {
+      throw cancelled;
+    }
+    return result;
+  });
+  const claim = useAmbientClaim(
+    state.state === "failure" ? (state.result.error as AnyTaggedError) : undefined,
+  );
+  if (!claim) return { ...state, mutate };
+  return {
+    ...(state.variables === undefined ? {} : { variables: state.variables }),
+    mutate,
+    cancel: state.cancel,
+    reset: state.reset,
+    state: "idle" as const,
+    result: undefined,
+  };
 };
 
 export const useResultSubscription = <
@@ -228,9 +287,15 @@ export const useResultSubscription = <
     [runtime, procedure, encodedInput.value, options.retry, options.retryDelayMs],
   );
   useEffect(() => () => observer.close(), [observer]);
-  return useSyncExternalStore(
+  const state = useSyncExternalStore(
     observer.subscribe,
     observer.getCurrentState,
     observer.getCurrentState,
   );
+  const failure = state.result && !state.result.ok
+    ? (state.result.error as AnyTaggedError)
+    : undefined;
+  const claim = useAmbientClaim(failure);
+  if (!claim) return state;
+  return { ...state, connection: "paused" as const, result: undefined };
 };

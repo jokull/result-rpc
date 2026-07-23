@@ -13,8 +13,7 @@ import {
 } from "react";
 import type { AnyTaggedError } from "../error.js";
 import type { LayerShape } from "../layer.js";
-import { ok, type Result } from "../result.js";
-import { cancelled } from "../client/transport.js";
+import { ClaimScopeContext, type ClaimEntry } from "./claims.js";
 import type { ErrorDefinitionMap, ErrorUnion } from "../server/contract.js";
 import type {
   MutationOptions,
@@ -35,6 +34,7 @@ import {
   useResultMutation,
   useResultQuery,
   useResultSubscription,
+  useResultSuspenseQuery,
   type MutationProcedureClientLike,
   type QueryHookArgs,
   type QueryProcedureClientLike,
@@ -308,7 +308,21 @@ export const defineShell = <
         valueRef,
       ));
     const mount = useMemo<ShellMount>(() => ({ node, value }), [node, value]);
-    return createElement(context.Provider, { value: mount }, props.children);
+    const parentScope = useContext(ClaimScopeContext);
+    const entry = useMemo<ClaimEntry>(() => ({
+      name: options.name,
+      effect,
+      tags: ownTags,
+      report: node.report,
+      release: node.release,
+      whenChanged: node.whenChanged,
+    }), [node]);
+    const scope = useMemo(() => [...parentScope, entry], [parentScope, entry]);
+    return createElement(
+      context.Provider,
+      { value: mount },
+      createElement(ClaimScopeContext.Provider, { value: scope }, props.children),
+    );
   };
 
   const useMount = (): ShellMount => {
@@ -329,50 +343,24 @@ export const defineShell = <
       const { node } = useMount();
       return useSyncExternalStore(node.subscribe, node.snapshot, node.snapshot);
     },
+    // Absorption is ambient (any hook under the providers); the shell hooks add
+    // the type subtraction and an eager proof that the whole chain is mounted,
+    // so the narrowed union can never outrun its owners.
     useQuery: (procedure: any, input: any, queryOptions?: any) => {
-      const state = useResultQuery(procedure, ...([input, queryOptions] as [never, never]));
-      const claim = useClaim(self, state.state === "failure" ? state.result.error : undefined);
-      if (!claim) return state;
-      return pauseQuery(state);
+      useAssertChainMounted(self);
+      return useResultQuery(procedure, ...([input, queryOptions] as [never, never]));
     },
     useSuspenseQuery: (procedure: any, input: any, queryOptions?: any) => {
-      const state = useResultQuery(
-        procedure,
-        ...([input, { ...(queryOptions ?? {}), enabled: true }] as [never, never]),
-      );
-      const claim = useClaim(self, state.state === "failure" ? state.result.error : undefined);
-      const paused = claim ? pauseQuery(state) : state;
-      if (paused.state === "pending") {
-        throw claim ? claim.node.whenChanged() : paused.refetch().then(() => undefined);
-      }
-      return paused;
+      useAssertChainMounted(self);
+      return useResultSuspenseQuery(procedure, ...([input, queryOptions] as [never, never]));
     },
     useMutation: (procedure: any, mutationOptions?: any) => {
-      const state = useResultMutation(procedure, mutationOptions);
-      const claim = useClaim(self, state.state === "failure" ? state.result.error : undefined);
-      const mutateRef = useRef(state.mutate);
-      mutateRef.current = state.mutate;
-      const [mutate] = useState(() => async (input: any) => {
-        const result: Result<unknown, AnyTaggedError> = await mutateRef.current(input);
-        if (!result.ok && claims(self, result.error._tag)) throw cancelled;
-        return result;
-      });
-      if (!claim) return { ...state, mutate };
-      return {
-        ...(state.variables === undefined ? {} : { variables: state.variables }),
-        mutate,
-        cancel: state.cancel,
-        reset: state.reset,
-        state: "idle" as const,
-        result: undefined,
-      };
+      useAssertChainMounted(self);
+      return useResultMutation(procedure, mutationOptions);
     },
     useSubscription: (procedure: any, input: any, subscriptionOptions?: any) => {
-      const state = useResultSubscription(procedure, input, subscriptionOptions);
-      const failure = state.result && !state.result.ok ? state.result.error : undefined;
-      const claim = useClaim(self, failure);
-      if (!claim) return state;
-      return { ...state, connection: "paused" as const, result: undefined };
+      useAssertChainMounted(self);
+      return useResultSubscription(procedure, input, subscriptionOptions);
     },
   } as unknown as Shell<
     | TagsOf<TDefinitions>
@@ -386,56 +374,17 @@ export const defineShell = <
   return shell;
 };
 
-const claims = (shell: ShellInternals, tag: string): boolean =>
-  shell.chain.some((layer) => layer.ownTags.has(tag));
-
-const pauseQuery = <T, E extends AnyTaggedError>(
-  state: QueryState<T, E>,
-): QueryState<T, never> => {
-  const controls = {
-    fetch: "paused" as const,
-    failureCount: state.failureCount,
-    isStale: state.isStale,
-    updatedAt: state.updatedAt,
-    refetch: state.refetch as unknown as () => Promise<QueryState<T, never>>,
-  };
-  const previous = state.state === "failure" ? state.previous : undefined;
-  return previous === undefined
-    ? { ...controls, state: "pending", result: undefined }
-    : { ...controls, state: "success", result: ok(previous) };
-};
-
-interface Claim {
-  readonly node: ShellNode;
-}
-
 /**
- * Walks the shell chain innermost-first looking for the layer that claims this
- * tag. Escalating layers throw the tagged value during render; pausing layers
- * take ownership of it and the caller projects a non-terminal state.
+ * Eagerly proves the shell's whole chain is mounted. The type subtraction on a
+ * shell hook is only honest if every claimed tag has a live owner above.
  */
-const useClaim = (shell: ShellInternals, error: AnyTaggedError | undefined): Claim | undefined => {
+const useAssertChainMounted = (shell: ShellInternals): void => {
   // The chain is fixed at definition time, so this hook count is stable per call site.
-  const mounts = shell.chain.map((layer) =>
+  for (const layer of shell.chain) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    useContext(layer.context));
-  const id = useId();
-  const index = error
-    ? shell.chain.findIndex((layer) => layer.ownTags.has(error._tag))
-    : -1;
-  const layer = index === -1 ? undefined : shell.chain[index];
-  const mount = index === -1 ? undefined : mounts[index];
-  const held = layer?.effect === "pause" ? error : undefined;
-  const node = mount?.node;
-  useEffect(() => {
-    if (!node || !held) return;
-    node.report(id, held);
-    return () => node.release(id);
-  }, [node, held, id]);
-  if (!layer) return undefined;
-  if (!mount) throw new TypeError(`Shell ${layer.name} is not mounted`);
-  if (layer.effect === "escalate") throw error;
-  return { node: mount.node };
+    const mount = useContext(layer.context);
+    if (!mount) throw new TypeError(`Shell ${layer.name} is not mounted`);
+  }
 };
 
 // --- Layer shells ----------------------------------------------------------

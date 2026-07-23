@@ -6,7 +6,7 @@ import { createClient } from "../client/client.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler, rpc } from "../server/index.js";
-import { ResultRpcProvider, defineShell } from "./index.js";
+import { ResultRpcProvider, defineShell, useResultQuery } from "./index.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -256,6 +256,97 @@ describe("shells", () => {
       );
     });
     expect((caught as Error).message).toBe("Shell defect must be mounted inside app");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+});
+
+describe("ambient claiming", () => {
+  test("plain hooks under a shell are monitored: claimed failures pause and aggregate", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    const seen: string[] = [];
+    const AuthShell = defineShell({
+      name: "ambient-auth",
+      from: DefectShell,
+      handle: authErrors,
+      onError: (failure) => seen.push(failure._tag),
+      provide: (props: { readonly userId: string }) => props.userId,
+    });
+
+    let state: string | undefined;
+    let fetchState: string | undefined;
+    let affected = 0;
+    function Probe() {
+      // NOT AuthShell.useQuery — the plain hook, no shell knowledge at all
+      const query = useResultQuery(client.trip, { id: "expired" });
+      state = query.state;
+      fetchState = query.fetch;
+      affected = AuthShell.useActive().affected;
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AppShell.Provider>
+            <DefectShell.Provider>
+              <AuthShell.Provider userId="u_9"><Probe /></AuthShell.Provider>
+            </DefectShell.Provider>
+          </AppShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    // the session-expired failure never became state:"failure" anywhere
+    expect(state).toBe("pending");
+    expect(fetchState).toBe("paused");
+    expect(seen).toEqual(["auth/session-expired"]);
+    expect(affected).toBe(1);
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("outside any shell, plain hooks surface the full union unchanged", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    let tag: string | undefined;
+    function Probe() {
+      const query = useResultQuery(client.trip, { id: "expired" });
+      if (query.state === "failure") tag = query.result.error._tag;
+      return null;
+    }
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}><Probe /></ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(tag).toBe("auth/session-expired");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("a shell hook outside its mounted chain fails eagerly, not on first error", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    function Probe() {
+      DefectShell.useQuery(client.trip, { id: "ok" }); // would succeed — but the chain is absent
+      return <span>rendered</span>;
+    }
+    let caught: unknown;
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Boundary onCaught={(value) => { caught = value; }}><Probe /></Boundary>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(String((caught as Error).message)).toContain("is not mounted");
     await act(async () => renderer?.unmount());
     runtime.clear();
   });

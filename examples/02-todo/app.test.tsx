@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { createTodoHandler, memoryStore } from "./server.js";
-import { AddTodo, AppShell, makeTodoClient, TodoApp, TodoList } from "./ui.js";
+import { AddTodo, AppShell, DefectShell, makeTodoClient, TodoApp, TodoList } from "./ui.js";
 import { createQueryRuntime, ResultRpcProvider } from "../../src/react/index.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -53,7 +53,9 @@ test("02-todo pauses under the app shell when the network dies", async () => {
     renderer = create(
       <ResultRpcProvider runtime={runtime}>
         <AppShell.Provider>
-          <TodoList client={failingClient} />
+          <DefectShell.Provider>
+            <TodoList client={failingClient} />
+          </DefectShell.Provider>
         </AppShell.Provider>
       </ResultRpcProvider>,
     );
