@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { createTodoHandler, memoryStore } from "./server.js";
-import { AddTodo, AppShell, DefectShell, makeTodoClient, TodoApp, TodoList } from "./ui.js";
+import { AppShell, DefectShell, makeTodoClient, TodoApp, TodoList } from "./ui.js";
 import { createQueryRuntime, ResultRpcProvider } from "../../src/react/index.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -25,10 +25,8 @@ test("02-todo renders, adds, and surfaces domain errors through the catalog", as
 
   // add twice with the same title → second hits the catalog
   const form = renderer!.root.findByType("form");
-  const input = renderer!.root.findByType("input");
   for (const title of ["buy milk", "buy milk"]) {
     await act(async () => {
-      (input.props as { onChange?: unknown });
       form.props.onSubmit({
         preventDefault: () => undefined,
         currentTarget: { elements: { namedItem: () => ({ value: title }) } },
@@ -66,5 +64,3 @@ test("02-todo pauses under the app shell when the network dies", async () => {
   await act(async () => renderer!.unmount());
   runtime.clear();
 });
-
-void AddTodo;

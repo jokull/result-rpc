@@ -99,11 +99,11 @@ declare const probeClient: TripClient;
 const probeRename = () => probeShells.TripShell.useMutation(probeClient.trip.rename);
 type RenameState = ReturnType<typeof probeRename>;
 type RenameError = Extract<RenameState, { state: "failure" }>["result"]["error"];
-type _RenameIsOnlyTripLocked = Assert<Equal<RenameError["_tag"], "trip/locked">>;
+export type _RenameIsOnlyTripLocked = Assert<Equal<RenameError["_tag"], "trip/locked">>;
 
 const probeTrip = () => probeShells.TripShell.useQuery(probeClient.trip.byId, { id: "x" });
 type TripQueryState = ReturnType<typeof probeTrip>;
 type TripQueryError = Extract<TripQueryState, { state: "failure" }>["result"]["error"];
-type _TripQueryHasNoFailures = Assert<Equal<TripQueryError, never>>;
+export type _TripQueryHasNoFailures = Assert<Equal<TripQueryError, never>>;
 void probeRename;
 void probeTrip;

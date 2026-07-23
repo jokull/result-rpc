@@ -1,4 +1,4 @@
-import type { AnyErrorDefinition, AnyTaggedError , ErrorPolicy } from "../error.js";
+import type { AnyTaggedError , ErrorPolicy } from "../error.js";
 import { frameworkError as error } from "../error.js";
 import { badRequestFromIssues, frameworkErrorDefinitions, ServerInternal } from "../framework-errors.js";
 import {

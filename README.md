@@ -1402,6 +1402,11 @@ with its own tests:
    feature error, `errorComponent` receives escalated defects, `onError`
    navigates, and layout loaders prefetch each layer's context procedure so the
    first paint has no fallback states.
+6. **06-sentry** — the observability pillar end to end: a Sentry-shaped stub
+   receives wire breadcrumbs, the `claimed` trail with its owning shell,
+   severity-routed server captures, and a defect whose captured exception
+   carries the same incident id the client received — correlation with no
+   request-id plumbing.
 5. **05-router-glue** — rung 4 rebuilt on app-owned glue
    (`router-glue.tsx`, ~60 lines): `routeShell` fragments spread into
    `createRoute`, so one declaration per layer produces both the provider

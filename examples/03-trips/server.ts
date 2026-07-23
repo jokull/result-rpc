@@ -11,7 +11,6 @@ import {
   TripEventCodec,
   TripLocked,
   TripNotFound,
-  Unauthorized,
   ViewerLayer,
   type Trip,
   type User,

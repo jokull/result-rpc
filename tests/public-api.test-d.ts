@@ -138,7 +138,7 @@ type ExpectedError =
   | ServerBadRequestError
   | ClientBoundaryError;
 
-type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;
+export type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;
 
 // @ts-expect-error Input is inferred from the procedure codec.
 void client.example.procedure({ id: 123 });
@@ -150,7 +150,7 @@ runtime.cache.get(client.example.mutation, { id: "valid" });
 const observer = runtime.observe(client.example.procedure, { id: "valid" });
 type ObservedState = ReturnType<typeof observer.getCurrentState>;
 type ExpectedState = QueryState<string, ExpectedError>;
-type _QueryPreservesClosedError = Assert<Equal<ObservedState, ExpectedState>>;
+export type _QueryPreservesClosedError = Assert<Equal<ObservedState, ExpectedState>>;
 
 // @ts-expect-error Query procedures cannot be used as mutations.
 runtime.mutation(client.example.procedure);
@@ -167,7 +167,7 @@ void optimisticContext;
 
 const subscription = runtime.subscription(client.example.subscription, { id: "valid" });
 type SubscriptionResult = ReturnType<typeof subscription.getCurrentState>["result"];
-type _SubscriptionResultIsClosed = Assert<Equal<
+export type _SubscriptionResultIsClosed = Assert<Equal<
   Exclude<SubscriptionResult, undefined>,
   Result<string, ExpectedError>
 >>;
@@ -202,18 +202,18 @@ type ShellError = ShellState extends { readonly result: infer R }
 
 // Every framework tag is absorbed by an enclosing layer; only the domain error
 // the procedure declares survives into the component.
-type _ShellSubtractsExactlyTheClaimedTags = Assert<
+export type _ShellSubtractsExactlyTheClaimedTags = Assert<
   Equal<ShellError, ReturnType<typeof Missing>>
 >;
 
 // The chain accumulates: the innermost layer sees its parents' claims too.
-type _ChainAccumulates = Assert<Equal<
+export type _ChainAccumulates = Assert<Equal<
   HandledBy<typeof AuthShell>,
   HandledBy<typeof DefectShell> | "type/conflict"
 >>;
 
 // The guaranteed value is not optional inside the layer.
-type _ProvidedValueIsGuaranteed = Assert<Equal<
+export type _ProvidedValueIsGuaranteed = Assert<Equal<
   ValueOf<typeof AuthShell>,
   { userId: string }
 >>;
@@ -256,15 +256,15 @@ const sessionContract = SessionLayer.contract(r)
 type SessionOutput = typeof sessionContract extends {
   readonly _def: { readonly output: WireCodec<infer T, any> }
 } ? T : never
-type _LayerContractOutput = Assert<Equal<SessionOutput, Viewer>>
+export type _LayerContractOutput = Assert<Equal<SessionOutput, Viewer>>
 
 // The derived shell claims exactly the layer union plus its parents' claims.
 const SessionShell = layerShell(SessionLayer, {
   from: DefectShell,
   procedure: client.example.procedure,
 })
-type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>
-type _LayerShellHandled = Assert<Equal<
+export type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>
+export type _LayerShellHandled = Assert<Equal<
   HandledBy<typeof SessionShell>,
   HandledBy<typeof DefectShell> | "type/conflict"
 >>
@@ -301,6 +301,7 @@ r.procedure()
   .use(cookieMiddleware)
   .query(({ context }) => {
     type _Nullable = Assert<Equal<typeof context.account, MaybeViewer>>
+    void (0 as unknown as _Nullable)
     return ok("")
   })
 
@@ -311,6 +312,7 @@ r.procedure()
   .use(accountMiddleware)
   .query(({ context }) => {
     type _Narrowed = Assert<Equal<typeof context.account, Viewer>>
+    void (0 as unknown as _Narrowed)
     return ok(context.account.id)
   })
 
@@ -323,9 +325,9 @@ const AccountShell = layerShell(AccountLayer, {
   from: CookieShell,
   procedure: client.example.procedure,
 })
-type _OptionalShellValue = Assert<Equal<ValueOf<typeof CookieShell>, MaybeViewer>>
-type _RequiredShellValue = Assert<Equal<ValueOf<typeof AccountShell>, Viewer>>
-type _RequiredShellHandled = Assert<Equal<
+export type _OptionalShellValue = Assert<Equal<ValueOf<typeof CookieShell>, MaybeViewer>>
+export type _RequiredShellValue = Assert<Equal<ValueOf<typeof AccountShell>, Viewer>>
+export type _RequiredShellHandled = Assert<Equal<
   HandledBy<typeof AccountShell>,
   HandledBy<typeof CookieShell> | "type/missing"
 >>
@@ -339,6 +341,7 @@ const auditedAccount = r
   .errors({ Missing })
   .use(({ context, next }) => {
     type _SeesDepOutput = Assert<Equal<typeof context.account, MaybeViewer>>
+    void (0 as unknown as _SeesDepOutput)
     return next({ context: { ...context, audited: true as const } })
   })
 
@@ -349,7 +352,9 @@ const auditedProcedure = r
   .use(auditedAccount) // one use() pulls cookieMiddleware in too
   .query(({ context }) => {
     type _HasDep = Assert<Equal<typeof context.account, MaybeViewer>>
+    void (0 as unknown as _HasDep)
     type _HasOwn = Assert<Equal<typeof context.audited, true>>
+    void (0 as unknown as _HasOwn)
     return ok("")
   })
 void auditedProcedure
@@ -361,6 +366,7 @@ const needsViewer = r
   .after(accountMiddleware)
   .use(({ context, next }) => {
     type _FullyNarrowed = Assert<Equal<typeof context.account, Viewer>>
+    void (0 as unknown as _FullyNarrowed)
     return next({ context: { ...context, ok: true as const } })
   })
 void needsViewer
@@ -385,6 +391,7 @@ const UsersService = defineService("users", {
   needs: { db: DbService },
   create: ({ db }) => {
     type _DepTyped = Assert<Equal<typeof db, { query: (sql: string) => string[] }>>
+    void (0 as unknown as _DepTyped)
     return { byId: (id: string) => db.query(id) }
   },
 })
@@ -392,7 +399,7 @@ declare const resolved: Awaited<ReturnType<typeof resolveServices<{
   db: typeof DbService
   users: typeof UsersService
 }>>>
-type _ResolvedTyped = Assert<Equal<typeof resolved.users, { byId: (id: string) => string[] }>>
+export type _ResolvedTyped = Assert<Equal<typeof resolved.users, { byId: (id: string) => string[] }>>
 
 // --- Router-level inference --------------------------------------------------
 
@@ -401,9 +408,9 @@ type Outputs = RouterOutputs<typeof router>
 type Errors = RouterErrors<typeof router>
 
 const exampleInputCodec = wire.object({ id: wire.string })
-type _RouterInput = Assert<Equal<Inputs["example"]["procedure"], InputOf<typeof exampleInputCodec>>>
-type _RouterOutput = Assert<Equal<Outputs["example"]["procedure"], string>>
-type _RouterError = Assert<Equal<Errors["example"]["procedure"], ReturnType<typeof Missing>>>
+export type _RouterInput = Assert<Equal<Inputs["example"]["procedure"], InputOf<typeof exampleInputCodec>>>
+export type _RouterOutput = Assert<Equal<Outputs["example"]["procedure"], string>>
+export type _RouterError = Assert<Equal<Errors["example"]["procedure"], ReturnType<typeof Missing>>>
 
 // --- Namespaced errors -------------------------------------------------------
 
@@ -411,11 +418,11 @@ const nsErrors = defineErrors("billing", {
   cardDeclined: { data: wire.object({ code: wire.string }), httpStatus: 402 },
   planExpired: { httpStatus: 403 },
 })
-type _NsTagDerived = Assert<Equal<
+export type _NsTagDerived = Assert<Equal<
   ReturnType<typeof nsErrors.cardDeclined>["_tag"],
   "billing/card-declined"
 >>
-type _NsDataTyped = Assert<Equal<
+export type _NsDataTyped = Assert<Equal<
   ReturnType<typeof nsErrors.cardDeclined>["data"]["code"],
   string
 >>

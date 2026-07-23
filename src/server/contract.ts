@@ -1,13 +1,12 @@
 import type {
   AnyErrorDefinition,
   AnyTaggedError,
-  ErrorDefinition,
   ErrorOf,
 } from "../error.js";
 import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
 import { wire } from "../wire.js";
-import type { InputOf, WireCodec, WireValue } from "../wire.js";
+import type { WireCodec, WireValue } from "../wire.js";
 
 export type ErrorDefinitionMap = Readonly<Record<string, AnyErrorDefinition>>;
 export type ErrorUnion<TDefinitions extends ErrorDefinitionMap> = ErrorOf<
@@ -251,16 +250,6 @@ export type AnyUnaryProcedure = Procedure<any, any, any, any, "query" | "mutatio
 export type AnySubscriptionProcedure = SubscriptionProcedure<any, any, any, any>;
 export type AnyProcedure = AnyUnaryProcedure | AnySubscriptionProcedure;
 export type AnyProcedureContract = ProcedureContract<any, any, any, any>;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type MiddlewareOutput<TMiddleware> = TMiddleware extends Middleware<any, infer TOutput, ErrorDefinitionMap>
-  ? TOutput
-  : never;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type MiddlewareDefinitions<TMiddleware> = TMiddleware extends Middleware<any, any, infer TDefinitions>
-  ? TDefinitions
-  : never;
 
 export class ProcedureBuilder<
   TRootContext,
