@@ -55,9 +55,9 @@ export type TagsOf<TDefinitions extends ErrorDefinitionMap> =
  */
 export type ShellEffect = "pause" | "escalate";
 
-export interface ShellActiveState<TError extends AnyTaggedError> {
+export interface ShellHoldings<TError extends AnyTaggedError> {
   /** Most recently reported claimed error, if any operation is currently held. */
-  readonly active: TError | undefined;
+  readonly latest: TError | undefined;
   /** Every distinct claimed error currently held by this shell. */
   readonly errors: readonly TError[];
   /** How many observers are currently held by this shell. */
@@ -76,7 +76,7 @@ interface ShellNode {
   readonly release: (id: string) => void;
   readonly retryAll: () => void;
   readonly subscribe: (listener: () => void) => () => void;
-  readonly snapshot: () => ShellActiveState<AnyTaggedError>;
+  readonly snapshot: () => ShellHoldings<AnyTaggedError>;
   readonly whenChanged: () => Promise<void>;
 }
 
@@ -103,16 +103,16 @@ export interface Shell<
   readonly $shell: true;
   readonly name: string;
   readonly effect: ShellEffect;
-  /** Tags this layer claims. */
+  /** Tags this shell claims. */
   readonly ownTags: readonly string[];
-  /** Tags this layer and every enclosing layer claim. */
-  readonly handledTags: readonly string[];
+  /** Tags this shell and every enclosing shell claim. */
+  readonly claimedTags: readonly string[];
   readonly Provider: (props: TProps & { readonly children?: ReactNode }) => ReactNode;
 
-  /** The value this layer guarantees. Throws if the layer is not mounted. */
+  /** The value this shell guarantees. Throws if the shell is not mounted. */
   use(): TValue;
-  /** Aggregate view of what this layer is currently holding. */
-  useActive(): ShellActiveState<TOwn>;
+  /** Aggregate view of what this shell is currently holding. */
+  useHeld(): ShellHoldings<TOwn>;
 
   useQuery<TProcedureClient extends QueryProcedureClientLike>(
     procedure: TProcedureClient,
@@ -160,7 +160,7 @@ export interface Shell<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyShell = Shell<any, any, any, any>;
 
-export type HandledBy<TShell> = TShell extends Shell<infer THandled, any, any, any>
+export type ClaimedBy<TShell> = TShell extends Shell<infer THandled, any, any, any>
   ? THandled
   : never;
 
@@ -176,10 +176,10 @@ export interface DefineShellOptions<
 > {
   /** Used in mount diagnostics and devtools. */
   readonly name: string;
-  /** The enclosing layer. Omit for the outermost layer. */
+  /** The enclosing shell. Omit for the outermost shell. */
   readonly from?: TParent;
-  /** The error definitions this layer claims. Pass the same map given to `.errors()`. */
-  readonly handle: TDefinitions;
+  /** The error definitions this shell claims. Pass the same map given to `.errors()`. */
+  readonly claims: TDefinitions;
   /** Defaults to `"pause"`. */
   readonly effect?: ShellEffect;
   /** Runs once per newly claimed error. May fire many times for one logical event. */
@@ -210,8 +210,8 @@ const createNode = (
   const retryAll = () => {
     for (const holding of [...entries.values()]) holding.retry?.();
   };
-  let snapshot: ShellActiveState<AnyTaggedError> = Object.freeze({
-    active: undefined,
+  let snapshot: ShellHoldings<AnyTaggedError> = Object.freeze({
+    latest: undefined,
     errors: Object.freeze([]),
     affected: 0,
     resume: retryAll,
@@ -219,7 +219,7 @@ const createNode = (
   const recompute = () => {
     const errors = [...entries.values()].map((holding) => holding.error);
     snapshot = {
-      active: errors[errors.length - 1],
+      latest: errors[errors.length - 1],
       errors,
       affected: errors.length,
       resume: retryAll,
@@ -265,14 +265,14 @@ export const defineShell = <
   options: DefineShellOptions<TDefinitions, TParent, TProps, TValue>,
 ): Shell<
   | TagsOf<TDefinitions>
-  | (TParent extends AnyShell ? HandledBy<TParent> : never),
+  | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
   TProps,
   TValue,
   ErrorUnion<TDefinitions>
 > => {
   const parent = options.from as AnyShell | undefined;
   const parentInternals = parent ? internalsOf(parent) : undefined;
-  const ownTags = new Set(Object.values(options.handle).map((definition) => definition.tag));
+  const ownTags = new Set(Object.values(options.claims).map((definition) => definition.tag));
   if (ownTags.size === 0 && options.provide === undefined) {
     throw new TypeError(
       `Shell ${options.name} claims no errors and provides no value`,
@@ -347,10 +347,10 @@ export const defineShell = <
     name: options.name,
     effect,
     ownTags: [...ownTags],
-    handledTags: self.chain.flatMap((layer) => [...layer.ownTags]),
+    claimedTags: self.chain.flatMap((layer) => [...layer.ownTags]),
     Provider,
     use: () => useMount().value as TValue,
-    useActive: () => {
+    useHeld: () => {
       const { node } = useMount();
       return useSyncExternalStore(node.subscribe, node.snapshot, node.snapshot);
     },
@@ -375,7 +375,7 @@ export const defineShell = <
     },
   } as unknown as Shell<
     | TagsOf<TDefinitions>
-    | (TParent extends AnyShell ? HandledBy<TParent> : never),
+    | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
     TProps,
     TValue,
     ErrorUnion<TDefinitions>
@@ -421,7 +421,7 @@ export interface LayerShellOptions<
    */
   readonly onError?: (
     error: TParent extends AnyShell
-      ? ExcludeTags<ProcedureClientError<TProcedureClient>, HandledBy<TParent>>
+      ? ExcludeTags<ProcedureClientError<TProcedureClient>, ClaimedBy<TParent>>
       : ProcedureClientError<TProcedureClient>,
     value: TValue | undefined,
   ) => void;
@@ -453,7 +453,7 @@ export const layerShell = <
   options: LayerShellOptions<TParent, TProcedureClient, TValue>,
 ): Shell<
   | TagsOf<TDefinitions>
-  | (TParent extends AnyShell ? HandledBy<TParent> : never),
+  | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
   LayerShellProviderProps,
   TValue,
   ErrorUnion<TDefinitions>
@@ -462,7 +462,7 @@ export const layerShell = <
   const inner = defineShell({
     name: layer.name,
     ...(options.from === undefined ? {} : { from: options.from }),
-    handle: layer.errors,
+    claims: layer.errors,
     effect: "pause",
     ...(options.onError === undefined
       ? {}
@@ -507,7 +507,7 @@ export const layerShell = <
     readonly stamp: number;
     readonly children?: ReactNode;
   }): ReactNode => {
-    const active = (inner as AnyShell).useActive();
+    const active = (inner as AnyShell).useHeld();
     const resumeRef = useRef(active.resume);
     resumeRef.current = active.resume;
     const previous = useRef(stamp);
@@ -543,7 +543,7 @@ export const layerShell = <
 
   const shell = { ...inner, Provider } as unknown as Shell<
     | TagsOf<TDefinitions>
-    | (TParent extends AnyShell ? HandledBy<TParent> : never),
+    | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
     LayerShellProviderProps,
     TValue,
     ErrorUnion<TDefinitions>

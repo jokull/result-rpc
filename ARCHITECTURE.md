@@ -763,7 +763,7 @@ scope context; every base hook (`useResultQuery`, `useResultMutation`,
 first. A claimed tag therefore never becomes a terminal failure anywhere
 beneath its owner, regardless of which hook observed it — the shell is a
 monitor on all procedure activity below it, keyed purely by the wire contract's
-tags, with no knowledge of the procedures involved. `useActive()` aggregates
+tags, with no knowledge of the procedures involved. `useHeld()` aggregates
 everything absorbed, not just shell-hook traffic.
 
 **Narrowing is carried by the shell *value*, not by tree position:**
@@ -796,7 +796,7 @@ wrapper error shape.
 
 Each shell instance owns a small store of the errors it is currently holding —
 each with the retry handle its observer registered (query refetch, subscription
-reconnect; mutations register none). `useActive()` exposes the aggregate plus
+reconnect; mutations register none). `useHeld()` exposes the aggregate plus
 `resume()`, which retries every holding. Layer shells resume automatically when
 their context procedure's `updatedAt` advances (the value was re-established).
 
@@ -805,7 +805,7 @@ observers unmount (child-first, so the node drains before the provider goes),
 `onError` never re-fires on unmount, and a remount is a fresh node — a cached
 failure encountered again is a new claim.
 
-Each shell instance owns its aggregate through `useActive()`. Connectivity is a property of the
+Each shell instance owns its aggregate through `useHeld()`. Connectivity is a property of the
 application, not of any single operation, so the ambient tier is observed rather
 than branched on.
 

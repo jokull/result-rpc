@@ -92,14 +92,14 @@ export type BillingClient = ReturnType<typeof makeObservedClient>;
 
 export const AppShell = defineShell({
   name: "sentry-app",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 export const DefectShell = defineShell({
   name: "sentry-defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "pause", // paused here so the test can observe instead of unmounting
 });
 
@@ -108,7 +108,7 @@ export const makeBillingShell = (sentry: SentryLike) =>
   defineShell({
     name: "sentry-billing",
     from: DefectShell,
-    handle: pickErrors(billingErrors, "planExpired"),
+    claims: pickErrors(billingErrors, "planExpired"),
     // 2. the ownership reaction is a reporting moment
     onError: (failure) => sentry.captureMessage(`billing claimed: ${failure._tag}`, "info"),
   });

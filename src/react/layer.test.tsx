@@ -88,14 +88,14 @@ const clientFor = (sessionUserId: string | undefined) => {
 
 const AppShell = defineShell({
   name: "app-layer-test",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 const DefectShell = defineShell({
   name: "defect-layer-test",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "pause",
 });
 
@@ -141,8 +141,8 @@ describe("layer factory", () => {
     // the middleware ran under the trip procedure too and shaped its output
     expect(tripValue).toBe("trip_9:u_1");
     expect(tripTag).toBeUndefined();
-    expect(AuthShell.handledTags).toContain("auth/unauthorized");
-    expect(AuthShell.handledTags).toContain("client/offline");
+    expect(AuthShell.claimedTags).toContain("auth/unauthorized");
+    expect(AuthShell.claimedTags).toContain("client/offline");
     await act(async () => renderer?.unmount());
     runtime.clear();
   });
@@ -196,7 +196,7 @@ describe("layer factory", () => {
     const TripShell = defineShell({
       name: "trip-layer-test",
       from: AuthShell,
-      handle: { TripNotFound },
+      claims: { TripNotFound },
     });
 
     let state: string | undefined;
@@ -225,8 +225,8 @@ describe("layer factory", () => {
       await settle();
     });
     expect(state).toBe("pending");
-    expect(TripShell.handledTags).toContain("auth/unauthorized");
-    expect(TripShell.handledTags).toContain("trip/not-found");
+    expect(TripShell.claimedTags).toContain("auth/unauthorized");
+    expect(TripShell.claimedTags).toContain("trip/not-found");
     await act(async () => renderer?.unmount());
     runtime.clear();
   });
@@ -327,7 +327,7 @@ describe("layer factory", () => {
     expect(greeting).toBe("hi u_9");
     // the optional layer claims nothing; the required layer claims the union
     expect(SessionShell.ownTags).toEqual([]);
-    expect(ViewerShell.handledTags).toContain("auth/unauthorized");
+    expect(ViewerShell.claimedTags).toContain("auth/unauthorized");
     await act(async () => renderer?.unmount());
     runtime.clear();
   });

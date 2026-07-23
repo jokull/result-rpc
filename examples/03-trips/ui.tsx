@@ -30,14 +30,14 @@ export type TripClient = ReturnType<typeof makeTripClient>;
 
 export const AppShell = defineShell({
   name: "trips-app",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 export const DefectShell = defineShell({
   name: "trips-defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",
 });
 
@@ -54,7 +54,7 @@ export const makeShells = (client: TripClient, onSignIn: () => void) => {
   const TripShell = defineShell({
     name: "trip-route",
     from: ViewerShell,
-    handle: { TripNotFound },
+    claims: { TripNotFound },
     effect: "pause",
   });
   return { SessionShell, ViewerShell, TripShell };
@@ -92,8 +92,8 @@ export function TripsApp({ client, shells, tripId }: {
 }
 
 function ConnectivityBanner() {
-  const { active, affected } = AppShell.useActive();
-  return active ? <div role="alert">Reconnecting… ({affected})</div> : null;
+  const { latest, affected } = AppShell.useHeld();
+  return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
 }
 
 /** Public: renders for signed-out visitors too — the session value is nullable here. */
@@ -104,9 +104,9 @@ function Greeting({ shells }: { shells: Shells }) {
 
 /** The route-level owner of trip/not-found. */
 function TripMissingNotice({ shells }: { shells: Shells }) {
-  const { active } = shells.TripShell.useActive();
-  if (!active) return null;
-  return <p role="alert">Trip {active.data.tripId} does not exist.</p>;
+  const { latest } = shells.TripShell.useHeld();
+  if (!latest) return null;
+  return <p role="alert">Trip {latest.data.tripId} does not exist.</p>;
 }
 
 // -- the page ------------------------------------------------------------------------

@@ -25,14 +25,14 @@ export type TodoClient = ReturnType<typeof makeTodoClient>;
 
 export const AppShell = defineShell({
   name: "todo-app",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 export const DefectShell = defineShell({
   name: "todo-defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",
 });
 
@@ -53,8 +53,8 @@ export function TodoApp({ client }: { client: TodoClient }) {
 }
 
 function ConnectivityBanner() {
-  const { active, affected } = AppShell.useActive();
-  if (!active) return null;
+  const { latest, affected } = AppShell.useHeld();
+  if (!latest) return null;
   return <div role="alert">Connection trouble ({affected} requests waiting)</div>;
 }
 

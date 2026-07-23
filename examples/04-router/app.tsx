@@ -37,14 +37,14 @@ import type { TripClient } from "../03-trips/ui.js";
 
 export const AppShell = defineShell({
   name: "router-app",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 export const DefectShell = defineShell({
   name: "router-defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",
 });
 
@@ -62,7 +62,7 @@ export const ViewerShell = layerShell(ViewerLayer, {
 export const TripShell = defineShell({
   name: "router-trip",
   from: ViewerShell,
-  handle: { TripNotFound },
+  claims: { TripNotFound },
   effect: "pause",
 });
 
@@ -178,8 +178,8 @@ declare module "@tanstack/react-router" {
 // -- components -------------------------------------------------------------------------
 
 function ConnectivityBanner() {
-  const { active, affected } = AppShell.useActive();
-  return active ? <div role="alert">Reconnecting… ({affected})</div> : null;
+  const { latest, affected } = AppShell.useHeld();
+  return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
 }
 
 function Header() {
@@ -188,8 +188,8 @@ function Header() {
 }
 
 function TripMissing() {
-  const { active } = TripShell.useActive();
-  return active ? <p role="alert">No trip named {active.data.tripId}.</p> : null;
+  const { latest } = TripShell.useHeld();
+  return latest ? <p role="alert">No trip named {latest.data.tripId}.</p> : null;
 }
 
 const renameMessages = errorCatalog({ TripLocked }, {

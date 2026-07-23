@@ -62,7 +62,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 // app shell: transport failures pause and feed one aggregate banner
 const AppShell = defineShell({
   name: "app",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
@@ -70,7 +70,7 @@ const AppShell = defineShell({
 const DefectShell = defineShell({
   name: "defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",
 });
 
@@ -99,7 +99,7 @@ describe("shells", () => {
     const AuthShell = defineShell({
       name: "auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       provide: (props: { readonly userId: string }) => props.userId,
     });
 
@@ -135,7 +135,7 @@ describe("shells", () => {
     const AuthShell = defineShell({
       name: "auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       onError: (failure, userId) => seen.push(`${failure._tag}:${userId}`),
       provide: (props: { readonly userId: string }) => props.userId,
     });
@@ -147,7 +147,7 @@ describe("shells", () => {
     function Probe() {
       const query = AuthShell.useQuery(client.trip, { id: "expired" });
       userId = AuthShell.use();
-      affected = AuthShell.useActive().affected;
+      affected = AuthShell.useHeld().affected;
       state = query.state;
       fetchState = query.fetch;
       return null;
@@ -184,9 +184,9 @@ describe("shells", () => {
     let activeTag: string | undefined;
     function Probe() {
       const query = AppShell.useQuery(client.trip, { id: "one" }, { retry: false });
-      const active = AppShell.useActive();
+      const active = AppShell.useHeld();
       affected = active.affected;
-      activeTag = active.active?._tag;
+      activeTag = active.latest?._tag;
       state = query.state;
       return null;
     }
@@ -238,7 +238,7 @@ describe("shells", () => {
     expect(() => defineShell({
       name: "duplicate",
       from: AppShell,
-      handle: transportErrors,
+      claims: transportErrors,
     })).toThrow(/already claimed by app/);
   });
 
@@ -270,7 +270,7 @@ describe("ambient claiming", () => {
     const AuthShell = defineShell({
       name: "ambient-auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       onError: (failure) => seen.push(failure._tag),
       provide: (props: { readonly userId: string }) => props.userId,
     });
@@ -283,7 +283,7 @@ describe("ambient claiming", () => {
       const query = useResultQuery(client.trip, { id: "expired" });
       state = query.state;
       fetchState = query.fetch;
-      affected = AuthShell.useActive().affected;
+      affected = AuthShell.useHeld().affected;
       return null;
     }
 
@@ -365,7 +365,7 @@ describe("claim breadcrumbs", () => {
     const AuthShell = defineShell({
       name: "crumb-auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       provide: (props: { readonly userId: string }) => props.userId,
     });
 
@@ -429,7 +429,7 @@ describe("resume lifecycle", () => {
     const AuthShell = defineShell({
       name: "resume-auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       provide: (props: { readonly userId: string }) => props.userId,
     });
 
@@ -439,7 +439,7 @@ describe("resume lifecycle", () => {
     let affected = 0;
     function Probe() {
       const query = useResultQuery(client2.guarded, { id: "a" }, { retry: false });
-      const active = AuthShell.useActive();
+      const active = AuthShell.useHeld();
       state = query.state;
       if (query.state === "success") value = query.result.value;
       resume = active.resume;
@@ -484,7 +484,7 @@ describe("resume lifecycle", () => {
     const AuthShell = defineShell({
       name: "teardown-auth",
       from: DefectShell,
-      handle: authErrors,
+      claims: authErrors,
       onError: (failure) => seen.push(failure._tag),
       provide: (props: { readonly userId: string }) => props.userId,
     });

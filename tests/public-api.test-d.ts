@@ -15,7 +15,7 @@ import { createClient } from "../src/client/index.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
 import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, transportErrors } from "../src/index.js";
-import { defineShell, layerShell, type HandledBy, type ValueOf } from "../src/react/index.js";
+import { defineShell, layerShell, type ClaimedBy, type ValueOf } from "../src/react/index.js";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends
@@ -176,21 +176,21 @@ export type _SubscriptionResultIsClosed = Assert<Equal<
 
 const TransportShell = defineShell({
   name: "transport",
-  handle: transportErrors,
+  claims: transportErrors,
   effect: "pause",
 });
 
 const DefectShell = defineShell({
   name: "defect",
   from: TransportShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",
 });
 
 const AuthShell = defineShell({
   name: "auth",
   from: DefectShell,
-  handle: { Conflict },
+  claims: { Conflict },
   provide: (props: { readonly userId: string }) => ({ userId: props.userId }),
 });
 
@@ -208,8 +208,8 @@ export type _ShellSubtractsExactlyTheClaimedTags = Assert<
 
 // The chain accumulates: the innermost layer sees its parents' claims too.
 export type _ChainAccumulates = Assert<Equal<
-  HandledBy<typeof AuthShell>,
-  HandledBy<typeof DefectShell> | "type/conflict"
+  ClaimedBy<typeof AuthShell>,
+  ClaimedBy<typeof DefectShell> | "type/conflict"
 >>;
 
 // The guaranteed value is not optional inside the layer.
@@ -265,8 +265,8 @@ const SessionShell = layerShell(SessionLayer, {
 })
 export type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>
 export type _LayerShellHandled = Assert<Equal<
-  HandledBy<typeof SessionShell>,
-  HandledBy<typeof DefectShell> | "type/conflict"
+  ClaimedBy<typeof SessionShell>,
+  ClaimedBy<typeof DefectShell> | "type/conflict"
 >>
 
 // --- Optional layers and refinement ----------------------------------------
@@ -328,8 +328,8 @@ const AccountShell = layerShell(AccountLayer, {
 export type _OptionalShellValue = Assert<Equal<ValueOf<typeof CookieShell>, MaybeViewer>>
 export type _RequiredShellValue = Assert<Equal<ValueOf<typeof AccountShell>, Viewer>>
 export type _RequiredShellHandled = Assert<Equal<
-  HandledBy<typeof AccountShell>,
-  HandledBy<typeof CookieShell> | "type/missing"
+  ClaimedBy<typeof AccountShell>,
+  ClaimedBy<typeof CookieShell> | "type/missing"
 >>
 
 // --- Middleware dependencies and services ----------------------------------

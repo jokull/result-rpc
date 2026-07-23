@@ -729,20 +729,20 @@ import { authErrors } from "../shared/errors"
 
 export const AppShell = defineShell({
   name: "app",
-  handle: transportErrors,          // effect defaults to "pause"
+  claims: transportErrors,          // effect defaults to "pause"
 })
 
 export const DefectShell = defineShell({
   name: "defect",
   from: AppShell,
-  handle: defectErrors,
+  claims: defectErrors,
   effect: "escalate",               // becomes a throw, for the real boundary
 })
 
 export const AuthShell = defineShell({
   name: "auth",
   from: DefectShell,
-  handle: authErrors,
+  claims: authErrors,
   onError: (_error, { signOut }) => signOut(),
   provide: (props: { session: Session; signOut: () => void }) => ({
     user: props.session.user,
@@ -869,7 +869,7 @@ Held is not stuck. Every held operation carries a retry handle, and the shell
 exposes the whole set:
 
 ```tsx
-const { active, affected, resume } = AuthShell.useActive()
+const { latest, affected, resume } = AuthShell.useHeld()
 // after re-authenticating:
 resume() // every held query refetches; held subscriptions reconnect
 ```
@@ -894,9 +894,9 @@ together:
 
 ```tsx
 function OfflineBanner() {
-  const { active, affected } = AppShell.useActive()
-  if (!active) return null
-  return <Banner tag={active._tag} count={affected} />
+  const { latest, affected } = AppShell.useHeld()
+  if (!latest) return null
+  return <Banner tag={latest._tag} count={affected} />
 }
 ```
 
@@ -916,7 +916,7 @@ export const authErrors = { Unauthorized, SessionExpired }
 const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */)
 
 // client
-const AuthShell = defineShell({ name: "auth", handle: authErrors, /* ... */ })
+const AuthShell = defineShell({ name: "auth", claims: authErrors, /* ... */ })
 ```
 
 Add an error to `authErrors` and every derived shell absorbs it; no component
@@ -1052,7 +1052,7 @@ Narrowing this cheap can quietly become swallowing. The absorbed set is a
 value:
 
 ```ts
-AuthShell.handledTags
+AuthShell.claimedTags
 // ["auth/unauthorized", "auth/session-expired", "client/http-failure",
 //  "client/protocol-violation", "client/decode-failure", "server/internal",
 //  "client/offline", "client/network-failure", "client/timeout"]
