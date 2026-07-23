@@ -187,9 +187,13 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   // Ambient monitor: a failure claimed by any mounted shell never surfaces as
   // a terminal state, no matter which hook observed it.
   const notifyClaim = useClaimNotifier(procedure);
+  const refetchRef = useRef(state.refetch);
+  refetchRef.current = state.refetch;
+  const [retryHeld] = useState(() => () => void refetchRef.current());
   const claim = useAmbientClaim(
     state.state === "failure" ? state.result.error : undefined,
     notifyClaim,
+    retryHeld,
   );
   return [
     claim
@@ -328,7 +332,10 @@ export const useResultSubscription = <
     ? (state.result.error as AnyTaggedError)
     : undefined;
   const notifyClaim = useClaimNotifier(procedure);
-  const claim = useAmbientClaim(failure, notifyClaim);
+  const reconnectRef = useRef(state.reconnect);
+  reconnectRef.current = state.reconnect;
+  const [retryHeld] = useState(() => () => reconnectRef.current());
+  const claim = useAmbientClaim(failure, notifyClaim, retryHeld);
   if (!claim) return state;
   return { ...state, connection: "paused" as const, result: undefined };
 };

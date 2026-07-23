@@ -22,7 +22,7 @@ export interface ClaimEntry {
   readonly name: string;
   readonly effect: "pause" | "escalate";
   readonly tags: ReadonlySet<string>;
-  readonly report: (id: string, error: AnyTaggedError) => void;
+  readonly report: (id: string, error: AnyTaggedError, retry?: () => void) => void;
   readonly release: (id: string) => void;
   readonly whenChanged: () => Promise<void>;
 }
@@ -43,6 +43,7 @@ export interface AmbientClaim {
 export const useAmbientClaim = (
   error: AnyTaggedError | undefined,
   onClaimed?: (entry: ClaimEntry, error: AnyTaggedError) => void,
+  retry?: () => void,
 ): AmbientClaim | undefined => {
   const entries = useContext(ClaimScopeContext);
   const id = useId();
@@ -61,10 +62,10 @@ export const useAmbientClaim = (
   const holder = held ? claimant : undefined;
   useEffect(() => {
     if (!holder || !held) return;
-    holder.report(id, held);
+    holder.report(id, held, retry);
     onClaimed?.(holder, held);
     return () => holder.release(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClaimed identity is not a re-report trigger
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClaimed/retry identities are not re-report triggers
   }, [holder, held, id]);
   if (claimant?.effect === "escalate") throw error;
   return holder ? { entry: holder } : undefined;

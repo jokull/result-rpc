@@ -392,6 +392,104 @@ describe("layer factory", () => {
     expect(sessionRuns).toBe(2); // once more, not twice more
   });
 
+  test("sign back in: re-established layer value auto-resumes held operations", async () => {
+    const UserCodec = wire.object({ id: wire.string });
+    const NullableUserCodec = wire.union([UserCodec, wire.null] as const);
+    const SessionLayer2 = defineLayer({
+      name: "session-resume",
+      key: "viewer",
+      provides: NullableUserCodec,
+      errors: {},
+    });
+    const ViewerLayer2 = SessionLayer2.require({
+      name: "viewer-resume",
+      provides: UserCodec,
+      errors: { Unauthorized },
+      refine: ({ value, errors }) =>
+        value === null ? err(errors.Unauthorized()) : ok(value),
+    });
+
+    // mutable server-side session: starts valid, gets revoked, comes back
+    let sessionUser: string | undefined = "u_5";
+    let serial = 0;
+    const app2 = rpc.context<{}>();
+    const session2 = SessionLayer2.middleware(app2, () =>
+      ok(sessionUser === undefined ? null : { id: sessionUser }));
+    const authenticated2 = ViewerLayer2.middleware(app2, session2);
+    const router2 = app2.router({
+      me: ViewerLayer2.procedure(app2, authenticated2),
+      secret: app2.procedure()
+        .output(wire.string)
+        .errors({ Unauthorized })
+        .use(authenticated2)
+        .query(({ context }) => ok(`secret #${++serial} for ${context.viewer.id}`)),
+    });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: client2 });
+    const ViewerShell = layerShell(ViewerLayer2, {
+      from: DefectShell,
+      procedure: client2.me,
+    });
+
+    let state: string | undefined;
+    let value: string | undefined;
+    let refetchSecret: (() => Promise<unknown>) | undefined;
+    function Probe() {
+      const query = ViewerShell.useQuery(client2.secret, {}, { retry: false });
+      state = query.state;
+      if (query.state === "success") value = query.result.value;
+      refetchSecret = query.refetch;
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AppShell.Provider>
+            <DefectShell.Provider>
+              <ViewerShell.Provider fallback={<span>signing in…</span>}>
+                <Probe />
+              </ViewerShell.Provider>
+            </DefectShell.Provider>
+          </AppShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(state).toBe("success");
+    expect(value).toBe("secret #1 for u_5");
+
+    // revoke mid-session; the failed refetch is held by the shell — the stale
+    // value keeps rendering instead of blanking or failing
+    sessionUser = undefined;
+    await act(async () => {
+      await refetchSecret!().catch(() => undefined);
+      await settle();
+    });
+    expect(state).toBe("success");
+    expect(value).toBe("secret #1 for u_5"); // stale, held
+
+    // sign back in and re-establish the layer value — no manual resume call
+    sessionUser = "u_5";
+    await act(async () => {
+      await runtime.cache.invalidate(client2.me, {});
+      await settle();
+    });
+    expect(state).toBe("success");
+    expect(value).toBe("secret #2 for u_5"); // fresh fetch proves auto-resume ran
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
   test("a refinement that cannot fail is rejected", () => {
     const SessionLayer = defineLayer({
       name: "session-b",

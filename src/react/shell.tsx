@@ -62,11 +62,19 @@ export interface ShellActiveState<TError extends AnyTaggedError> {
   readonly errors: readonly TError[];
   /** How many observers are currently held by this shell. */
   readonly affected: number;
+  /**
+   * Retries every operation this shell is holding — the end of the pause arc:
+   * claim, hold, fix the condition (re-authenticate, reconnect), resume.
+   * Queries refetch and subscriptions reconnect; held mutations stay idle,
+   * because replaying a side effect is never the shell's call to make.
+   */
+  readonly resume: () => void;
 }
 
 interface ShellNode {
-  readonly report: (id: string, error: AnyTaggedError) => void;
+  readonly report: (id: string, error: AnyTaggedError, retry?: () => void) => void;
   readonly release: (id: string) => void;
+  readonly retryAll: () => void;
   readonly subscribe: (listener: () => void) => () => void;
   readonly snapshot: () => ShellActiveState<AnyTaggedError>;
   readonly whenChanged: () => Promise<void>;
@@ -183,11 +191,6 @@ export interface DefineShellOptions<
   readonly provide?: (props: TProps) => TValue;
 }
 
-const emptyActive: ShellActiveState<AnyTaggedError> = Object.freeze({
-  active: undefined,
-  errors: Object.freeze([]),
-  affected: 0,
-});
 
 const internals = new WeakMap<AnyShell, ShellInternals>();
 
@@ -201,16 +204,25 @@ const createNode = (
   onError: ((error: never, value: unknown) => void) | undefined,
   valueRef: { current: unknown },
 ): ShellNode => {
-  const entries = new Map<string, AnyTaggedError>();
+  const entries = new Map<string, { readonly error: AnyTaggedError; readonly retry?: () => void }>();
   const listeners = new Set<() => void>();
   let changed: Array<() => void> = [];
-  let snapshot = emptyActive;
+  const retryAll = () => {
+    for (const holding of [...entries.values()]) holding.retry?.();
+  };
+  let snapshot: ShellActiveState<AnyTaggedError> = Object.freeze({
+    active: undefined,
+    errors: Object.freeze([]),
+    affected: 0,
+    resume: retryAll,
+  });
   const recompute = () => {
-    const errors = [...entries.values()];
+    const errors = [...entries.values()].map((holding) => holding.error);
     snapshot = {
       active: errors[errors.length - 1],
       errors,
       affected: errors.length,
+      resume: retryAll,
     };
     for (const listener of listeners) listener();
     const pending = changed;
@@ -218,15 +230,16 @@ const createNode = (
     for (const resolve of pending) resolve();
   };
   return {
-    report: (id, error) => {
-      if (entries.get(id) === error) return;
-      entries.set(id, error);
+    report: (id, error, retry) => {
+      if (entries.get(id)?.error === error) return;
+      entries.set(id, retry === undefined ? { error } : { error, retry });
       recompute();
       onError?.(error as never, valueRef.current);
     },
     release: (id) => {
       if (entries.delete(id)) recompute();
     },
+    retryAll,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -485,6 +498,27 @@ export const layerShell = <
           {} as ProcedureClientInput<TProcedureClient>,
         ) as unknown as QueryState<TValue, AnyTaggedError>;
 
+  /**
+   * Re-establishment resumes: when the layer value is loaded anew (a fresh
+   * `updatedAt` on the context procedure — e.g. after signing back in), every
+   * operation this shell is holding retries automatically.
+   */
+  const AutoResume = ({ stamp, children }: {
+    readonly stamp: number;
+    readonly children?: ReactNode;
+  }): ReactNode => {
+    const active = (inner as AnyShell).useActive();
+    const resumeRef = useRef(active.resume);
+    resumeRef.current = active.resume;
+    const previous = useRef(stamp);
+    useEffect(() => {
+      if (stamp === previous.current) return;
+      previous.current = stamp;
+      resumeRef.current();
+    }, [stamp]);
+    return children;
+  };
+
   const Provider = ({ children, fallback }: LayerShellProviderProps): ReactNode => {
     const load = useLoad();
     const value = load.state === "success" ? load.result.value : undefined;
@@ -503,7 +537,7 @@ export const layerShell = <
         readonly children?: ReactNode;
       }) => ReactNode,
       { value: load.result.value },
-      children,
+      createElement(AutoResume, { stamp: load.updatedAt }, children),
     );
   };
 

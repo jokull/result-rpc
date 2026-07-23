@@ -784,8 +784,18 @@ Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
 fallback can `matchError` on it. The library does not introduce a second public
 wrapper error shape.
 
-Each shell instance owns a small store of the errors it is currently holding,
-exposed as an aggregate through `useActive()`. Connectivity is a property of the
+Each shell instance owns a small store of the errors it is currently holding —
+each with the retry handle its observer registered (query refetch, subscription
+reconnect; mutations register none). `useActive()` exposes the aggregate plus
+`resume()`, which retries every holding. Layer shells resume automatically when
+their context procedure's `updatedAt` advances (the value was re-established).
+
+Teardown is specified: holdings release via each claim effect's cleanup as
+observers unmount (child-first, so the node drains before the provider goes),
+`onError` never re-fires on unmount, and a remount is a fresh node — a cached
+failure encountered again is a new claim.
+
+Each shell instance owns its aggregate through `useActive()`. Connectivity is a property of the
 application, not of any single operation, so the ambient tier is observed rather
 than branched on.
 
@@ -906,15 +916,6 @@ The test suite collectively verifies observable Result and error-union parity th
 Each phase must preserve the architectural invariants. In particular, batching,
 streaming, SSR, and framework adapters cannot introduce a second error channel or
 bypass the same codecs used by unary remote calls.
-
-## Known gaps
-
-Shell teardown while claimed operations are held is not yet specified. A layer
-that responds to its claim by unmounting the subtree — the session-expired
-redirect — discards observers that are mid-flight. The disposition of that work
-(cancel versus settle into a discarded cache entry) is currently whatever the
-query runtime's unmount path does, and must be pinned down before applications
-depend on it.
 
 ## Deliberate non-goals for the first release
 

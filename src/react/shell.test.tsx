@@ -402,3 +402,126 @@ describe("claim breadcrumbs", () => {
     runtime.clear();
   });
 });
+
+describe("resume lifecycle", () => {
+  test("resume() retries held queries after the condition is fixed", async () => {
+    // a server whose session validity is mutable mid-flight
+    let sessionValid = false;
+    const r2 = rpc.context<{}>();
+    const guarded = r2.procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.string)
+      .errors({ SessionExpired })
+      .query(({ input, errors }) =>
+        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})));
+    const router2 = r2.router({ guarded });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: client2 });
+    const AuthShell = defineShell({
+      name: "resume-auth",
+      from: DefectShell,
+      handle: authErrors,
+      provide: (props: { readonly userId: string }) => props.userId,
+    });
+
+    let state: string | undefined;
+    let value: string | undefined;
+    let resume: (() => void) | undefined;
+    let affected = 0;
+    function Probe() {
+      const query = useResultQuery(client2.guarded, { id: "a" }, { retry: false });
+      const active = AuthShell.useActive();
+      state = query.state;
+      if (query.state === "success") value = query.result.value;
+      resume = active.resume;
+      affected = active.affected;
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AppShell.Provider>
+            <DefectShell.Provider>
+              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+            </DefectShell.Provider>
+          </AppShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    // held: the expired session paused the query
+    expect(state).toBe("pending");
+    expect(affected).toBe(1);
+
+    // fix the condition, then resume
+    sessionValid = true;
+    await act(async () => {
+      resume!();
+      await settle();
+    });
+    expect(state).toBe("success");
+    expect(value).toBe("data:a");
+    expect(affected).toBe(0); // holdings cleared once the retry succeeded
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("teardown: unmounting a holding shell releases everything, and a remount starts clean", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    const seen: string[] = [];
+    const AuthShell = defineShell({
+      name: "teardown-auth",
+      from: DefectShell,
+      handle: authErrors,
+      onError: (failure) => seen.push(failure._tag),
+      provide: (props: { readonly userId: string }) => props.userId,
+    });
+
+    function Probe() {
+      useResultQuery(client.trip, { id: "expired" });
+      return null;
+    }
+    const tree = (
+      <ResultRpcProvider runtime={runtime}>
+        <AppShell.Provider>
+          <DefectShell.Provider>
+            <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+          </DefectShell.Provider>
+        </AppShell.Provider>
+      </ResultRpcProvider>
+    );
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(tree);
+      await settle();
+    });
+    expect(seen).toEqual(["auth/session-expired"]);
+    // unmount while holding: releases cleanly, no re-fire, no leak
+    await act(async () => renderer!.unmount());
+    expect(seen).toEqual(["auth/session-expired"]);
+
+    // a fresh mount is a fresh world: the cached failure is re-claimed (from
+    // cache, and again when the stale refetch produces a new error value —
+    // onError is once per newly claimed error and must be idempotent)
+    await act(async () => {
+      renderer = create(tree);
+      await settle();
+    });
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(seen)).toEqual(new Set(["auth/session-expired"]));
+    await act(async () => renderer!.unmount());
+    runtime.clear();
+  });
+});

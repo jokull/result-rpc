@@ -836,11 +836,32 @@ the structural `TaggedError`, not wrapped in an `Error`, so the fallback can sti
 a revoked session — arrives on every in-flight operation at once, so handlers must
 be idempotent.
 
-Pausing does not itself schedule a retry. The query runtime's ordinary policy
-still owns that: a transient tag is retried before it is ever claimed, and the
-paused operation resumes on reconnect or on explicit invalidation. A layer whose
-effect is `pause` and whose handler navigates away is expected to unmount the
-subtree it paused; a handler that does neither leaves the operation held.
+### The pause arc ends in resume
+
+Held is not stuck. Every holding carries a retry handle, and the shell exposes
+the whole set:
+
+```tsx
+const { active, affected, resume } = AuthShell.useActive()
+// after re-authenticating:
+resume() // every held query refetches; held subscriptions reconnect
+```
+
+Held mutations stay idle — replaying a side effect is never the shell's call.
+
+Layer shells close the loop automatically: when the layer's context procedure
+re-establishes its value (sign back in, invalidate `client.auth.me`), every
+operation the shell was holding resumes without a line of app code. Mid-session
+revocation therefore plays out as: refetch fails → shell holds it → the stale
+value keeps rendering → re-auth → held work refetches fresh. The screen never
+blanks and no component ever branched on it.
+
+### Teardown
+
+Unmounting a holding shell releases its holdings cleanly — observers release on
+their own unmount, `onError` does not re-fire, nothing leaks. A fresh mount is
+a fresh world: a cached failure encountered again is claimed again (once per
+newly claimed error value).
 
 ### Ambient failures are aggregate, not per-operation
 
