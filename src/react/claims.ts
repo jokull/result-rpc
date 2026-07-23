@@ -42,6 +42,7 @@ export interface AmbientClaim {
  */
 export const useAmbientClaim = (
   error: AnyTaggedError | undefined,
+  onClaimed?: (entry: ClaimEntry, error: AnyTaggedError) => void,
 ): AmbientClaim | undefined => {
   const entries = useContext(ClaimScopeContext);
   const id = useId();
@@ -61,7 +62,9 @@ export const useAmbientClaim = (
   useEffect(() => {
     if (!holder || !held) return;
     holder.report(id, held);
+    onClaimed?.(holder, held);
     return () => holder.release(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClaimed identity is not a re-report trigger
   }, [holder, held, id]);
   if (claimant?.effect === "escalate") throw error;
   return holder ? { entry: holder } : undefined;

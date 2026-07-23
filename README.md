@@ -1310,6 +1310,63 @@ Parity mode runs the same codecs and undeclared-error checks as the remote
 protocol. A separate test transport covers malformed envelopes, 5xx responses,
 timeouts, offline behavior, and batch failures.
 
+## Observability
+
+Every observable moment is already a value at a known choke point, so
+observability is one structured stream plus adapters — never an integration
+that fights the framework. Four taps, one per tier:
+
+```ts
+// 1. Wire: every call, retry, claim — paths, tags, timing; never values.
+const client = createClient({
+  contract,
+  transport,
+  onEvent: (event) => Sentry.addBreadcrumb({
+    category: `rpc.${event.type}`,
+    message: event.path,
+    level: event.type === "failure" ? "warning" : "info",
+    data: event,
+  }),
+})
+// event: call | success | failure | retry
+//      | claimed  ← a shell took ownership: { path, tag, owner, effect }
+
+// 2. Ownership: a shell's reaction is a reporting moment.
+const AuthShell = layerShell(AuthLayer, {
+  from: DefectShell,
+  procedure: (client: AppClient) => client.auth.me,
+  onError: (error) => {
+    Sentry.captureMessage(`signed out: ${error._tag}`, "info")
+    redirect("/login")
+  },
+})
+
+// 3. Server, declared errors: policy included, so severity routes the sink.
+createFetchHandler({
+  router,
+  onError: ({ error, policy, procedurePath, httpStatus }) => {
+    metrics.increment(error._tag, { status: httpStatus })
+    if (policy?.severity === "error") Sentry.captureMessage(error._tag)
+  },
+  // 4. Server, defects: the only place causes and stacks exist.
+  onInternalError: ({ incidentId, cause, procedurePath, phase }) => {
+    Sentry.captureException(cause, { tags: { incidentId, procedurePath, phase } })
+  },
+})
+```
+
+The wire stream is redaction-safe by construction: events carry paths, tags,
+durations, owners — never inputs or outputs — so forwarding it verbatim to a
+third-party tracker is not a data decision.
+
+For inline observation of a single Result, the tap combinators return the
+original value unchanged:
+
+```ts
+tapError(await client.trip.rename(input), (error) => log.warn(error._tag))
+// also: tap(result, fn), tapBoth(result, { ok, error })
+```
+
 ## What result-rpc owns
 
 | Concern | result-rpc contract |
@@ -1322,6 +1379,7 @@ timeouts, offline behavior, and batch failures.
 | Failure ownership | Layered shells that subtract claimed tags and guarantee context |
 | React | Query, mutation, subscription, suspense, and SSR bindings |
 | Diagnostics | Safe incident IDs publicly; full causes only in local observability |
+| Observability | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps |
 
 An initial implementation may use `@tanstack/query-core` privately. That is an
 engine choice, not part of the public API. Applications do not install or compose

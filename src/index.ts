@@ -1,6 +1,9 @@
 export {
   andThen,
   err,
+  tap,
+  tapBoth,
+  tapError,
   isErr,
   isOk,
   map,

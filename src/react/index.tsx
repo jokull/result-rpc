@@ -13,6 +13,11 @@ import type { AnyTaggedError } from "../error.js";
 import type { Result } from "../result.js";
 import { cancelled } from "../client/transport.js";
 import {
+  getClientEventListener,
+  getClientIdentity,
+  getProcedureClientMetadata,
+} from "../client/client.js";
+import {
   pauseQueryProjection,
   scopeClaims,
   useAmbientClaim,
@@ -109,6 +114,27 @@ const useRuntime = (): QueryRuntime => {
  */
 export const useResultClient = <TClient,>(): TClient => useRuntime().client as TClient;
 
+/** Builds the claim breadcrumb notifier for a procedure, if a listener exists. */
+const useClaimNotifier = (procedure: Function) => {
+  const runtime = useRuntime();
+  const identity = getClientIdentity(runtime.client as object);
+  const listener = identity ? getClientEventListener(identity) : undefined;
+  const path = getProcedureClientMetadata(procedure)?.path;
+  return useMemo(() => {
+    if (!listener || path === undefined) return undefined;
+    return (
+      entry: { readonly name: string; readonly effect: "pause" | "escalate" },
+      error: AnyTaggedError,
+    ) => listener({
+      type: "claimed",
+      path,
+      tag: error._tag,
+      owner: entry.name,
+      effect: entry.effect,
+    });
+  }, [listener, path]);
+};
+
 export interface ResultRpcHydrationProps {
   readonly state: DehydratedQueryRuntime;
   readonly children?: ReactNode;
@@ -160,7 +186,11 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   );
   // Ambient monitor: a failure claimed by any mounted shell never surfaces as
   // a terminal state, no matter which hook observed it.
-  const claim = useAmbientClaim(state.state === "failure" ? state.result.error : undefined);
+  const notifyClaim = useClaimNotifier(procedure);
+  const claim = useAmbientClaim(
+    state.state === "failure" ? state.result.error : undefined,
+    notifyClaim,
+  );
   return [
     claim
       ? (pauseQueryProjection(state) as QueryState<
@@ -255,8 +285,10 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
     }
     return result;
   });
+  const notifyClaim = useClaimNotifier(procedure);
   const claim = useAmbientClaim(
     state.state === "failure" ? (state.result.error as AnyTaggedError) : undefined,
+    notifyClaim,
   );
   if (!claim) return { ...state, mutate };
   return {
@@ -295,7 +327,8 @@ export const useResultSubscription = <
   const failure = state.result && !state.result.ok
     ? (state.result.error as AnyTaggedError)
     : undefined;
-  const claim = useAmbientClaim(failure);
+  const notifyClaim = useClaimNotifier(procedure);
+  const claim = useAmbientClaim(failure, notifyClaim);
   if (!claim) return state;
   return { ...state, connection: "paused" as const, result: undefined };
 };

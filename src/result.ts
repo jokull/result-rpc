@@ -64,3 +64,37 @@ export const matchError = <E extends AnyTaggedError, R>(
   const handler = handlers[error._tag as E["_tag"]];
   return handler(error as Extract<E, { readonly _tag: E["_tag"] }>);
 };
+
+/**
+ * Observation combinators (better-result parity): run a side effect, return
+ * the original Result unchanged. A tap must never alter control flow — a
+ * throwing tap is a defect in the tap, not a new failure channel, so it
+ * propagates as an exception rather than becoming an Err.
+ */
+export const tap = <T, E extends AnyTaggedError>(
+  result: Result<T, E>,
+  fn: (value: T) => void,
+): Result<T, E> => {
+  if (result.ok) fn(result.value);
+  return result;
+};
+
+export const tapError = <T, E extends AnyTaggedError>(
+  result: Result<T, E>,
+  fn: (error: E) => void,
+): Result<T, E> => {
+  if (!result.ok) fn(result.error);
+  return result;
+};
+
+export const tapBoth = <T, E extends AnyTaggedError>(
+  result: Result<T, E>,
+  handlers: Readonly<{
+    ok: (value: T) => void;
+    error: (error: E) => void;
+  }>,
+): Result<T, E> => {
+  if (result.ok) handlers.ok(result.value);
+  else handlers.error(result.error);
+  return result;
+};

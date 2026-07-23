@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, serialize, wire } from "../index.js";
 import { createFetchHandler, rpc } from "../server/index.js";
-import { createClient } from "./client.js";
+import { createClient, type ClientEvent } from "./client.js";
 import {
   batchFetchTransport,
   cancelled,
@@ -412,5 +412,84 @@ describe("unary client and server", () => {
     const result = await bounded.value.byId({ id: "one" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe("client/protocol-violation");
+  });
+});
+
+describe("observability events", () => {
+  const NotFound = error({ tag: "obs/not-found", httpStatus: "not-found" });
+  const Flaky = error({ tag: "obs/flaky", httpStatus: "service-unavailable", retry: "transient" });
+
+  const makeObservedClient = () => {
+    const r = rpc.context<{}>();
+    let failures = 0;
+    const router = r.router({
+      find: r.procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .errors({ NotFound })
+        .query(({ input, errors }) =>
+          input.id === "missing" ? err(errors.NotFound()) : ok(input.id)),
+      flaky: r.procedure()
+        .output(wire.string)
+        .errors({ Flaky })
+        .query(({ errors }) => (failures++ < 1 ? err(errors.Flaky()) : ok("recovered"))),
+    });
+    const handler = createFetchHandler({ router, createContext: () => ({}) });
+    const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
+      handler(new Request(input, init))) as typeof globalThis.fetch;
+    const events: ClientEvent[] = [];
+    const client = createClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+      onEvent: (event) => events.push(event),
+    });
+    return { client, events };
+  };
+
+  test("calls emit call/success and call/failure breadcrumbs with timing", async () => {
+    const { client, events } = makeObservedClient();
+    await client.find({ id: "one" });
+    await client.find({ id: "missing" });
+    expect(events.map((e) => e.type)).toEqual(["call", "success", "call", "failure"]);
+    const failure = events[3] as Extract<ClientEvent, { type: "failure" }>;
+    expect(failure.path).toBe("find");
+    expect(failure.tag).toBe("obs/not-found");
+    expect(failure.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("policy-driven retries appear in the stream", async () => {
+    const { client, events } = makeObservedClient();
+    const result = await client.flaky(undefined, { retry: "from-error-policy" });
+    expect(result).toEqual(ok("recovered"));
+    expect(events.map((e) => e.type)).toEqual(["call", "retry", "success"]);
+    const retry = events[1] as Extract<ClientEvent, { type: "retry" }>;
+    expect(retry.tag).toBe("obs/flaky");
+    expect(retry.attempt).toBe(1);
+  });
+
+  test("the stream adapts to a Sentry-shaped sink in one function", async () => {
+    const breadcrumbs: { category: string; message: string; level: string; data: unknown }[] = [];
+    const fakeSentry = { addBreadcrumb: (crumb: (typeof breadcrumbs)[number]) => breadcrumbs.push(crumb) };
+    const r = rpc.context<{}>();
+    const router = r.router({
+      ping: r.procedure().output(wire.string).query(() => ok("pong")),
+    });
+    const handler = createFetchHandler({ router, createContext: () => ({}) });
+    const client = createClient({
+      router,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+      onEvent: (event) => fakeSentry.addBreadcrumb({
+        category: `rpc.${event.type}`,
+        message: event.path,
+        level: event.type === "failure" ? "warning" : "info",
+        data: event,
+      }),
+    });
+    await client.ping();
+    expect(breadcrumbs.map((crumb) => crumb.category)).toEqual(["rpc.call", "rpc.success"]);
   });
 });

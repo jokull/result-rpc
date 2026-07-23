@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Component, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, err, error, ok, transportErrors, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createClient, type ClientEvent } from "../client/client.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler, rpc } from "../server/index.js";
@@ -347,6 +347,57 @@ describe("ambient claiming", () => {
       await settle();
     });
     expect(String((caught as Error).message)).toContain("is not mounted");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+});
+
+describe("claim breadcrumbs", () => {
+  test("a claim emits into the client event stream with owner and effect", async () => {
+    const events: ClientEvent[] = [];
+    const client = createClient({
+      router,
+      transport: httpTransport,
+      onEvent: (event) => events.push(event),
+    });
+    const runtime = createQueryRuntime({ client });
+    const AuthShell = defineShell({
+      name: "crumb-auth",
+      from: DefectShell,
+      handle: authErrors,
+      provide: (props: { readonly userId: string }) => props.userId,
+    });
+
+    function Probe() {
+      useResultQuery(client.trip, { id: "expired" });
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AppShell.Provider>
+            <DefectShell.Provider>
+              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+            </DefectShell.Provider>
+          </AppShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    const claimed = events.filter(
+      (event): event is Extract<ClientEvent, { type: "claimed" }> => event.type === "claimed",
+    );
+    expect(claimed).toEqual([{
+      type: "claimed",
+      path: "trip",
+      tag: "auth/session-expired",
+      owner: "crumb-auth",
+      effect: "pause",
+    }]);
+    // the wire failure precedes the claim in the trail
+    expect(events.map((event) => event.type)).toEqual(["call", "failure", "claimed"]);
     await act(async () => renderer?.unmount());
     runtime.clear();
   });

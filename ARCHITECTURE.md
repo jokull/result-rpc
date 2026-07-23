@@ -264,10 +264,22 @@ union includes and `defectErrors` claims.
 
 ### Observability
 
-`createFetchHandler` takes two taps: `onInternalError` (defects, with cause and
-incident id) and `onError` (every declared error response, with the error
-value, its `ErrorPolicy`, the path, and the HTTP status). `severity` on the
-policy exists for the latter.
+One structured stream per tier, values excluded by construction:
+
+- **Client** — `createClient({ onEvent })`: `call`/`success`/`failure`/`retry`
+  from the call pipeline (paths, tags, durations), plus `claimed` when a shell
+  takes ownership of a failure (path, tag, owner, effect). Claim events emit at
+  the same dedupe point as shell `onError` — once per held error per observer.
+- **Shells** — `onError` per shell: the ownership reaction itself.
+- **Server, declared** — `createFetchHandler({ onError })`: every declared
+  error response with its `ErrorPolicy`, path, and status; `severity` exists
+  for this tap.
+- **Server, defects** — `onInternalError`: the only tap that ever sees causes
+  and stacks.
+
+`tap`/`tapError`/`tapBoth` observe a single Result inline and return it
+unchanged; a throwing tap is a defect in the tap and propagates as an
+exception rather than becoming an Err.
 
 ### Built-in errors
 

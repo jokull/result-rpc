@@ -101,18 +101,48 @@ export type ClientOf<TRouter> = TRouter extends Router<any, infer TRecord>
     ? ClientRecord<TRecord>
     : never;
 
+/**
+ * The wire-level breadcrumb stream. Every operation the client performs emits
+ * structured events — no values, only paths, tags, and timing, so the stream
+ * is safe to forward to error trackers verbatim. One `onEvent` feeds Sentry
+ * breadcrumbs, metrics, or a devtools timeline without touching call sites.
+ */
+export type ClientEvent =
+  | Readonly<{ type: "call"; kind: "query" | "mutation" | "subscription"; path: string }>
+  | Readonly<{ type: "success"; kind: "query" | "mutation" | "subscription"; path: string; durationMs: number }>
+  | Readonly<{
+      type: "failure";
+      kind: "query" | "mutation" | "subscription";
+      path: string;
+      tag: string;
+      durationMs: number;
+    }>
+  | Readonly<{ type: "retry"; path: string; tag: string; attempt: number; delayMs: number }>
+  | Readonly<{
+      /** A shell took ownership of a failure beneath it. */
+      type: "claimed";
+      path: string;
+      tag: string;
+      owner: string;
+      effect: "pause" | "escalate";
+    }>;
+
+export type ClientEventListener = (event: ClientEvent) => void;
+
 export interface CreateContractClientOptions<
   TRouter extends RouterContract<any, ContractRouterRecord>,
 > {
   /** Runtime contract used to encode inputs and validate outputs and errors. */
   readonly contract: TRouter;
   readonly transport: ClientTransport;
+  readonly onEvent?: ClientEventListener;
 }
 
 export interface CreateRouterClientOptions<TRouter extends Router<any, RouterRecord>> {
   /** Full server routers are accepted for colocated or migration use. */
   readonly router: TRouter;
   readonly transport: ClientTransport;
+  readonly onEvent?: ClientEventListener;
 }
 
 export type CreateClientOptions<TRouter extends ClientRouter> =
@@ -130,6 +160,12 @@ export interface ProcedureClientMetadata {
 
 const procedureClientMetadata = new WeakMap<Function, ProcedureClientMetadata>();
 const clientIdentities = new WeakMap<object, object>();
+const clientEventListeners = new WeakMap<object, ClientEventListener>();
+
+/** Internal: the event listener registered for a client, by client identity. */
+export const getClientEventListener = (
+  clientIdentity: object,
+): ClientEventListener | undefined => clientEventListeners.get(clientIdentity);
 
 export const getProcedureClientMetadata = (
   value: Function,
@@ -282,14 +318,33 @@ const callProcedure = async (
   path: string,
   input: unknown,
   transport: ClientTransport,
+  onEvent: ClientEventListener | undefined,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
+  const kind = procedure._def.kind as "query" | "mutation";
+  const startedAt = Date.now();
+  onEvent?.({ type: "call", kind, path });
   for (let attempt = 0; ; attempt += 1) {
     const result = await callProcedureOnce(procedure, path, input, transport, options);
-    if (result.ok || options?.retry !== "from-error-policy") return result;
-    const delay = retryDelayFor(procedure, result.error, attempt);
-    if (delay === undefined) return result;
-    await waitForRetry(delay, options.signal);
+    if (result.ok) {
+      onEvent?.({ type: "success", kind, path, durationMs: Date.now() - startedAt });
+      return result;
+    }
+    const delay = options?.retry === "from-error-policy"
+      ? retryDelayFor(procedure, result.error, attempt)
+      : undefined;
+    if (delay === undefined) {
+      onEvent?.({
+        type: "failure",
+        kind,
+        path,
+        tag: result.error._tag,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    }
+    onEvent?.({ type: "retry", path, tag: result.error._tag, attempt: attempt + 1, delayMs: delay });
+    await waitForRetry(delay, options?.signal);
   }
 };
 
@@ -298,15 +353,14 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
   path: string,
   input: unknown,
   transport: ClientTransport,
+  onEvent: ClientEventListener | undefined,
   options: TransportRequestOptions = {},
 ): ResultSubscription<T, E> => {
   const controller = new AbortController();
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
-  return {
-    close: () => controller.abort(),
-    async *[Symbol.asyncIterator]() {
+  async function* stream(): AsyncGenerator<Result<T, E>> {
       const encodedInput = procedure._def.input.encode(input);
       if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
       if (!transport.stream) {
@@ -371,6 +425,28 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
       } finally {
         reader.releaseLock();
       }
+  }
+  return {
+    close: () => controller.abort(),
+    async *[Symbol.asyncIterator]() {
+      const startedAt = Date.now();
+      onEvent?.({ type: "call", kind: "subscription", path });
+      let last: Result<T, E> | undefined;
+      for await (const result of stream()) {
+        last = result;
+        yield result;
+      }
+      if (last === undefined || last.ok) {
+        onEvent?.({ type: "success", kind: "subscription", path, durationMs: Date.now() - startedAt });
+      } else {
+        onEvent?.({
+          type: "failure",
+          kind: "subscription",
+          path,
+          tag: (last.error as AnyTaggedError)._tag,
+          durationMs: Date.now() - startedAt,
+        });
+      }
     },
   };
 };
@@ -378,6 +454,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
 const createProxy = (
   router: ClientRouter,
   transport: ClientTransport,
+  onEvent: ClientEventListener | undefined,
   path: readonly string[],
   cache: Map<string, unknown>,
   clientIdentity: object,
@@ -400,7 +477,7 @@ const createProxy = (
           || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
         if (!leadsSomewhere) return undefined;
       }
-      return createProxy(router, transport, candidate, cache, clientIdentity);
+      return createProxy(router, transport, onEvent, candidate, cache, clientIdentity);
     },
     apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);
@@ -410,10 +487,11 @@ const createProxy = (
           procedurePath,
           argumentsList[0],
           transport,
+          onEvent,
           argumentsList[1],
         );
       }
-      return callProcedure(procedure, procedurePath, argumentsList[0], transport, argumentsList[1]);
+      return callProcedure(procedure, procedurePath, argumentsList[0], transport, onEvent, argumentsList[1]);
     },
   });
   clientIdentities.set(proxy, clientIdentity);
@@ -437,9 +515,11 @@ export function createClient(
 ): ClientOf<ClientRouter> {
   const router = "contract" in options ? options.contract : options.router;
   const clientIdentity = Object.freeze({});
+  if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
   return createProxy(
     router,
     options.transport,
+    options.onEvent,
     [],
     new Map(),
     clientIdentity,
