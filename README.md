@@ -937,6 +937,36 @@ AuthShell.handledTags
 Assert on it in a type test or a unit test so that adding an application-namespace
 tag to a shell is a deliberate, reviewable act.
 
+## The router surface
+
+`result-rpc/router` fuses shells with TanStack Router (an optional peer
+dependency — the routing engine, params, search params, and preloading stay
+native). A shell emits a route fragment: its Provider as the route `component`,
+and — for layer shells — a `loader` that prefetches the layer's context
+procedure before the route commits:
+
+```tsx
+import { createResultRouter, ResultRouterProvider, routeShell } from "result-rpc/router"
+
+const authedRoute = createRoute({
+  getParentRoute: () => sessionRoute,
+  id: "authed",
+  ...routeShell(ViewerShell, { pending: <p>signing in…</p> }),
+})
+
+const world = createResultRouter({
+  client,
+  router: (context) => createRouter({ routeTree, context }),
+})
+
+<ResultRouterProvider world={world} />
+```
+
+Every route below `authedRoute` renders with `viewer: User` guaranteed, the
+auth union subtracted, and the viewer already fetched by the time the route
+commits. `routeShell` also takes `layout:` (wrap the outlet in banners or
+notices owned by the layer) and `component:` (leaf routes that own their page).
+
 ## Mutations return the same Result state
 
 ```tsx
@@ -1242,12 +1272,15 @@ with its own tests:
    a five-layer shell onion, a feature shell, subscriptions, and a defect
    boundary. Its compile-time probes assert the payoff directly: under the full
    onion, a mutation declaring nine failure tags presents exactly one.
-4. **04-router** — TanStack Router integration: routes are shells. Pathless
-   layouts mount the session and viewer layers, a route claims its feature
-   error, `errorComponent` receives escalated defects, `onError` navigates, and
-   layout loaders prefetch each layer's context procedure so the first paint
-   has no fallback states. Shells are defined at module level with the
-   `procedure: (client) => client.auth.me` selector form.
+4. **04-router** — TanStack Router integration by hand: routes are shells.
+   Pathless layouts mount the session and viewer layers, a route claims its
+   feature error, `errorComponent` receives escalated defects, `onError`
+   navigates, and layout loaders prefetch each layer's context procedure so the
+   first paint has no fallback states.
+5. **05-framework** — rung 4 rebuilt on `result-rpc/router`: `routeShell`
+   fragments spread into `createRoute`, so one declaration per layer produces
+   both the provider component and the prefetch loader. The diff between rungs
+   4 and 5 is the framework's value proposition.
 
 ## Design and verification
 

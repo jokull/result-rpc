@@ -39,6 +39,10 @@
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.js"
+    },
+    "./router": {
+      "types": "./dist/router/index.d.ts",
+      "import": "./dist/router/index.js"
     }
   },
   "scripts": {
@@ -66,6 +70,12 @@
     "devalue": "5.8.2"
   },
   "peerDependencies": {
-    "react": ">=18.3"
+    "react": ">=18.3",
+    "@tanstack/react-router": ">=1.100"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-router": {
+      "optional": true
+    }
   }
 }

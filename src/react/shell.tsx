@@ -570,5 +570,16 @@ export const layerShell = <
   // The wrapped shell shares the inner shell's identity in the chain registry so
   // child shells can use it as `from:` and hooks resolve the same context.
   internals.set(shell, internalsOf(inner as AnyShell));
+  layerResolvers.set(shell, resolveProcedure as (client: unknown) => QueryProcedureClientLike);
   return shell;
 };
+
+const layerResolvers = new WeakMap<AnyShell, (client: unknown) => QueryProcedureClientLike>();
+
+/**
+ * Internal: the context-procedure resolver of a layer-derived shell, used by
+ * router integrations to derive prefetching loaders. Undefined for plain shells.
+ */
+export const getLayerProcedureResolver = (
+  shell: AnyShell,
+): ((client: unknown) => QueryProcedureClientLike) | undefined => layerResolvers.get(shell);

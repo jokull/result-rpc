@@ -759,6 +759,18 @@ selector `(client) => procedure`, resolved through the enclosing provider via
 before any client instance exists. The runtime exposes its `client` for this
 and for router loader contexts.
 
+## Router integration
+
+`result-rpc/router` treats @tanstack/react-router as an optional peer and owns
+only the authoring seam. `routeShell(shell, options)` produces route fragments
+(`component`, and for layer shells a `loader` reading `{ client, runtime }`
+from the router context) that spread into `createRoute` — TanStack's own
+generics for params and search stay untouched because the route is still
+created by TanStack. `createResultRouter` builds the client/runtime/router
+world and `ResultRouterProvider` mounts it. The layer-shell procedure resolver
+is exposed to this module through an internal registry
+(`getLayerProcedureResolver`); it is not public API.
+
 ## Security and resource limits
 
 The core protocol enforces:
