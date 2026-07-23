@@ -1244,6 +1244,36 @@ runtime. Invalid values are never reflected back to the client. Custom procedure
 codecs can enforce finer domain-specific collection, string, and nesting limits.
 
 
+## File uploads keep the typed input
+
+`File` and `Blob` cannot cross a value serializer, and the usual answer —
+degrade the whole input to `FormData` — costs the contract exactly where
+uploads need it most. result-rpc keeps the typed object; files ride as
+multipart sidecar parts the runtime substitutes transparently:
+
+```ts
+const setAvatar = app.procedure()
+  .input(wire.object({
+    userId: wire.string,
+    image: wire.file({ maxBytes: 5_000_000, accept: ["image/*"] }),
+  }))
+  .output(AvatarCodec)
+  .errors({ ImageUnprocessable })
+  .mutation(async ({ input }) => {
+    // input.image is a real File — name, size, stream(), the works
+    return ok(await store(input.userId, input.image))
+  })
+
+await client.setAvatar({ userId, image: fileInput.files[0] })
+```
+
+Size and MIME constraints are declared on the codec and enforced on both sides
+— oversized or wrong-typed files reject at the client before any bytes move,
+and again on the server. Uploads bypass batching (one multipart request per
+call), subscriptions reject file inputs, and a file marker smuggled into an
+ordinary request never resolves — the substitution only exists on multipart
+requests and must be a perfect bijection with the parts.
+
 ## Cancellation is not an operation error
 
 Query cancellation updates lifecycle state without producing an `Err`, consuming a

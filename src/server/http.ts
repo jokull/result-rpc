@@ -1,6 +1,7 @@
 import type { AnyTaggedError , ErrorPolicy } from "../error.js";
 import { frameworkError as error } from "../error.js";
 import { badRequestFromIssues, frameworkErrorDefinitions, ServerInternal } from "../framework-errors.js";
+import { injectFiles } from "../files.js";
 import {
   PROTOCOL_CONTENT_TYPE,
   PROTOCOL_VERSION,
@@ -267,17 +268,50 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     if (url.pathname !== endpoint || request.method !== "POST") {
       return failWith(ProtocolNotFound({}), 404);
     }
-    if (!isProtocolContentType(request.headers.get("content-type"))) {
+    const contentTypeHeader = request.headers.get("content-type");
+    const isMultipart = contentTypeHeader?.toLowerCase().startsWith("multipart/form-data") ?? false;
+    if (!isMultipart && !isProtocolContentType(contentTypeHeader)) {
       return failWith(ProtocolInvalidRequest({}), 400);
     }
 
-    const body = await readRequestBody(request, maxRequestBytes);
+    // Multipart requests carry the envelope as a form field plus numbered
+    // file parts; markers inside the input resolve to those parts below.
+    let body: string | undefined;
+    let fileParts: readonly Blob[] = [];
+    if (isMultipart) {
+      let form: FormData;
+      try {
+        form = await request.formData();
+      } catch {
+        return failWith(ProtocolInvalidRequest({}), 400);
+      }
+      const envelopeField = form.get("envelope");
+      if (typeof envelopeField !== "string" || envelopeField.length > maxRequestBytes) {
+        return failWith(ProtocolInvalidRequest({}), 400);
+      }
+      body = envelopeField;
+      const parts: Blob[] = [];
+      for (let index = 0; ; index += 1) {
+        const part = form.get(String(index));
+        if (part === null) break;
+        if (typeof part === "string") return failWith(ProtocolInvalidRequest({}), 400);
+        parts.push(part);
+      }
+      fileParts = parts;
+    } else {
+      body = await readRequestBody(request, maxRequestBytes);
+    }
     if (body === undefined) return failWith(ProtocolInvalidRequest({}), 400);
     const decodedBody = deserialize(body, { maxBytes: maxRequestBytes });
     if (!decodedBody.ok) return failWith(ProtocolInvalidRequest({}), 400);
-    const raw = decodedBody.value;
+    let raw = decodedBody.value;
+    if (fileParts.length > 0) {
+      const injected = injectFiles(raw, fileParts);
+      if (injected === undefined) return failWith(ProtocolInvalidRequest({}), 400);
+      raw = injected as typeof raw;
+    }
     const envelope = decodeRequestEnvelope(raw);
-    const batch = envelope ? undefined : decodeBatchRequestEnvelope(raw);
+    const batch = envelope || isMultipart ? undefined : decodeBatchRequestEnvelope(raw);
     if (!envelope && !batch) return failWith(ProtocolInvalidRequest({}), 400);
     if (batch && batch.batch.length > maxBatchItems) {
       return failureResponse(ProtocolInvalidRequest({}), 400);

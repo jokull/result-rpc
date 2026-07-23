@@ -143,6 +143,55 @@ const serializable = <T>(): WireCodec<T, T & WireValue> => ({
     : failure("Expected a value supported by the wire serializer"),
 });
 
+export interface FileOptions {
+  /** Maximum size in bytes; enforced at encode (client) and decode (server). */
+  readonly maxBytes?: number;
+  /** Allowed MIME types; exact match or `image/*`-style wildcard. */
+  readonly accept?: readonly string[];
+}
+
+const typeAccepted = (type: string, accept: readonly string[] | undefined): boolean => {
+  if (!accept || accept.length === 0) return true;
+  return accept.some((pattern) => pattern.endsWith("/*")
+    ? type.startsWith(pattern.slice(0, -1))
+    : type === pattern);
+};
+
+/**
+ * A `File` field. Files never enter the devalue payload — the transport moves
+ * them as multipart sidecar parts and the runtime substitutes them back before
+ * this codec validates, so both sides see a real `File`/`Blob` instance.
+ */
+const file = (options: FileOptions = {}): WireCodec<File, WireValue> => {
+  const validate = (value: unknown): DecodeResult<File> => {
+    if (typeof Blob === "undefined" || !(value instanceof Blob)) {
+      return { ok: false, issues: [{ path: [], message: "Expected a file" }] };
+    }
+    if (options.maxBytes !== undefined && value.size > options.maxBytes) {
+      return {
+        ok: false,
+        issues: [{ path: [], message: `File exceeds ${options.maxBytes} bytes` }],
+      };
+    }
+    if (!typeAccepted(value.type, options.accept)) {
+      return { ok: false, issues: [{ path: [], message: `Unsupported file type ${value.type}` }] };
+    }
+    return { ok: true, value: value as File };
+  };
+  return {
+    kind: "file",
+    encode: (value) => {
+      const checked = validate(value);
+      // The File instance passes through; extraction to a sidecar part happens
+      // at the transport boundary, after encoding.
+      return checked.ok
+        ? { ok: true, value: checked.value as unknown as WireValue }
+        : checked as DecodeResult<WireValue>;
+    },
+    decode: (value) => validate(value),
+  };
+};
+
 const nullCodec: WireCodec<null, null> = {
   kind: "null",
   encode: (input) => (input === null ? success(null) : failure("Expected null")),
@@ -370,6 +419,7 @@ export const wire = {
   regexp: regexpCodec,
   url: urlCodec,
   null: nullCodec,
+  file,
   integer,
   literal,
   array,
