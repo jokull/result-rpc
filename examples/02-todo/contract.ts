@@ -1,25 +1,14 @@
 /**
  * Rung 2, shared contract: a todo list with domain errors worth branching on.
  */
-import { error, wire, type InputOf } from "../../src/index.js";
+import { defineErrors, pickErrors, wire, type InputOf } from "../../src/index.js";
 import { rpc } from "../../src/contract/index.js";
 
-export const TodoNotFound = error({
-  tag: "todo/not-found",
-  data: wire.object({ todoId: wire.string }),
-  httpStatus: 404,
-});
-
-export const TitleTaken = error({
-  tag: "todo/title-taken",
-  data: wire.object({ title: wire.string }),
-  httpStatus: 409,
-});
-
-export const ListFull = error({
-  tag: "todo/list-full",
-  data: wire.object({ limit: wire.integer({ min: 1 }) }),
-  httpStatus: 409,
+/** One declaration per namespace; keys become tags (`todo/not-found`, ...). */
+export const todoErrors = defineErrors("todo", {
+  notFound: { data: wire.object({ todoId: wire.string }), httpStatus: 404 },
+  titleTaken: { data: wire.object({ title: wire.string }), httpStatus: 409 },
+  listFull: { data: wire.object({ limit: wire.integer({ min: 1 }) }), httpStatus: 409 },
 });
 
 export const TodoCodec = wire.object({
@@ -45,11 +34,11 @@ export const todoContract = app.contract({
   add: app.procedure()
     .input(wire.object({ title: wire.string }))
     .output(TodoCodec)
-    .errors({ TitleTaken, ListFull })
+    .errors(pickErrors(todoErrors, "titleTaken", "listFull"))
     .mutation(),
   toggle: app.procedure()
     .input(wire.object({ id: wire.string }))
     .output(TodoCodec)
-    .errors({ TodoNotFound })
+    .errors(pickErrors(todoErrors, "notFound"))
     .mutation(),
 });

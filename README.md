@@ -137,12 +137,35 @@ export type TripNotFound = ReturnType<typeof TripNotFound>
 export type Unauthorized = ReturnType<typeof Unauthorized>
 ```
 
-Group the definitions that belong to one concern. The same map is what a
-middleware declares on the server and what a shell claims on the client, so the
-two halves cannot drift:
+Or declare a whole namespace at once — keys become tags, so the tag string is
+never written twice and cannot drift from the name:
 
 ```ts
-export const authErrors = { Unauthorized, SessionExpired }
+export const tripErrors = defineErrors("trip", {
+  notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+  locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
+})
+
+tripErrors.notFound({ tripId })  // { _tag: "trip/not-found", data: { tripId } }
+```
+
+The returned map is the grouping currency everything else takes — procedure
+`.errors()`, middleware, shells, layers, catalogs — and `pickErrors(tripErrors,
+"locked")` selects the subset a procedure actually declares. Grouping is by
+value, not by string prefix: the namespace exists for human uniqueness and the
+reserved framework carve-out, nothing else.
+
+### The router is the error registry
+
+One tag maps to exactly one definition across the whole application. Two
+procedures reusing a tag must share the definition — the same reference — and
+`app.router(...)` rejects a tag redeclared with a different definition at build
+time. This is what makes tags safe as global identities: shells claim ambiently
+by tag alone, so a tag can never mean two different things in one app. The
+registry is inspectable:
+
+```ts
+appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
 ```
 
 `retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an

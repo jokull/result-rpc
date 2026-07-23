@@ -509,6 +509,8 @@ export interface RouterContract<TRootContext, TRecord extends ContractRouterReco
   readonly _kind: "router-contract";
   readonly record: TRecord;
   readonly procedures: ReadonlyMap<string, AnyProcedureContract>;
+  /** The application error registry: every declared tag, exactly one definition each. */
+  readonly errors: ReadonlyMap<string, AnyErrorDefinition>;
   readonly _rootContext?: TRootContext;
 }
 
@@ -516,8 +518,39 @@ export interface Router<TRootContext, TRecord extends RouterRecord> {
   readonly _kind: "router";
   readonly record: TRecord;
   readonly procedures: ReadonlyMap<string, AnyProcedure>;
+  /** The application error registry: every declared tag, exactly one definition each. */
+  readonly errors: ReadonlyMap<string, AnyErrorDefinition>;
   readonly _rootContext?: TRootContext;
 }
+
+
+/**
+ * The router is the error registry: one tag maps to exactly one definition
+ * across the whole application. This is what makes tags safe as global
+ * identities — shells claim ambiently by tag alone, so two procedures reusing
+ * a tag must share the definition (same reference), never redeclare it.
+ */
+const collectErrorRegistry = (
+  procedures: ReadonlyMap<string, { readonly _def: { readonly definitions: ErrorDefinitionMap } }>,
+): ReadonlyMap<string, AnyErrorDefinition> => {
+  const byTag = new Map<string, AnyErrorDefinition>();
+  const firstSeen = new Map<string, string>();
+  for (const [path, procedure] of procedures) {
+    for (const definition of Object.values(procedure._def.definitions)) {
+      const existing = byTag.get(definition.tag);
+      if (existing && existing !== definition) {
+        throw new TypeError(
+          `Error tag ${definition.tag} has conflicting definitions in ${firstSeen.get(definition.tag)} and ${path}; share one definition instead of redeclaring the tag`,
+        );
+      }
+      if (!existing) {
+        byTag.set(definition.tag, definition);
+        firstSeen.set(definition.tag, path);
+      }
+    }
+  }
+  return byTag;
+};
 
 const createRouter = <TRootContext, const TRecord extends RouterRecord>(
   record: TRecord,
@@ -534,10 +567,11 @@ const createRouter = <TRootContext, const TRecord extends RouterRecord>(
     }
   };
   visit(record, []);
-  return Object.freeze({ _kind: "router" as const, record, procedures });
+  const errors = collectErrorRegistry(procedures);
+  return Object.freeze({ _kind: "router" as const, record, procedures, errors });
 };
 
-const RESERVED_CONTRACT_KEYS = new Set(["_kind", "record", "procedures", "_rootContext"]);
+const RESERVED_CONTRACT_KEYS = new Set(["_kind", "record", "procedures", "errors", "_rootContext"]);
 
 const createRouterContract = <
   TRootContext,
@@ -561,6 +595,7 @@ const createRouterContract = <
       throw new TypeError(`Contract key ${key} collides with a reserved property`);
     }
   }
+  const errors = collectErrorRegistry(procedures);
   // Entries are spread onto the contract so call sites read
   // `app.implement(contract.list)` rather than `contract.record.list`.
   return Object.freeze({
@@ -568,6 +603,7 @@ const createRouterContract = <
     _kind: "router-contract" as const,
     record,
     procedures,
+    errors,
   }) as RouterContract<TRootContext, TRecord> & TRecord;
 };
 

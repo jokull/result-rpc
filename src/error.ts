@@ -267,3 +267,103 @@ export const errorCatalog = <
   return (error) =>
     (handlers as unknown as Record<string, (error: AnyTaggedError) => R>)[error._tag]!(error);
 };
+
+// --- Namespaced declaration -------------------------------------------------
+
+type KebabCase<S extends string, Acc extends string = ""> =
+  S extends `${infer Head}${infer Tail}`
+    ? Head extends Lowercase<Head>
+      ? KebabCase<Tail, `${Acc}${Head}`>
+      : KebabCase<Tail, `${Acc}-${Lowercase<Head>}`>
+    : Acc;
+
+export interface ErrorSpec<Input, Data extends WireValue> {
+  /** Defaults to an empty object codec. */
+  readonly data?: WireCodec<Input, Data>;
+  readonly httpStatus: number;
+  /** Defaults to `"never"`. */
+  readonly retry?: RetryPolicy;
+  /** Defaults to `"public"`. */
+  readonly visibility?: ErrorVisibility;
+  readonly severity?: ErrorSeverity;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyErrorSpec = ErrorSpec<any, any>;
+
+type SpecInput<TSpec> = TSpec extends { readonly data: WireCodec<infer Input, WireValue> }
+  ? Input
+  : Record<never, never>;
+type SpecData<TSpec> = TSpec extends { readonly data: WireCodec<unknown, infer Data> }
+  ? Data
+  : Record<never, never>;
+
+export type NamespacedErrors<
+  TNamespace extends string,
+  TSpecs extends Readonly<Record<string, AnyErrorSpec>>,
+> = {
+  readonly [TKey in keyof TSpecs & string]: ErrorDefinition<
+    `${TNamespace}/${KebabCase<TKey>}`,
+    SpecInput<TSpecs[TKey]>,
+    SpecData<TSpecs[TKey]> extends WireValue ? SpecData<TSpecs[TKey]> : never
+  >;
+};
+
+const kebabCase = (value: string): string =>
+  value.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+
+/**
+ * Declares a namespace of errors in one place. Keys become tags —
+ * `notFound` under namespace `trip` is `trip/not-found` — so the tag string
+ * is never written twice and cannot drift from the definition's name. The
+ * returned map is the grouping currency everything else takes: procedure
+ * `.errors()`, middleware, shells, layers, and catalogs.
+ *
+ *     export const tripErrors = defineErrors("trip", {
+ *       notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+ *       locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
+ *     })
+ *
+ *     tripErrors.notFound({ tripId })  // { _tag: "trip/not-found", data: ... }
+ */
+export const defineErrors = <
+  const TNamespace extends string,
+  const TSpecs extends Readonly<Record<string, AnyErrorSpec>>,
+>(
+  namespace: TNamespace,
+  specs: TSpecs,
+): NamespacedErrors<TNamespace, TSpecs> => {
+  if (namespace.includes("/")) {
+    throw new TypeError(`Error namespace must not contain "/": ${namespace}`);
+  }
+  const definitions: Record<string, AnyErrorDefinition> = {};
+  for (const [key, spec] of Object.entries(specs)) {
+    definitions[key] = createErrorDefinition(
+      { ...spec, tag: `${namespace}/${kebabCase(key)}` },
+      false,
+    ) as AnyErrorDefinition;
+  }
+  return Object.freeze(definitions) as NamespacedErrors<TNamespace, TSpecs>;
+};
+
+/**
+ * Selects a subset of an error map, preserving exact definition types. Useful
+ * when a procedure declares only part of a namespace:
+ *
+ *     .errors(pickErrors(todoErrors, "titleTaken", "listFull"))
+ */
+export const pickErrors = <
+  const TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>,
+  const TKeys extends readonly (keyof TDefinitions & string)[],
+>(
+  definitions: TDefinitions,
+  ...keys: TKeys
+): Pick<TDefinitions, TKeys[number]> => {
+  const picked: Record<string, AnyErrorDefinition> = {};
+  for (const key of keys) {
+    const definition = definitions[key];
+    if (!definition) throw new TypeError(`Unknown error key ${key}`);
+    picked[key] = definition;
+  }
+  return Object.freeze(picked) as Pick<TDefinitions, TKeys[number]>;
+};

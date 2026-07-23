@@ -13,7 +13,7 @@ import {
 import { createClient } from "../src/client/index.js";
 import { createQueryRuntime, type QueryState } from "../src/query/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/contract/index.js";
-import { defectErrors, defineLayer, defineService, resolveServices, transportErrors } from "../src/index.js";
+import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, transportErrors } from "../src/index.js";
 import { defineShell, layerShell, type HandledBy, type ValueOf } from "../src/react/index.js";
 
 type Equal<A, B> =
@@ -402,3 +402,22 @@ const exampleInputCodec = wire.object({ id: wire.string })
 type _RouterInput = Assert<Equal<Inputs["example"]["procedure"], InputOf<typeof exampleInputCodec>>>
 type _RouterOutput = Assert<Equal<Outputs["example"]["procedure"], string>>
 type _RouterError = Assert<Equal<Errors["example"]["procedure"], ReturnType<typeof Missing>>>
+
+// --- Namespaced errors -------------------------------------------------------
+
+const nsErrors = defineErrors("billing", {
+  cardDeclined: { data: wire.object({ code: wire.string }), httpStatus: 402 },
+  planExpired: { httpStatus: 403 },
+})
+type _NsTagDerived = Assert<Equal<
+  ReturnType<typeof nsErrors.cardDeclined>["_tag"],
+  "billing/card-declined"
+>>
+type _NsDataTyped = Assert<Equal<
+  ReturnType<typeof nsErrors.cardDeclined>["data"]["code"],
+  string
+>>
+// data-free members call with no arguments
+void nsErrors.planExpired()
+// @ts-expect-error the namespaced map is exhaustive for catalogs too
+errorCatalog(nsErrors, { "billing/card-declined": () => "" })

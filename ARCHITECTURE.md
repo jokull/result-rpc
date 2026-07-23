@@ -236,6 +236,18 @@ Router composition compares definition identity and tag:
 The `.is` method validates structure, exact tag, and data codec. It never uses
 `instanceof`.
 
+### Registry
+
+Tags are flat, namespaced strings (`trip/not-found`); hierarchy is deliberate
+non-goal because grouping happens by value — the definition maps shared by
+procedures, middleware, shells, layers, and catalogs. The router build is the
+registry: it collects every declared definition, rejects a tag bound to two
+different definitions (reference identity), and exposes the result as
+`router.errors`. Uniqueness at this level is required for ambient shell
+claiming, which is keyed by tag alone. `defineErrors(namespace, specs)` derives
+tags from keys (template-literal typed), so a tag string is written once or
+never.
+
 ### Built-in errors
 
 The first version should define at least:

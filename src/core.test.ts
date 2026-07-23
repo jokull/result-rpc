@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { andThen, deserialize, err, error, matchError, ok, serialize, wire } from "./index.js";
+import { andThen, defineErrors, deserialize, err, error, matchError, ok, serialize, wire } from "./index.js";
+import { rpc } from "./server/contract.js";
 import type { WireCodec, WireValue } from "./wire.js";
 
 const NotFound = error({
@@ -189,5 +190,48 @@ describe("Result", () => {
       });
       expect(text).toBe("missing");
     }
+  });
+});
+
+describe("error registry", () => {
+  test("the router rejects one tag with two definitions", () => {
+    const r = rpc.context<{}>();
+    const A = error({ tag: "acct/limit", httpStatus: 409 });
+    const B = error({ tag: "acct/limit", data: wire.object({ max: wire.number }), httpStatus: 409 });
+    const make = (definition: typeof A | typeof B) => r.procedure()
+      .output(wire.string)
+      .errors({ Limit: definition })
+      .query(() => ok(""));
+    expect(() => r.router({ one: make(A), two: make(B) }))
+      .toThrow(/acct\/limit has conflicting definitions in one and two/);
+  });
+
+  test("two procedures sharing one definition reference are canonical", () => {
+    const r = rpc.context<{}>();
+    const Limit = error({ tag: "acct2/limit", httpStatus: 409 });
+    const make = () => r.procedure()
+      .output(wire.string)
+      .errors({ Limit })
+      .query(() => ok(""));
+    const router = r.router({ one: make(), two: make() });
+    expect(router.errors.get("acct2/limit")).toBe(Limit);
+    expect([...router.errors.keys()]).toEqual(["acct2/limit"]);
+  });
+
+  test("defineErrors derives tags from keys under one namespace", () => {
+    const tripErrors = defineErrors("trip2", {
+      notFound: { data: wire.object({ tripId: wire.string }), httpStatus: 404 },
+      titleTaken: { httpStatus: 409 },
+    });
+    expect(tripErrors.notFound({ tripId: "t1" })).toEqual({
+      _tag: "trip2/not-found",
+      data: { tripId: "t1" },
+    });
+    expect(tripErrors.titleTaken()).toEqual({ _tag: "trip2/title-taken", data: {} });
+    expect(tripErrors.notFound.policy.retry).toBe("never");
+    expect(() => defineErrors("client", { x: { httpStatus: 400 } }))
+      .toThrow(/reserved framework namespace/);
+    expect(() => defineErrors("a/b", { x: { httpStatus: 400 } }))
+      .toThrow(/must not contain/);
   });
 });

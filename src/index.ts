@@ -11,9 +11,11 @@ export {
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
 
-export { error, errorCatalog } from "./error.js";
+export { defineErrors, error, errorCatalog, pickErrors } from "./error.js";
 export type {
   AnyTaggedError,
+  ErrorSpec,
+  NamespacedErrors,
   ErrorDefinition,
   ErrorDefinitionOptions,
   ErrorOf,

@@ -9,7 +9,7 @@
 import { defectErrors, errorCatalog, matchError, transportErrors } from "../../src/index.js";
 import { createClient, batchFetchTransport } from "../../src/client/index.js";
 import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
-import { ListFull, TitleTaken, todoContract } from "./contract.js";
+import { todoContract, todoErrors } from "./contract.js";
 
 // -- client wiring --------------------------------------------------------------
 
@@ -133,7 +133,8 @@ export function AddTodo({ client }: { client: TodoClient }) {
 }
 
 /** One catalog per concern, keyed by the same definition map the contract uses. */
-const catalog = errorCatalog({ TitleTaken, ListFull }, {
+const { titleTaken, listFull } = todoErrors;
+const catalog = errorCatalog({ titleTaken, listFull }, {
   "todo/title-taken": (failure) => `"${failure.data.title}" already exists`,
   "todo/list-full": (failure) => `The list is full (max ${failure.data.limit})`,
 });
