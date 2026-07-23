@@ -2,9 +2,27 @@
 
 One Result. One error union. Server to screen.
 
-result-rpc is a wire-first TypeScript stack for Result composition, RPC, reactive
-queries, mutations, and subscriptions. Every recoverable failure is a tagged,
-wire-safe value—and every layer contributes to the same operation-specific union.
+result-rpc is an RPC regime for React: safety and ergonomics from the database
+handle to the rendered component, without becoming a framework. It is five
+things, deliberately and only:
+
+1. **A wire contract** — procedures, codecs, and tagged errors declared once,
+   shared by both sides; rich values survive the wire, and every recoverable
+   failure is a wire-safe value in a closed, operation-specific union.
+2. **Services as a dependency graph** — process-lifetime resources (pools,
+   bindings, clients) declared with their needs, resolved once, memoized by
+   reference.
+3. **Request context that grows and narrows** — middleware declares
+   requirements (`.after`), layers add guaranteed values (`viewer: User | null`
+   refined to `User`) and contribute their failure unions as they do.
+4. **Error boundaries for values** — shells: React providers that ambiently
+   claim their tags from all activity beneath them, pause or escalate instead
+   of failing, and subtract what they own from the unions components see.
+5. **A Result-native reactive cache** — queries, mutations, and subscriptions
+   whose states are Results, with retry policy read off the error tag.
+
+Routing, SSR, and bundling are explicitly not on the list — shells are
+providers and hooks, so they compose with whatever owns the tree.
 
 ```ts
 const query = useResultQuery(client.trip.byId, { id: "trip_123" })
@@ -982,7 +1000,7 @@ hooks, so they compose with any router (TanStack Router, Next, Waku, React
 Native navigation) without the library knowing routers exist. The natural
 mapping — layout route = shell, route loader = `runtime.prefetch`,
 `errorComponent` = escalate target — is roughly sixty lines of app-owned glue;
-`examples/05-framework/router-glue.tsx` is a complete copy-paste integration
+`examples/05-router-glue/router-glue.tsx` is a complete copy-paste integration
 for TanStack Router, including auto-derived loaders that prefetch a layer's
 context procedure before its route commits.
 
@@ -1296,7 +1314,7 @@ with its own tests:
    feature error, `errorComponent` receives escalated defects, `onError`
    navigates, and layout loaders prefetch each layer's context procedure so the
    first paint has no fallback states.
-5. **05-framework** — rung 4 rebuilt on app-owned glue
+5. **05-router-glue** — rung 4 rebuilt on app-owned glue
    (`router-glue.tsx`, ~60 lines): `routeShell` fragments spread into
    `createRoute`, so one declaration per layer produces both the provider
    component and the prefetch loader — proof the integration needs no package.

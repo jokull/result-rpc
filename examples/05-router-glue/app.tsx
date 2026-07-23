@@ -1,11 +1,11 @@
 /**
- * Rung 5: the framework surface.
+ * Rung 5: rung 4 rebuilt on ~60 lines of app-owned glue (router-glue.tsx).
  *
- * Rung 4 rebuilt with `result-rpc/router`. One declaration per layer produces
- * both halves: the shell (union narrowing, failure ownership) and the route
- * fragment (provider component + context-procedure prefetch loader). Compare
- * with examples/04-router — no hand-written Provider nesting, no hand-written
- * prefetch loaders, no runtime wiring.
+ * One declaration per layer produces both halves — the shell (union narrowing,
+ * failure ownership) and the route fragment (provider component +
+ * context-procedure prefetch loader) — without result-rpc knowing routers
+ * exist. Compare with examples/04-router: no hand-written Provider nesting, no
+ * hand-written prefetch loaders, no runtime wiring.
  */
 import {
   createRootRouteWithContext,

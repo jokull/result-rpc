@@ -2,18 +2,24 @@
 
 ## Purpose
 
-result-rpc is one vertically integrated TypeScript library for:
+result-rpc is an RPC regime for React — one vertically integrated library for:
 
 - composing typed `Result` values;
 - declaring RPC procedures and their complete recoverable error sets;
 - encoding those results across a network boundary;
+- resolving process services as a memoized dependency graph;
+- growing and narrowing request context through middleware and layers;
 - expanding server errors with client and environment failures;
 - caching and observing calls through a reactive query runtime;
-- exposing one tagged failure algebra from middleware to UI.
+- owning failures at the right tree position through shells — error
+  boundaries generalized to values.
 
-It replaces the public roles of better-result, tRPC, and React Query. An initial
-release may use `@tanstack/query-core` as a private scheduling and cache engine, but
-no TanStack type or `data | error` API crosses the result-rpc public boundary.
+It replaces the public roles of better-result, tRPC, and React Query, and
+deliberately nothing more: routing, SSR, and bundling belong to whatever owns
+the tree. React bindings are first-class and intended — the shell model is a
+React idea. An initial release may use `@tanstack/query-core` as a private
+scheduling and cache engine, but no TanStack type or `data | error` API crosses
+the result-rpc public boundary.
 
 ## Architectural invariants
 
@@ -790,7 +796,7 @@ and for router loader contexts.
 Deliberately none in the package. Shells are providers and hooks, so any
 router composes; the route-fragment pattern (shell Provider as route
 component, layer prefetch as route loader) lives as app-owned glue in
-`examples/05-framework/router-glue.tsx`. `getLayerProcedureResolver` is the
+`examples/05-router-glue/router-glue.tsx`. `getLayerProcedureResolver` is the
 one advanced export that makes such glue possible: it returns a layer shell's
 context-procedure resolver so integrations can derive loaders.
 

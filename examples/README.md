@@ -10,7 +10,7 @@ An escalation ladder. Each rung is a self-contained app with runtime tests
 | `02-todo` | todo list | mutations, optimistic rollback, app/defect shells, `errorCatalog` |
 | `03-trips` | trip planner | `defineService` graph, `defineLayer` + `require`, five-layer onion, feature shell, subscription, escalation boundary |
 | `04-router` | trips + TanStack Router | routes-as-shells by hand: module-level shells via `procedure:` selectors, `onError` navigation, loaders prefetching the layer cascade |
-| `05-framework` | trips on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — the integration without a package |
+| `05-router-glue` | trips on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — proof no router package is needed |
 
 Rung 4 reuses rung 3's server and proves the router mapping: pathless layout
 routes mount the session and viewer shells, the trip route claims
