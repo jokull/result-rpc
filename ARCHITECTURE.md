@@ -688,6 +688,12 @@ React bindings subscribe to the framework-neutral query runtime through
 Suspense throws the pending promise but returns failures through the ordinary
 Result state after settlement.
 
+### Client proxy
+
+The client is a path-building proxy. It is await-safe: resolving a promise to a
+proxy node reads `.then`, which the proxy follows only if the path exists in
+the router; otherwise it returns `undefined` so thenable checks pass through.
+
 ### Shells
 
 A shell is a declared layer of failure ownership. `defineShell` takes an error
@@ -747,7 +753,11 @@ by the refinement. Context therefore grows and narrows monotonically through the
 middleware chain, and the client onion mirrors it as nested providers.
 
 `LayerShape` is the structural surface `layerShell` accepts, so base and refined
-layers derive shells identically.
+layers derive shells identically. The `procedure:` option also accepts a
+selector `(client) => procedure`, resolved through the enclosing provider via
+`useResultClient()` at render time — shells therefore define at module level,
+before any client instance exists. The runtime exposes its `client` for this
+and for router loader contexts.
 
 ## Security and resource limits
 

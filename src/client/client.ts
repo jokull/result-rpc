@@ -388,7 +388,17 @@ const createProxy = (
     get: (_target, property) => {
       if (property === "$kind" && procedure) return procedure._def.kind;
       if (typeof property !== "string") return undefined;
-      return createProxy(router, transport, [...path, property], cache, clientIdentity);
+      const candidate = [...path, property];
+      const candidatePath = candidate.join(".");
+      // Await-safety: the thenable check on `await client` (or any promise
+      // resolving to a proxy node) reads `.then`. Only follow the property if
+      // it actually leads somewhere in the router.
+      if (property === "then") {
+        const leadsSomewhere = router.procedures.has(candidatePath)
+          || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
+        if (!leadsSomewhere) return undefined;
+      }
+      return createProxy(router, transport, candidate, cache, clientIdentity);
     },
     apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);

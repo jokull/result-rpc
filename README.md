@@ -1242,6 +1242,12 @@ with its own tests:
    a five-layer shell onion, a feature shell, subscriptions, and a defect
    boundary. Its compile-time probes assert the payoff directly: under the full
    onion, a mutation declaring nine failure tags presents exactly one.
+4. **04-router** — TanStack Router integration: routes are shells. Pathless
+   layouts mount the session and viewer layers, a route claims its feature
+   error, `errorComponent` receives escalated defects, `onError` navigates, and
+   layout loaders prefetch each layer's context procedure so the first paint
+   has no fallback states. Shells are defined at module level with the
+   `procedure: (client) => client.auth.me` selector form.
 
 ## Design and verification
 

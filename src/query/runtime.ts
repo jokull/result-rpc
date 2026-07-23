@@ -306,6 +306,8 @@ export interface DehydratedQueryRuntime {
 }
 
 export interface QueryRuntime {
+  /** The client this runtime was created with. */
+  readonly client: unknown;
   readonly cache: QueryCache;
   observe<TProcedureClient extends QueryProcedureClientLike>(
     procedure: TProcedureClient,
@@ -402,6 +404,7 @@ export const createQueryRuntime = <TClient>(
   };
 
   const runtime: QueryRuntime = {
+    client: options.client,
     cache,
     observe: <TProcedureClient extends QueryProcedureClientLike>(
       procedure: TProcedureClient,

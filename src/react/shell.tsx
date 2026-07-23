@@ -31,6 +31,7 @@ import type {
   SubscriptionState,
 } from "../query/runtime.js";
 import {
+  useResultClient,
   useResultMutation,
   useResultQuery,
   useResultSubscription,
@@ -447,10 +448,12 @@ export interface LayerShellOptions<
   /** The enclosing shell layer. Omit for the outermost layer. */
   readonly from?: TParent;
   /**
-   * The client procedure for the layer's context procedure (`layer.contract`).
-   * The Provider loads the guaranteed value through it.
+   * The client procedure for the layer's context procedure (`layer.contract`),
+   * either directly or as a selector from the app's client — the selector form
+   * lets shells be defined at module level, before any client exists; it is
+   * resolved through the enclosing ResultRpcProvider at render time.
    */
-  readonly procedure: TProcedureClient;
+  readonly procedure: TProcedureClient | ((client: never) => TProcedureClient);
   /**
    * Fires when the layer cannot be established — a load failure the enclosing
    * layers did not claim — and when an operation inside the layer fails with
@@ -513,16 +516,25 @@ export const layerShell = <
     provide: (props: { readonly value: TValue }) => props.value,
   });
   const parent = options.from as AnyShell | undefined;
+  const resolveProcedure = (client: unknown): TProcedureClient => {
+    // Client procedures carry $kind; a bare selector function does not.
+    const candidate = options.procedure as unknown as ((client: unknown) => TProcedureClient) & {
+      readonly $kind?: unknown;
+    };
+    return candidate.$kind === undefined
+      ? candidate(client)
+      : (options.procedure as TProcedureClient);
+  };
   // Chosen once at definition time, so the wrapped Provider's hook order is stable.
   const useLoad = parent
     ? (): QueryState<TValue, AnyTaggedError> =>
         parent.useQuery(
-          options.procedure,
+          resolveProcedure(useResultClient()),
           {} as ProcedureClientInput<TProcedureClient>,
         ) as unknown as QueryState<TValue, AnyTaggedError>
     : (): QueryState<TValue, AnyTaggedError> =>
         useResultQuery(
-          options.procedure,
+          resolveProcedure(useResultClient()),
           {} as ProcedureClientInput<TProcedureClient>,
         ) as unknown as QueryState<TValue, AnyTaggedError>;
 

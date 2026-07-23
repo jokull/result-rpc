@@ -93,6 +93,14 @@ const useRuntime = (): QueryRuntime => {
   return runtime;
 };
 
+/**
+ * The client the enclosing ResultRpcProvider was created with. Annotate the
+ * type parameter with your app's client type:
+ *
+ *     const client = useResultClient<AppClient>()
+ */
+export const useResultClient = <TClient,>(): TClient => useRuntime().client as TClient;
+
 export interface ResultRpcHydrationProps {
   readonly state: DehydratedQueryRuntime;
   readonly children?: ReactNode;
