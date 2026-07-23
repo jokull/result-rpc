@@ -6,6 +6,7 @@ import type {
 } from "../error.js";
 import { ServerInternal } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
+import { wire } from "../wire.js";
 import type { InputOf, WireCodec, WireValue } from "../wire.js";
 
 export type ErrorDefinitionMap = Readonly<Record<string, AnyErrorDefinition>>;
@@ -66,7 +67,31 @@ type ErasedMiddlewareHandler = (args: {
 interface RuntimeMiddleware {
   readonly definitions: ErrorDefinitionMap;
   readonly handler: ErasedMiddlewareHandler;
+  /** Middleware this one depends on; flattened and deduped at `.use()` time. */
+  readonly requires: readonly RuntimeMiddleware[];
 }
+
+/** Dependencies first, then the middleware itself; duplicates removed by reference. */
+const flattenMiddleware = (middleware: RuntimeMiddleware): readonly RuntimeMiddleware[] => {
+  const seen = new Set<RuntimeMiddleware>();
+  const ordered: RuntimeMiddleware[] = [];
+  const visit = (current: RuntimeMiddleware) => {
+    if (seen.has(current)) return;
+    seen.add(current);
+    for (const dependency of current.requires) visit(dependency);
+    ordered.push(current);
+  };
+  visit(middleware);
+  return ordered;
+};
+
+const appendMiddleware = (
+  existing: readonly RuntimeMiddleware[],
+  middleware: RuntimeMiddleware,
+): readonly RuntimeMiddleware[] => [
+  ...existing,
+  ...flattenMiddleware(middleware).filter((candidate) => !existing.includes(candidate)),
+];
 
 export interface Middleware<
   TInputContext,
@@ -76,8 +101,10 @@ export interface Middleware<
   readonly _kind: "middleware";
   readonly definitions: TDefinitions;
   readonly handler: ErasedMiddlewareHandler;
+  readonly requires: readonly RuntimeMiddleware[];
   readonly _types?: {
-    readonly inputContext: TInputContext;
+    /** Contravariant: a middleware needing less context works with more. */
+    readonly inputContext: (context: TInputContext) => void;
     readonly outputContext: TOutputContext;
     readonly error: ErrorUnion<TDefinitions>;
   };
@@ -85,25 +112,51 @@ export interface Middleware<
 
 export class MiddlewareBuilder<
   TInputContext,
-  TOutputContext = TInputContext,
+  TAdded = {},
   TDefinitions extends ErrorDefinitionMap = {},
+  TOuterInput = TInputContext,
 > {
-  constructor(private readonly definitions: TDefinitions = {} as TDefinitions) {}
+  constructor(
+    private readonly definitions: TDefinitions = {} as TDefinitions,
+    private readonly dependencies: readonly RuntimeMiddleware[] = [],
+  ) {}
 
   errors<const TNewDefinitions extends ErrorDefinitionMap>(
     definitions: TNewDefinitions,
-  ): MiddlewareBuilder<TInputContext, TOutputContext, TDefinitions & TNewDefinitions> {
+  ): MiddlewareBuilder<TInputContext, TAdded, TDefinitions & TNewDefinitions, TOuterInput> {
     assertDefinitionsCanMerge(this.definitions, definitions);
-    return new MiddlewareBuilder({ ...this.definitions, ...definitions });
+    return new MiddlewareBuilder({ ...this.definitions, ...definitions }, this.dependencies);
+  }
+
+  /**
+   * Declares a middleware this one depends on. The handler's input context
+   * becomes the dependency's output context, the dependency's errors join this
+   * middleware's union, and any `.use()` site pulls the dependency in
+   * automatically — deduplicated by reference when several middleware share it.
+   */
+  after<TDependencyOutput, TDependencyDefinitions extends ErrorDefinitionMap>(
+    dependency: Middleware<TInputContext, TDependencyOutput, TDependencyDefinitions>,
+  ): MiddlewareBuilder<
+    TDependencyOutput,
+    TAdded,
+    TDefinitions & TDependencyDefinitions,
+    TOuterInput
+  > {
+    assertDefinitionsCanMerge(this.definitions, dependency.definitions);
+    return new MiddlewareBuilder(
+      { ...this.definitions, ...dependency.definitions },
+      [...this.dependencies, dependency as unknown as RuntimeMiddleware],
+    );
   }
 
   use(
-    handler: MiddlewareHandler<TInputContext, TOutputContext, TDefinitions>,
-  ): Middleware<TInputContext, TOutputContext, TDefinitions> {
+    handler: MiddlewareHandler<TInputContext, TInputContext & TAdded, TDefinitions>,
+  ): Middleware<TOuterInput, TInputContext & TAdded, TDefinitions> {
     return Object.freeze({
       _kind: "middleware" as const,
       definitions: this.definitions,
       handler: handler as ErasedMiddlewareHandler,
+      requires: this.dependencies,
     });
   }
 }
@@ -199,18 +252,20 @@ export type AnySubscriptionProcedure = SubscriptionProcedure<any, any, any, any>
 export type AnyProcedure = AnyUnaryProcedure | AnySubscriptionProcedure;
 export type AnyProcedureContract = ProcedureContract<any, any, any, any>;
 
-type MiddlewareOutput<TMiddleware> = TMiddleware extends Middleware<unknown, infer TOutput, ErrorDefinitionMap>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MiddlewareOutput<TMiddleware> = TMiddleware extends Middleware<any, infer TOutput, ErrorDefinitionMap>
   ? TOutput
   : never;
 
-type MiddlewareDefinitions<TMiddleware> = TMiddleware extends Middleware<unknown, unknown, infer TDefinitions>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MiddlewareDefinitions<TMiddleware> = TMiddleware extends Middleware<any, any, infer TDefinitions>
   ? TDefinitions
   : never;
 
 export class ProcedureBuilder<
   TRootContext,
   TContext = TRootContext,
-  TInput = never,
+  TInput = Record<never, never>,
   TOutput = never,
   TDefinitions extends ErrorDefinitionMap = {},
 > {
@@ -285,7 +340,7 @@ export class ProcedureBuilder<
       this.inputCodec,
       this.outputCodec,
       definitions,
-      [...this.middlewares, middleware as unknown as RuntimeMiddleware],
+      appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
     );
   }
 
@@ -332,14 +387,14 @@ export class ProcedureBuilder<
   private finishContract<TKind extends "query" | "mutation" | "subscription">(
     kind: TKind,
   ): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, TKind> {
-    if (!this.inputCodec || !this.outputCodec) {
-      throw new TypeError("A procedure requires input and output codecs");
+    if (!this.outputCodec) {
+      throw new TypeError("A procedure requires an output codec");
     }
     return Object.freeze({
       _kind: "procedure-contract" as const,
       _def: Object.freeze({
         kind,
-        input: this.inputCodec,
+        input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
         output: this.outputCodec,
         definitions: this.definitions,
       }),
@@ -352,14 +407,14 @@ export class ProcedureBuilder<
       args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
     ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
   ): Procedure<TRootContext, TInput, TOutput, TDefinitions, TKind> {
-    if (!this.inputCodec || !this.outputCodec) {
-      throw new TypeError("A procedure requires input and output codecs");
+    if (!this.outputCodec) {
+      throw new TypeError("A procedure requires an output codec");
     }
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
         kind,
-        input: this.inputCodec,
+        input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
         output: this.outputCodec,
         definitions: this.definitions,
         middlewares: this.middlewares,
@@ -394,7 +449,7 @@ export class ProcedureImplementer<
     assertDefinitionsAreDeclared(this.contract._def.definitions, middleware.definitions);
     return new ProcedureImplementer(
       this.contract,
-      [...this.middlewares, middleware as unknown as RuntimeMiddleware],
+      appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
     );
   }
 
@@ -482,10 +537,12 @@ const createRouter = <TRootContext, const TRecord extends RouterRecord>(
   return Object.freeze({ _kind: "router" as const, record, procedures });
 };
 
+const RESERVED_CONTRACT_KEYS = new Set(["_kind", "record", "procedures", "_rootContext"]);
+
 const createRouterContract = <
   TRootContext,
   const TRecord extends ContractRouterRecord,
->(record: TRecord): RouterContract<TRootContext, TRecord> => {
+>(record: TRecord): RouterContract<TRootContext, TRecord> & TRecord => {
   const procedures = new Map<string, AnyProcedureContract>();
   const isProcedureContract = (
     value: AnyProcedureContract | ContractRouterRecord,
@@ -499,19 +556,28 @@ const createRouterContract = <
     }
   };
   visit(record, []);
-  return Object.freeze({ _kind: "router-contract" as const, record, procedures });
+  for (const key of Object.keys(record)) {
+    if (RESERVED_CONTRACT_KEYS.has(key)) {
+      throw new TypeError(`Contract key ${key} collides with a reserved property`);
+    }
+  }
+  // Entries are spread onto the contract so call sites read
+  // `app.implement(contract.list)` rather than `contract.record.list`.
+  return Object.freeze({
+    ...record,
+    _kind: "router-contract" as const,
+    record,
+    procedures,
+  }) as RouterContract<TRootContext, TRecord> & TRecord;
 };
 
 export interface RpcFactory<TRootContext> {
   procedure(): ProcedureBuilder<TRootContext>;
-  middleware<TAddedContext = {}>(): MiddlewareBuilder<
-    TRootContext,
-    TRootContext & TAddedContext
-  >;
+  middleware<TAddedContext = {}>(): MiddlewareBuilder<TRootContext, TAddedContext>;
   router<const TRecord extends RouterRecord>(record: TRecord): Router<TRootContext, TRecord>;
   contract<const TRecord extends ContractRouterRecord>(
     record: TRecord,
-  ): RouterContract<TRootContext, TRecord>;
+  ): RouterContract<TRootContext, TRecord> & TRecord;
   implement<
     TInput,
     TOutput,
@@ -525,7 +591,7 @@ export interface RpcFactory<TRootContext> {
 const factory = <TRootContext>(): RpcFactory<TRootContext> => ({
   procedure: () => new ProcedureBuilder<TRootContext>(),
   middleware: <TAddedContext = {}>() =>
-    new MiddlewareBuilder<TRootContext, TRootContext & TAddedContext>(),
+    new MiddlewareBuilder<TRootContext, TAddedContext>(),
   router: (record) => createRouter<TRootContext, typeof record>(record),
   contract: (record) => createRouterContract<TRootContext, typeof record>(record),
   implement: (contract) => new ProcedureImplementer(contract),
@@ -796,3 +862,33 @@ export type ProcedureError<TProcedure> = TProcedure extends { readonly _def: Pro
 export type RouterContext<TRouter> = TRouter extends Router<infer TContext, RouterRecord>
   ? TContext
   : never;
+
+type RouterRecordOf<TRouter> = TRouter extends Router<any, infer TRecord>
+  ? TRecord
+  : TRouter extends RouterContract<any, infer TRecord>
+    ? TRecord
+    : never;
+
+type HasDef = { readonly _def: ProcedureContractManifest<any, any, any, any, any> };
+
+type MapRecord<TRecord, TProject> = {
+  readonly [TKey in keyof TRecord]: TRecord[TKey] extends HasDef
+    ? TProject extends "input"
+      ? ProcedureInput<TRecord[TKey]>
+      : TProject extends "output"
+        ? ProcedureOutput<TRecord[TKey]>
+        : ProcedureError<TRecord[TKey]>
+    : MapRecord<TRecord[TKey], TProject>;
+};
+
+/**
+ * Nested input types for a router or contract, mirroring its shape:
+ *
+ *     type Inputs = RouterInputs<typeof appRouter>
+ *     type RenameInput = Inputs["trip"]["rename"]
+ */
+export type RouterInputs<TRouter> = MapRecord<RouterRecordOf<TRouter>, "input">;
+/** Nested success-value types, mirroring the router's shape. */
+export type RouterOutputs<TRouter> = MapRecord<RouterRecordOf<TRouter>, "output">;
+/** Nested declared-error unions (server view; client boundary tags not included). */
+export type RouterErrors<TRouter> = MapRecord<RouterRecordOf<TRouter>, "errors">;

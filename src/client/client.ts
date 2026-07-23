@@ -39,6 +39,11 @@ import {
   type TransportRequestOptions,
 } from "./transport.js";
 
+/** Zero-input procedures may be called with no argument. */
+export type ClientInputArgs<TInput> = Record<never, never> extends TInput
+  ? [input?: TInput, options?: TransportRequestOptions]
+  : [input: TInput, options?: TransportRequestOptions];
+
 export type ProcedureClient<TProcedure> =
   TProcedure extends SubscriptionProcedure<any, infer TInput, infer TOutput, infer TDefinitions>
     ? SubscriptionClient<TInput, TOutput, TDefinitions>
@@ -46,8 +51,7 @@ export type ProcedureClient<TProcedure> =
     ? TKind extends "subscription"
       ? SubscriptionClient<TInput, TOutput, TDefinitions>
       : ((
-        input: TInput,
-        options?: TransportRequestOptions,
+        ...args: ClientInputArgs<TInput>
       ) => Promise<Result<
         TOutput,
         ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ClientBoundaryError
@@ -56,8 +60,7 @@ export type ProcedureClient<TProcedure> =
       ? TKind extends "subscription"
         ? SubscriptionClient<TInput, TOutput, TDefinitions>
         : ((
-          input: TInput,
-          options?: TransportRequestOptions,
+          ...args: ClientInputArgs<TInput>
         ) => Promise<Result<
           TOutput,
           ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ClientBoundaryError
@@ -187,7 +190,7 @@ const callProcedureOnce = async (
   transport: ClientTransport,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
-  const encodedInput = procedure._def.input.encode(input);
+  const encodedInput = procedure._def.input.encode(input ?? {});
   if (!encodedInput.ok) {
     const details = encodedInput.issues
       .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)

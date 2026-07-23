@@ -73,6 +73,28 @@ export const ClientDecodeFailure = error({
   severity: "error",
 });
 
+/**
+ * Transport failures: real, recoverable, and not about any single operation.
+ * Every member declares `retry: "transient"`. Shell layers usually claim these
+ * with `effect: "pause"` so the app shell owns the banner.
+ */
+export const transportErrors = {
+  ClientOffline,
+  ClientNetworkFailure,
+  ClientTimeout,
+} as const;
+
+/**
+ * Defects: nothing a component can render a branch for. Shell layers usually
+ * claim these with `effect: "escalate"` so the nearest error boundary owns them.
+ */
+export const defectErrors = {
+  ClientHttpFailure,
+  ClientProtocolViolation,
+  ClientDecodeFailure,
+  ServerInternal,
+} as const;
+
 export const frameworkErrorDefinitions = {
   ServerInternal,
   ClientOffline,

@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -33,22 +34,58 @@ type ProcedureClientLike = (
   input: any,
   options?: { readonly signal?: AbortSignal },
 ) => Promise<Result<any, AnyTaggedError>>;
-type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
-type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
-type SubscriptionProcedureClientLike = ((
+export type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
+export type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
+export type SubscriptionProcedureClientLike = ((
   input: any,
   options?: { readonly signal?: AbortSignal },
 ) => ResultSubscription<any, AnyTaggedError>) & { readonly $kind: "subscription" };
 
+import { createQueryRuntime } from "../query/runtime.js";
+export { createQueryRuntime };
+export { defineShell, layerShell } from "./shell.js";
+
+/** Zero-input procedures may omit the input argument entirely. */
+export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =
+  undefined extends ProcedureClientInput<TProcedureClient>
+    ? [
+        input?: ProcedureClientInput<TProcedureClient>,
+        options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+      ]
+    : [
+        input: ProcedureClientInput<TProcedureClient>,
+        options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+      ];
+export type {
+  AnyShell,
+  DefineShellOptions,
+  ExcludeTags,
+  HandledBy,
+  Shell,
+  ShellActiveState,
+  ShellEffect,
+  LayerShellOptions,
+  LayerShellProviderProps,
+  TagsOf,
+  ValueOf,
+} from "./shell.js";
+
 const RuntimeContext = createContext<QueryRuntime | undefined>(undefined);
 
-export interface ResultRpcProviderProps {
-  readonly runtime: QueryRuntime;
-  readonly children?: ReactNode;
-}
+export type ResultRpcProviderProps =
+  | { readonly runtime: QueryRuntime; readonly client?: undefined; readonly children?: ReactNode }
+  | { readonly client: object; readonly runtime?: undefined; readonly children?: ReactNode };
 
-export const ResultRpcProvider = ({ runtime, children }: ResultRpcProviderProps) =>
-  createElement(RuntimeContext.Provider, { value: runtime }, children);
+/**
+ * Provides the query runtime. Pass `client` to let the provider own a runtime
+ * for the component's lifetime — the common case. Pass `runtime` when the app
+ * needs the instance elsewhere (SSR prefetch, imperative cache access).
+ */
+export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
+  const [owned] = useState(() =>
+    props.runtime ?? createQueryRuntime({ client: props.client }));
+  return createElement(RuntimeContext.Provider, { value: props.runtime ?? owned }, props.children);
+};
 
 const useRuntime = (): QueryRuntime => {
   const runtime = useContext(RuntimeContext);
@@ -73,12 +110,15 @@ export const ResultRpcHydration = ({ state, children }: ResultRpcHydrationProps)
 
 export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
   procedure: TProcedureClient,
-  input: ProcedureClientInput<TProcedureClient>,
-  options: QueryOptions<ProcedureClientError<TProcedureClient>> = {},
+  ...rest: QueryHookArgs<TProcedureClient>
 ): QueryState<
   ProcedureClientOutput<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => {
+  const [input, options = {}] = rest as [
+    ProcedureClientInput<TProcedureClient>,
+    QueryOptions<ProcedureClientError<TProcedureClient>>?,
+  ];
   const runtime = useRuntime();
   const inputKey = runtime.cache.key(procedure, input)[1];
   const observer = useMemo(
@@ -108,13 +148,19 @@ export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
 
 export const useResultSuspenseQuery = <TProcedureClient extends QueryProcedureClientLike>(
   procedure: TProcedureClient,
-  input: ProcedureClientInput<TProcedureClient>,
-  options: Omit<QueryOptions<ProcedureClientError<TProcedureClient>>, "enabled"> = {},
+  ...rest: QueryHookArgs<TProcedureClient>
 ): SuspenseQueryState<
   ProcedureClientOutput<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => {
-  const state = useResultQuery(procedure, input, { ...options, enabled: true });
+  const [input, options = {}] = rest as [
+    ProcedureClientInput<TProcedureClient>,
+    QueryOptions<ProcedureClientError<TProcedureClient>>?,
+  ];
+  const state = useResultQuery(
+    procedure,
+    ...([input, { ...options, enabled: true }] as QueryHookArgs<TProcedureClient>),
+  );
   if (state.state === "pending") {
     throw state.refetch().then(() => undefined);
   }

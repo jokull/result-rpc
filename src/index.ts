@@ -11,7 +11,7 @@ export {
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
 
-export { error } from "./error.js";
+export { error, errorCatalog } from "./error.js";
 export type {
   AnyTaggedError,
   ErrorDefinition,
@@ -23,6 +23,19 @@ export type {
   RetryPolicy,
   TaggedError,
 } from "./error.js";
+
+export { defineService, resolveServices } from "./service.js";
+export type {
+  AnyServiceDefinition,
+  DefineServiceOptions,
+  ResolvedServices,
+  ServiceDefinition,
+  ServiceDefinitionMap,
+  ServiceValue,
+} from "./service.js";
+
+export { defineLayer } from "./layer.js";
+export type { AnyLayer, DefineLayerOptions, Layer, LayerErrors, LayerShape, LayerValue, RequiredLayer } from "./layer.js";
 
 export { wire } from "./wire.js";
 export type {
@@ -53,7 +66,9 @@ export {
   ClientOffline,
   ClientProtocolViolation,
   ClientTimeout,
+  defectErrors,
   ServerInternal,
+  transportErrors,
 } from "./framework-errors.js";
 export type {
   ClientBoundaryError,

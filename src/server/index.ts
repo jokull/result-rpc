@@ -1,3 +1,12 @@
+export { defineService, resolveServices } from "../service.js";
+export type {
+  AnyServiceDefinition,
+  DefineServiceOptions,
+  ResolvedServices,
+  ServiceDefinition,
+  ServiceDefinitionMap,
+  ServiceValue,
+} from "../service.js";
 export {
   executeProcedure,
   executeSubscription,
@@ -28,6 +37,9 @@ export type {
   Router,
   RouterContract,
   RouterContext,
+  RouterErrors,
+  RouterInputs,
+  RouterOutputs,
   RouterRecord,
   RpcFactory,
 } from "./contract.js";

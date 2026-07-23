@@ -39,6 +39,10 @@ These are requirements, not aspirations:
 9. Retry policy has one owner for any operation attempt.
 10. Local/server-side calls can be run with the same encode/decode semantics as
     remote calls.
+11. Narrowing is subtractive and never additive: a shell may only remove tags an
+    enclosing layer provably owns. The contract union is unchanged by it.
+12. A tag removed from an operation's union never surfaces as that operation's
+    terminal failure state.
 
 ## System shape
 
@@ -288,6 +292,16 @@ Generator composition may be provided through yieldable Result wrappers. A tagge
 error itself is never yieldable because adding `Symbol.iterator` would make it a
 non-wire value.
 
+## Service layer
+
+`defineService`/`resolveServices` own process-lifetime dependencies (pools,
+bindings, clients): an async dependency graph resolved once at startup, memoized
+by definition reference identity, cycle-rejected with the offending path. The
+resolved record is intended as the root context `createContext` closes over.
+Services never produce wire errors — construction failure is a process defect,
+not a request failure. This is the deliberate split from request middleware,
+which is ordered, per-request, and failure-carrying.
+
 ## Contract layer
 
 ### Procedure definition
@@ -319,6 +333,13 @@ inference may infer success output, but never infers permission for a new error 
 cross the wire.
 
 ### Middleware
+
+Middleware may declare dependencies with `.after(dep)`: the dependency's output
+context becomes the handler's input, its error definitions merge into the
+middleware's, and `.use()` flattens the chain in dependency order, deduplicating
+by reference identity. The `_types.inputContext` phantom is contravariant
+(encoded as a function parameter) so a middleware needing less context is
+assignable where more is available — and one needing more is rejected.
 
 A middleware can:
 
@@ -665,9 +686,68 @@ React bindings subscribe to the framework-neutral query runtime through
 - SSR preloading and hydration helpers.
 
 Suspense throws the pending promise but returns failures through the ordinary
-Result state after settlement. Applications that intentionally route selected
-tags to an error boundary may throw the structural tagged value themselves; the
-library does not introduce a second public wrapper error shape.
+Result state after settlement.
+
+### Shells
+
+A shell is a declared layer of failure ownership. `defineShell` takes an error
+definition map, an effect, an optional handler, and an optional `provide` that
+builds the value the layer guarantees. `from:` links it to its enclosing layer.
+
+Narrowing is carried by the shell *value*, not by tree position:
+
+- the accumulated handled set is computed at the type level by walking `from:`,
+  so `Shell.useQuery` returns `ExcludeTags<ProcedureError, Handled>` without any
+  hand-written union;
+- a shell hook cannot be reached without importing the module that declares the
+  layer's handler, so the subtraction is not a claim the type system takes on
+  faith from context;
+- mount position is verified at runtime — a provider outside its `from:` layer
+  throws, and a claimed error with no mounted claimant throws.
+
+Definition-time checks reject a tag claimed twice in one chain and a shell that
+claims nothing.
+
+Projection rules for a claimed error:
+
+| Effect | Query | Mutation | Subscription |
+| --- | --- | --- | --- |
+| `pause` | `fetch: "paused"`; stale success is retained, otherwise `pending` | state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
+| `escalate` | structural tagged value thrown during render | same | same |
+
+Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
+fallback can `matchError` on it. The library does not introduce a second public
+wrapper error shape.
+
+Each shell instance owns a small store of the errors it is currently holding,
+exposed as an aggregate through `useActive()`. Connectivity is a property of the
+application, not of any single operation, so the ambient tier is observed rather
+than branched on.
+
+### Layers
+
+`defineLayer` is the shared declaration behind a shell that also has a server
+half: a name, a context key, a `provides` wire codec, and an error map. Three
+derivations close over that one declaration:
+
+- `layer.middleware(app, resolve)` — server middleware adding the value to
+  context under the key and contributing the union;
+- `layer.contract(app)` / `layer.implement(app, contract, ...middlewares)` — the
+  context procedure (`{} -> value` with the layer union) whose handler is
+  derived: it returns the value the middleware placed in context;
+- `layerShell(layer, { from, procedure, onError })` — the React sibling: its
+  Provider loads the value through the context procedure under the enclosing
+  shells, provides it, and claims the layer union.
+
+An empty error map declares an optional layer: it always establishes (a nullable
+value) and its shell claims nothing. `layer.require({ provides, errors, refine })`
+derives a required layer that narrows the same context key — `User | null`
+becomes `User` — with middleware that needs no resolver and a union contributed
+by the refinement. Context therefore grows and narrows monotonically through the
+middleware chain, and the client onion mirrors it as nested providers.
+
+`LayerShape` is the structural surface `layerShell` accepts, so base and refined
+layers derive shells identically.
 
 ## Security and resource limits
 
@@ -748,6 +828,15 @@ The test suite collectively verifies observable Result and error-union parity th
 Each phase must preserve the architectural invariants. In particular, batching,
 streaming, SSR, and framework adapters cannot introduce a second error channel or
 bypass the same codecs used by unary remote calls.
+
+## Known gaps
+
+Shell teardown while claimed operations are held is not yet specified. A layer
+that responds to its claim by unmounting the subtree — the session-expired
+redirect — discards observers that are mid-flight. The disposition of that work
+(cancel versus settle into a discarded cache entry) is currently whatever the
+query runtime's unmount path does, and must be pinned down before applications
+depend on it.
 
 ## Deliberate non-goals for the first release
 

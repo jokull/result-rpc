@@ -26,9 +26,16 @@ export interface ErrorDefinitionOptions<
   Tag extends string,
   Input,
   Data extends WireValue,
-> extends ErrorPolicy {
+> {
   readonly tag: Tag;
-  readonly data: WireCodec<Input, Data>;
+  /** Defaults to an empty object codec. */
+  readonly data?: WireCodec<Input, Data>;
+  readonly httpStatus: number;
+  /** Defaults to `"never"` — domain errors are not retried. */
+  readonly retry?: RetryPolicy;
+  /** Defaults to `"public"`. */
+  readonly visibility?: ErrorVisibility;
+  readonly severity?: ErrorSeverity;
 }
 
 export interface ErrorDefinition<
@@ -36,7 +43,9 @@ export interface ErrorDefinition<
   Input,
   Data extends WireValue,
 > {
-  (input: Input): TaggedError<Tag, Data>;
+  (
+    ...args: Record<never, never> extends Input ? [input?: Input] : [input: Input]
+  ): TaggedError<Tag, Data>;
   readonly tag: Tag;
   readonly codec: WireCodec<Input, Data>;
   readonly policy: Readonly<ErrorPolicy>;
@@ -81,14 +90,30 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
   return value;
 };
 
+const emptyDataCodec: WireCodec<Record<never, never>, Record<never, never>> = {
+  kind: "object",
+  encode: (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+    ? { ok: true, value: {} }
+    : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
+  decode: (value) => value !== null && typeof value === "object" && !Array.isArray(value)
+    ? { ok: true, value: {} }
+    : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
+};
+
 const createErrorDefinition = <
   const Tag extends string,
   Input,
   Data extends WireValue,
 >(
-  options: ErrorDefinitionOptions<Tag, Input, Data>,
+  rawOptions: ErrorDefinitionOptions<Tag, Input, Data>,
   allowReservedNamespace: boolean,
 ): ErrorDefinition<Tag, Input, Data> => {
+  const options = {
+    ...rawOptions,
+    data: rawOptions.data ?? (emptyDataCodec as unknown as WireCodec<Input, Data>),
+    retry: rawOptions.retry ?? "never",
+    visibility: rawOptions.visibility ?? "public",
+  };
   if (!options.tag.includes("/")) {
     throw new TypeError(`Error tag must be namespaced: ${options.tag}`);
   }
@@ -146,7 +171,7 @@ const createErrorDefinition = <
     }
   };
 
-  const definition = ((input: Input) => {
+  const definition = ((input: Input = {} as Input) => {
     const encoded = options.data.encode(input);
     if (!encoded.ok) {
       const details = encoded.issues
@@ -162,7 +187,7 @@ const createErrorDefinition = <
       );
     }
     return freezeWireValue(value);
-  }) as ErrorDefinition<Tag, Input, Data>;
+  }) as unknown as ErrorDefinition<Tag, Input, Data>;
 
   Object.defineProperties(definition, {
     tag: { value: options.tag, enumerable: true },
@@ -183,9 +208,17 @@ const createErrorDefinition = <
   return Object.freeze(definition);
 };
 
-export const error = <const Tag extends string, Input, Data extends WireValue>(
+export function error<const Tag extends string, Input, Data extends WireValue>(
+  options: ErrorDefinitionOptions<Tag, Input, Data> & { readonly data: WireCodec<Input, Data> },
+): ErrorDefinition<Tag, Input, Data>;
+export function error<const Tag extends string>(
+  options: ErrorDefinitionOptions<Tag, Record<never, never>, Record<never, never>> & { readonly data?: undefined },
+): ErrorDefinition<Tag, Record<never, never>, Record<never, never>>;
+export function error<const Tag extends string, Input, Data extends WireValue>(
   options: ErrorDefinitionOptions<Tag, Input, Data>,
-): ErrorDefinition<Tag, Input, Data> => createErrorDefinition(options, false);
+): ErrorDefinition<Tag, Input, Data> {
+  return createErrorDefinition(options, false);
+}
 
 /** Internal framework factory; intentionally not re-exported from the package root. */
 export const frameworkError = <const Tag extends string, Input, Data extends WireValue>(
@@ -195,3 +228,42 @@ export const frameworkError = <const Tag extends string, Input, Data extends Wir
 export type ErrorDefinitionInput<TDefinition extends AnyErrorDefinition> = InputOf<
   TDefinition["codec"]
 >;
+
+type CatalogHandlers<TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>, R> = {
+  readonly [TKey in keyof TDefinitions as TDefinitions[TKey]["tag"]]: (
+    error: ErrorOf<TDefinitions[TKey]>,
+  ) => R;
+};
+
+/**
+ * A reusable, exhaustive projection over an error definition map — the same
+ * map shape middleware, shells, and layers take. Adding a definition to the
+ * map breaks every catalog that has not handled the new tag; passing an error
+ * outside the map is a type error at the call site.
+ *
+ *     const message = errorCatalog(todoErrors, {
+ *       "todo/title-taken": (e) => `"${e.data.title}" already exists`,
+ *       "todo/list-full": (e) => `List is full (max ${e.data.limit})`,
+ *     })
+ *     message(failure) // string
+ */
+export const errorCatalog = <
+  const TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>,
+  const THandlers extends CatalogHandlers<TDefinitions, unknown>,
+>(
+  definitions: TDefinitions,
+  handlers: THandlers,
+): ((
+  error: ErrorOf<TDefinitions[keyof TDefinitions]>,
+) => THandlers[keyof THandlers] extends (error: never) => infer R ? R : never) => {
+  type R = THandlers[keyof THandlers] extends (error: never) => infer TReturn ? TReturn : never;
+  const tags = new Set(Object.values(definitions).map((definition) => definition.tag));
+  for (const tag of Object.keys(handlers)) {
+    if (!tags.has(tag)) throw new TypeError(`Catalog handles unknown tag ${tag}`);
+  }
+  for (const tag of tags) {
+    if (!(tag in handlers)) throw new TypeError(`Catalog is missing tag ${tag}`);
+  }
+  return (error) =>
+    (handlers as unknown as Record<string, (error: AnyTaggedError) => R>)[error._tag]!(error);
+};

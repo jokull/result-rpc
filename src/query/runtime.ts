@@ -373,7 +373,7 @@ export const createQueryRuntime = <TClient>(
     if (metadata.procedure._def.kind !== "query") {
       throw new TypeError(`${metadata.path} is not a query procedure`);
     }
-    const encoded = metadata.procedure._def.input.encode(input);
+    const encoded = metadata.procedure._def.input.encode(input ?? {});
     if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
     const serialized = serialize(encoded.value, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
     if (!serialized.ok) throw new TypeError(`Query input for ${metadata.path} is not serializable`);
@@ -413,7 +413,7 @@ export const createQueryRuntime = <TClient>(
         throw new TypeError(`${metadata.path} is not a query procedure`);
       }
 
-      const encodedInput = metadata.procedure._def.input.encode(input);
+      const encodedInput = metadata.procedure._def.input.encode(input ?? {});
       if (!encodedInput.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
 
       const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;

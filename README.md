@@ -19,6 +19,25 @@ if (query.state === "failure") {
 No `Result` inside `data`. No transport error somewhere else. No `unknown` catch
 branch. No error class pretending it will survive JSON.
 
+That union is the truth about the operation, and it is always available. But a
+component rendering a trip does not want to branch on nine things. So the same
+union is narrowed by the layers it renders inside:
+
+```ts
+const query = AuthShell.useQuery(client.trip.byId, { id: "trip_123" })
+
+if (query.state === "failure") {
+  // TripNotFound
+  query.result.error
+}
+```
+
+Nothing was hidden. `Unauthorized` is gone because an enclosing layer guarantees a
+session and redirects when that stops being true. The transport tags are gone
+because the app shell owns the offline banner. The protocol tags are gone because
+they escalate to an error boundary. Each layer subtracts exactly what it takes
+responsibility for, and it does so in the type.
+
 > [!IMPORTANT]
 > This README is the target public API and corresponds to the current source. The
 > package is not yet published; packaging metadata intentionally remains private
@@ -63,6 +82,20 @@ The shared contract declares server and middleware errors. The client
 boundary adds transport and protocol errors. The query runtime preserves the full
 union while handling caching, retries, pausing, hydration, and cancellation.
 
+### The second problem
+
+A complete union is honest, but exhaustiveness is not the same as relevance. A
+component that renders a trip has business with `TripNotFound`. It has no business
+deciding what happens when the network is down, when the server sends a malformed
+envelope, or when the session is revoked mid-render. Those are real failures, but
+they are owned somewhere else — an app-wide banner, an error boundary, a redirect.
+
+Forcing every call site to branch on them is the burden a two-tier stack was
+avoiding in the first place. So result-rpc keeps the union complete at the
+contract and lets the application declare, in one place per concern, which tags an
+enclosing layer takes responsibility for. Those tags leave the component's union.
+See [Shells](#shells-narrow-the-union-by-layer).
+
 ## Install
 
 Target package:
@@ -74,13 +107,15 @@ npm install result-rpc
 The library ships as one versioned package with focused exports:
 
 ```ts
-import { error, err, ok, wire } from "result-rpc"
-import { rpc } from "result-rpc/contract"
-import { createFetchHandler } from "result-rpc/server"
+import { error, errorCatalog, err, ok, wire, defineLayer, defineService } from "result-rpc"
+import { rpc, type RouterInputs, type RouterOutputs } from "result-rpc/contract"
+import { createFetchHandler, resolveServices } from "result-rpc/server"
 import { batchFetchTransport, createClient } from "result-rpc/client"
-import { createQueryRuntime } from "result-rpc/query"
-import { ResultRpcProvider, useResultQuery } from "result-rpc/react"
+import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react"
 ```
+
+`result-rpc/query` remains available when the runtime is needed directly (SSR
+prefetch, framework-neutral integrations); React apps rarely import it.
 
 ## Define errors once
 
@@ -92,25 +127,27 @@ import { error, wire } from "result-rpc"
 
 export const TripNotFound = error({
   tag: "trip/not-found",
-  data: wire.object({
-    tripId: wire.string,
-  }),
+  data: wire.object({ tripId: wire.string }),
   httpStatus: 404,
-  retry: "never",
-  visibility: "public",
 })
 
-export const Unauthorized = error({
-  tag: "auth/unauthorized",
-  data: wire.object({}),
-  httpStatus: 401,
-  retry: "never",
-  visibility: "public",
-})
+export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 })
 
 export type TripNotFound = ReturnType<typeof TripNotFound>
 export type Unauthorized = ReturnType<typeof Unauthorized>
 ```
+
+Group the definitions that belong to one concern. The same map is what a
+middleware declares on the server and what a shell claims on the client, so the
+two halves cannot drift:
+
+```ts
+export const authErrors = { Unauthorized, SessionExpired }
+```
+
+`retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an
+empty object codec — a domain error is a tag and an HTTP status until it needs
+more. Data-free definitions are called with no arguments: `Unauthorized()`.
 
 Calling a definition creates the complete error value:
 
@@ -234,6 +271,95 @@ contract; `app.implement(...).use(...)` rejects an undeclared contribution. The
 code-first convenience form unions middleware definitions automatically. Duplicate
 tags with different definitions are rejected rather than silently overridden.
 
+## Two kinds of context
+
+A procedure sees one `context`, but two different things feed it, with different
+lifetimes and failure rules:
+
+| | Services | Request layers |
+| --- | --- | --- |
+| Examples | database pool, worker bindings, API clients | session, viewer, organization |
+| Lifetime | process | request |
+| Shape | dependency graph | ordered chain |
+| Can fail with a wire error | no — a broken service is a broken process | yes — failures join the operation union |
+| Owned by | `defineService` / `resolveServices` | middleware and layers |
+
+### Services
+
+A service declares its dependencies; the graph is resolved once at process
+start, memoized by definition reference identity — a service two others depend
+on is constructed exactly once (store definitions in module constants; two
+`defineService` calls are two services):
+
+```ts
+import { defineService, resolveServices } from "result-rpc"
+
+const Db = defineService("db", {
+  create: () => createPool(env.DATABASE_URL),
+})
+
+const Mailer = defineService("mailer", {
+  needs: { db: Db },
+  create: ({ db }) => createMailer(db),
+})
+
+const services = await resolveServices({ db: Db, mailer: Mailer })
+```
+
+The resolved record becomes the root context that every request closes over:
+
+```ts
+export const handleRpc = createFetchHandler({
+  router: appRouter,
+  createContext: ({ request }) => ({ ...services, request }),
+})
+```
+
+Nothing pulls services per call — the auth middleware reads `context.db` because
+the root context guarantees it, and swapping the whole record for a test double
+is one argument to `createContext`.
+
+### Request layers compose by requirement, not by ordering
+
+A middleware can declare what it runs after. The dependency's output becomes the
+handler's input, the dependency's errors join the union, and any `.use()` site
+pulls the whole chain in dependency order — deduplicated by reference, so a
+diamond runs its shared dependency once:
+
+```ts
+const session = app.middleware<{ viewer: User | null }>()
+  .use(async ({ context, next }) =>
+    next({ context: { ...context, viewer: await userFromCookie(context) } }))
+
+const requireViewer = app.middleware<{ viewer: User }>()
+  .after(session)                        // handler sees viewer: User | null
+  .errors({ Unauthorized })
+  .use(({ context, errors, next }) =>
+    context.viewer === null
+      ? err(errors.Unauthorized({}))
+      : next({ context: { ...context, viewer: context.viewer } }))
+```
+
+A mutation then demands exactly one thing:
+
+```ts
+export const renameTrip = app.procedure()
+  .input(RenameInput)
+  .output(TripCodec)
+  .use(requireViewer)                    // session comes along, in order
+  .mutation(({ context, input }) =>      // context.viewer: User
+    context.db.trips.rename(input, context.viewer))
+```
+
+`.use(session)` followed by `.use(requireViewer)` still runs `session` once —
+composition is by reference identity, exactly like service memoization. And a
+middleware whose input demands context the procedure cannot supply is a type
+error, so requirements are checked, not hoped for.
+
+The layer factory uses the same mechanism: `ViewerLayer.middleware(app, session)`
+bundles the parent, so `.use(requireViewer)` and
+`ViewerLayer.implement(app, contract, requireViewer)` are each one call.
+
 ## Create the router and server
 
 ```ts
@@ -247,6 +373,11 @@ export const appRouter = app.router({
 })
 
 export type AppRouter = typeof appRouter
+
+// Nested inference helpers mirror the router's shape — works on contracts too:
+// type Inputs = RouterInputs<AppRouter>;  Inputs["trip"]["byId"]  → { id: string }
+// type Outputs = RouterOutputs<AppRouter>; Outputs["trip"]["byId"] → Trip
+// type Errors = RouterErrors<AppRouter>;   Errors["trip"]["byId"]  → declared union
 
 export const handleRpc = createFetchHandler({
   router: appRouter,
@@ -292,7 +423,9 @@ Calls issued in the same microtask share one HTTP request. Every batch item keep
 its own status, decoder, rich-value envelope, and tagged Result. Use
 `fetchTransport` when batching is not wanted; the client API is unchanged.
 
-The direct client resolves recoverable failures:
+The direct client is the honest base: it always resolves the complete union.
+Narrowing is a property of where a call is rendered, and the direct client is not
+rendered anywhere, so it never subtracts anything.
 
 ```ts
 Result<
@@ -346,7 +479,21 @@ if (result.ok) {
 }
 ```
 
-Or use exhaustive matching:
+For a reusable projection — a message catalog, a metrics mapper — build it once
+from the same definition map middleware and shells use:
+
+```ts
+import { errorCatalog } from "result-rpc"
+
+const message = errorCatalog({ TripNotFound, Unauthorized }, {
+  "trip/not-found": (e) => `Trip ${e.data.tripId} is gone`,
+  "auth/unauthorized": () => "Sign in to continue",
+})
+```
+
+Adding a definition to the map breaks every catalog missing the new tag.
+
+Or use exhaustive matching inline:
 
 ```ts
 import { matchError } from "result-rpc"
@@ -371,23 +518,19 @@ compile until the new case is handled.
 
 ## Use it from React
 
-Create one client and query runtime:
+Hand the provider your client; it owns a query runtime for its lifetime:
 
 ```tsx
-import { createQueryRuntime } from "result-rpc/query"
 import { ResultRpcProvider } from "result-rpc/react"
 import { client } from "./client"
 
-const runtime = createQueryRuntime({ client })
-
 export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <ResultRpcProvider runtime={runtime}>
-      {children}
-    </ResultRpcProvider>
-  )
+  return <ResultRpcProvider client={client}>{children}</ResultRpcProvider>
 }
 ```
+
+Pass an explicit `runtime` instead when the app needs the instance elsewhere —
+SSR prefetching, imperative cache access.
 
 Query a procedure:
 
@@ -435,6 +578,11 @@ The query engine still caches successful values, retries transient failures,
 tracks failure counts, pauses offline work, and supports invalidation. It uses its
 failure channel internally and projects it back into the public Result state.
 
+`useResultQuery` is the unnarrowed hook: it always yields the operation's complete
+union. Applications normally reach for a shell's hooks instead, so that each layer
+of the tree only presents the failures it is actually responsible for. See
+[Shells](#shells-narrow-the-union-by-layer).
+
 For Suspense, use `useResultSuspenseQuery`. It suspends only while pending and
 returns the same success-or-failure state after settlement; tagged failures remain
 ordinary Result values rather than becoming a second thrown error type.
@@ -469,6 +617,325 @@ trip.fetch === "paused"
 This does not consume a retry or immediately become `client/offline`. An Offline
 error appears only if the configured policy settles an attempted operation as a
 failure.
+
+## Shells narrow the union by layer
+
+A shell is one layer of the application that takes responsibility for a class of
+failure. It removes those tags from every operation rendered inside it, and it may
+guarantee a value in exchange.
+
+Which tier an error belongs to is already declared, on the error itself:
+
+| Tier | Declared by | Owned by | Effect |
+| --- | --- | --- | --- |
+| Domain | your namespace, `retry: "never"` | the component | stays in the union |
+| Ambient | `retry: "transient"` or `"after"` | the app shell | `pause` |
+| Defect | framework namespace, `severity: "error"` | an error boundary | `escalate` |
+
+`transportErrors` and `defectErrors` ship as ready-made maps for the second and
+third rows.
+
+### Declare the layers
+
+```tsx
+import { defectErrors, transportErrors } from "result-rpc"
+import { defineShell } from "result-rpc/react"
+import { authErrors } from "../shared/errors"
+
+export const AppShell = defineShell({
+  name: "app",
+  handle: transportErrors,
+  effect: "pause",
+  onError: (error, { banner }) => banner.show(error),
+  provide: (props: { banner: Banner }) => props,
+})
+
+export const DefectShell = defineShell({
+  name: "defect",
+  from: AppShell,
+  handle: defectErrors,
+  effect: "escalate",
+})
+
+export const AuthShell = defineShell({
+  name: "auth",
+  from: DefectShell,
+  handle: authErrors,
+  effect: "pause",
+  onError: (_error, { signOut }) => signOut(),
+  provide: (props: { session: Session; signOut: () => void }) => ({
+    user: props.session.user,
+    signOut: props.signOut,
+  }),
+})
+```
+
+Mount them as an onion:
+
+```tsx
+<ResultRpcProvider runtime={runtime}>
+  <AppShell.Provider banner={banner}>
+    <DefectShell.Provider>
+      <ErrorBoundary fallback={<AppBroken />}>
+        <AuthShell.Provider session={session} signOut={signOut}>
+          <Routes />
+        </AuthShell.Provider>
+      </ErrorBoundary>
+    </DefectShell.Provider>
+  </AppShell.Provider>
+</ResultRpcProvider>
+```
+
+Inside `Routes`, an operation declaring nine tags presents one:
+
+```tsx
+export function TripPage({ id }: { id: string }) {
+  const { user } = AuthShell.use()      // User, not User | null
+  const trip = AuthShell.useQuery(client.trip.byId, { id })
+
+  switch (trip.state) {
+    case "pending": return <TripSkeleton />
+    case "success": return <TripView trip={trip.result.value} viewer={user} />
+    case "failure":
+      // TripNotFound — and adding a case for anything else is a type error
+      return <TripMissing tripId={trip.result.error.data.tripId} />
+  }
+}
+```
+
+### The layers are a value chain, not a tree position
+
+`from:` makes the accumulated set a property of the shell value. `AuthShell` is
+typed with its own claims plus everything `DefectShell` and `AppShell` claim, and
+nobody writes that union by hand. Narrowing never depends on TypeScript inferring
+where a component sits in the tree, because you cannot reach `AuthShell.useQuery`
+without importing the shell that declares the handler.
+
+Mount position is still checked, at runtime and eagerly: a `Provider` mounted
+outside its `from:` layer throws, and a claimed error with no mounted claimant
+throws rather than silently surfacing.
+
+Two invariants are enforced at definition time:
+
+- a tag may be claimed **once** per chain — overlapping layers are a `TypeError`;
+- claims only accumulate inward, so an inner layer can never un-handle something
+  an outer layer took responsibility for.
+
+### What a claimed error does to the operation
+
+A subtracted error never produces `state: "failure"` — that would be a lie about a
+union it is no longer in.
+
+```ts
+effect: "pause"
+```
+
+- **Query** — the operation returns to a non-terminal state with `fetch: "paused"`.
+  If a cached success exists it keeps rendering as `state: "success"`, stale, so an
+  offline blip does not blank the screen. If not, `state: "pending"`.
+- **Mutation** — state returns to `"idle"` and the pending `mutate` promise rejects
+  with the library control sentinel, exactly like cancellation. The caller's
+  continuation does not run on an outcome it no longer models.
+- **Subscription** — `connection` becomes `"paused"` and `result` stays `undefined`.
+
+```ts
+effect: "escalate"
+```
+
+The tagged value is thrown to the nearest React error boundary. It is thrown as
+the structural `TaggedError`, not wrapped in an `Error`, so the fallback can still
+`matchError` on it.
+
+`onError` fires once per newly claimed error per observer. One logical event —
+a revoked session — arrives on every in-flight operation at once, so handlers must
+be idempotent.
+
+Pausing does not itself schedule a retry. The query runtime's ordinary policy
+still owns that: a transient tag is retried before it is ever claimed, and the
+paused operation resumes on reconnect or on explicit invalidation. A layer whose
+effect is `pause` and whose handler navigates away is expected to unmount the
+subtree it paused; a handler that does neither leaves the operation held.
+
+### Ambient failures are aggregate, not per-operation
+
+Twelve paused queries are not twelve offline states. The shell holds them
+together:
+
+```tsx
+function OfflineBanner() {
+  const { active, affected } = AppShell.useActive()
+  if (!active) return null
+  return <Banner tag={active._tag} count={affected} />
+}
+```
+
+That is the structural reason the per-operation error channel was the wrong home
+for connectivity: no single operation owns it.
+
+### The server declares, the client discharges
+
+Middleware adds an error to the union and produces context. A shell removes the
+error and produces context. They are inverses over the same declaration:
+
+```ts
+// shared/errors.ts
+export const authErrors = { Unauthorized, SessionExpired }
+
+// server
+const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */)
+
+// client
+const AuthShell = defineShell({ name: "auth", handle: authErrors, /* ... */ })
+```
+
+Add an error to `authErrors` and every derived shell absorbs it; no component
+union changes and nothing breaks. Remove one and the components that branched on
+it stop compiling. The shared map is a value in the shared contract package, so
+no server middleware code reaches the browser bundle.
+
+### Re-widening
+
+A component that genuinely wants to own a claimed tag uses the unnarrowed hook:
+
+```tsx
+const trip = useResultQuery(client.trip.byId, { id })
+// TripNotFound | Unauthorized | ServerInternal | ClientBoundaryError
+```
+
+There is no opt-out flag, because there is nothing to opt out of — you either hold
+a narrowed shell hook or you do not. The enclosing shells still exist; they simply
+have no claim on an operation that did not go through them.
+
+### Derive the whole layer from one declaration
+
+Auth is not just a shell: it is a middleware that adds `user` to server context,
+a context procedure that tells the client who the user is, and a client layer
+that guarantees the value. Those three artifacts share one value type and one
+error union, so they should come from one declaration:
+
+```ts
+// shared
+import { defineLayer } from "result-rpc"
+
+export const AuthLayer = defineLayer({
+  name: "auth",
+  key: "user",                       // the context property and the guarantee
+  provides: UserCodec,               // wire codec for the guaranteed value
+  errors: { Unauthorized, SessionExpired },
+})
+```
+
+The server half derives from it:
+
+```ts
+// server
+const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
+  const user = await context.auth.user()
+  return user ? ok(user) : err(errors.Unauthorized({}))
+})
+// Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
+
+export const whoamiContract = AuthLayer.contract(app)
+// query: {} -> User, errors = the layer union — safe in the shared contract
+
+export const whoami = AuthLayer.implement(app, whoamiContract, authenticated)
+// handler is derived: it returns context.user, so the procedure cannot
+// disagree with the middleware about the value or the union
+```
+
+And the React half is its sibling:
+
+```tsx
+// client
+import { layerShell } from "result-rpc/react"
+
+export const AuthShell = layerShell(AuthLayer, {
+  from: DefectShell,
+  procedure: client.auth.whoami,
+  onError: () => redirect("/login"),
+})
+```
+
+`AuthShell.Provider` loads the value through the context procedure — rendering
+`fallback` until it resolves — provides it to the subtree, and claims the layer
+union. The load itself runs under the enclosing shells, so an offline blip during
+establishment pauses under the app shell like any other operation; only the
+layer's own errors reach `onError`.
+
+There is no way for the server's idea of "authenticated" and the client's to
+drift: the middleware, the procedure, and the shell all close over the same
+`provides` codec and the same error map.
+
+### Optional layers refine into required ones
+
+Not every layer is all-or-nothing. A session cookie may or may not resolve to a
+user, and public pages want `viewer: User | null` while account pages want
+`User`. Declare the optional layer with no errors — it always establishes — and
+derive the required layer by refinement:
+
+```ts
+export const SessionLayer = defineLayer({
+  name: "session",
+  key: "viewer",
+  provides: wire.union([UserCodec, wire.null] as const),
+  errors: {},                            // optional: cannot fail
+})
+
+export const ViewerLayer = SessionLayer.require({
+  name: "viewer",
+  provides: UserCodec,                   // the narrowed value
+  errors: { Unauthorized },              // the union the refinement contributes
+  refine: ({ value, errors }) =>
+    value === null ? err(errors.Unauthorized({})) : ok(value),
+})
+```
+
+On the server, context grows and narrows monotonically through the chain:
+
+```ts
+const session = SessionLayer.middleware(app, ({ context }) =>
+  ok(await userFromCookie(context)))     // User | null — never fails
+
+const requireViewer = ViewerLayer.middleware(app)  // no resolver: derived
+
+app.procedure()
+  .use(session)                          // context.viewer: User | null
+  .use(requireViewer)                    // context.viewer: User
+  .query(({ context }) => ok(greet(context.viewer)))
+```
+
+On the client the same shape appears as nested providers — the optional shell
+claims nothing and provides the nullable value; the required shell claims
+`Unauthorized` and provides the narrowed one:
+
+```tsx
+const SessionShell = layerShell(SessionLayer, { from: DefectShell, procedure: client.session })
+const ViewerShell = layerShell(ViewerLayer, {
+  from: SessionShell,
+  procedure: client.viewer,
+  onError: () => redirect("/login"),
+})
+
+// public page, inside SessionShell
+SessionShell.use()   // User | null
+
+// account page, inside ViewerShell
+ViewerShell.use()    // User
+```
+
+### Keeping it honest
+
+Narrowing this cheap can quietly become swallowing. The absorbed set is a value:
+
+```ts
+AuthShell.handledTags
+// ["auth/unauthorized", "auth/session-expired", "client/http-failure",
+//  "client/protocol-violation", "client/decode-failure", "server/internal",
+//  "client/offline", "client/network-failure", "client/timeout"]
+```
+
+Assert on it in a type test or a unit test so that adding an application-namespace
+tag to a shell is a deliberate, reviewable act.
 
 ## Mutations return the same Result state
 
@@ -509,6 +976,10 @@ function RenameTrip({ id }: { id: string }) {
   return <RenameForm pending={rename.state === "pending"} onSubmit={submit} />
 }
 ```
+
+`AuthShell.useMutation` is the narrowed form: claimed failures never reach
+`onFailure` or the returned state, and the `mutate` promise rejects with the
+control sentinel instead of resolving to an error the caller no longer models.
 
 Optimistic rollback runs before observers receive the final failure state.
 Cancellation is explicit because cancelling a request cannot guarantee that a
@@ -564,6 +1035,9 @@ events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed
 events.result     // Ok<TripEvent> | Err<GetTripEventsError> | undefined
 ```
 
+`AuthShell.useSubscription` narrows the same way: a claimed terminal failure
+leaves `connection` at `"paused"` with no `result`, and the owning layer reacts.
+
 A retryable disconnect moves through `reconnecting` and does not publish a
 temporary `Err`. If retry policy is exhausted, the final connection error appears
 in `events.result`. Every frame is sequence-checked and independently encoded by
@@ -577,10 +1051,8 @@ or overlapping status code:
 ```ts
 export const ServiceUnavailable = error({
   tag: "search/service-unavailable",
-  data: wire.object({}),
   httpStatus: 503,
   retry: "transient",
-  visibility: "public",
 })
 
 export const RateLimited = error({
@@ -590,7 +1062,6 @@ export const RateLimited = error({
   }),
   httpStatus: 429,
   retry: "after",
-  visibility: "public",
 })
 ```
 
@@ -751,12 +1222,26 @@ timeouts, offline behavior, and batch failures.
 | RPC | Procedures, middleware, routers, server execution, protocol, clients |
 | Transport failures | Tagged additions to each procedure's inferred error union |
 | Query runtime | Keys, caching, retries, invalidation, lifecycle, hydration |
+| Failure ownership | Layered shells that subtract claimed tags and guarantee context |
 | React | Query, mutation, subscription, suspense, and SSR bindings |
 | Diagnostics | Safe incident IDs publicly; full causes only in local observability |
 
 An initial implementation may use `@tanstack/query-core` privately. That is an
 engine choice, not part of the public API. Applications do not install or compose
 better-result, tRPC, or React Query around result-rpc.
+
+## Examples
+
+The `examples/` directory is an escalation ladder, each rung a runnable app
+with its own tests:
+
+1. **01-hello** — one query, one error, no shells: the minimal surface.
+2. **02-todo** — mutations, optimistic updates, the basic onion, an error
+   catalog over a shell-narrowed union.
+3. **03-trips** — the whole system: a service graph, optional→required layers,
+   a five-layer shell onion, a feature shell, subscriptions, and a defect
+   boundary. Its compile-time probes assert the payoff directly: under the full
+   onion, a mutation declaring nine failure tags presents exactly one.
 
 ## Design and verification
 
