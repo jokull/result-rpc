@@ -1,4 +1,5 @@
 import {
+  CONTRACT_HEADER,
   PROTOCOL_CONTENT_TYPE,
   PROTOCOL_VERSION,
   decodeBatchResponseEnvelope,
@@ -44,6 +45,8 @@ export interface TransportResponse {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: string;
+  /** The server's contract digest (`x-result-rpc-contract`), when sent. */
+  readonly contract?: string;
 }
 
 export interface TransportStreamResponse {
@@ -165,6 +168,7 @@ export const fetchTransport = (options: FetchTransportOptions): ClientTransport 
         response,
         options.maxResponseBytes ?? DEFAULT_MAX_WIRE_BYTES,
       );
+      const contract = response.headers.get(CONTRACT_HEADER);
       if (body === undefined) {
         return {
           ok: true,
@@ -172,6 +176,7 @@ export const fetchTransport = (options: FetchTransportOptions): ClientTransport 
             status: response.status,
             contentType: response.headers.get("content-type"),
             body: "response exceeded byte limit",
+            ...(contract === null ? {} : { contract }),
           },
         };
       }
@@ -181,6 +186,7 @@ export const fetchTransport = (options: FetchTransportOptions): ClientTransport 
           status: response.status,
           contentType: response.headers.get("content-type"),
           body,
+          ...(contract === null ? {} : { contract }),
         },
       };
     } catch {
@@ -306,6 +312,8 @@ export const batchFetchTransport = (
         response,
         options.maxResponseBytes ?? DEFAULT_MAX_WIRE_BYTES,
       );
+      const contractHeader = response.headers.get(CONTRACT_HEADER);
+      const contract = contractHeader === null ? {} : { contract: contractHeader };
       if (body === undefined) {
         const outcome: TransportOutcome = {
           ok: true,
@@ -313,6 +321,7 @@ export const batchFetchTransport = (
             status: response.status,
             contentType: response.headers.get("content-type"),
             body: "response exceeded byte limit",
+            ...contract,
           },
         };
         for (const item of active) item.resolve(outcome);
@@ -326,7 +335,7 @@ export const batchFetchTransport = (
       if (!batch) {
         const outcome: TransportOutcome = {
           ok: true,
-          response: { status: response.status, contentType, body },
+          response: { status: response.status, contentType, body, ...contract },
         };
         for (const item of active) {
           if (item.options.signal?.aborted) item.reject(cancelled);
@@ -341,7 +350,7 @@ export const batchFetchTransport = (
         if (!result) {
           return item.resolve({
             ok: true,
-            response: { status: 200, contentType, body: "invalid batch response" },
+            response: { status: 200, contentType, body: "invalid batch response", ...contract },
           });
         }
         const itemBody = serialize(result.response, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
@@ -352,6 +361,7 @@ export const batchFetchTransport = (
             status: result.status,
             contentType: PROTOCOL_CONTENT_TYPE,
             body: itemBody.value,
+            ...contract,
           },
         });
       });

@@ -6,9 +6,9 @@
  * component's catalog should mention ONLY domain tags — and forgetting one
  * should fail to compile.
  */
-import { defectErrors, errorCatalog, matchError, transportErrors } from "../../src/index.js";
+import { errorCatalog, matchError } from "../../src/index.js";
 import { createClient, batchFetchTransport } from "../../src/client/index.js";
-import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
+import { boundaryShells, ResultRpcProvider } from "../../src/react/index.js";
 import { todoContract, todoErrors } from "./contract.js";
 
 // -- client wiring --------------------------------------------------------------
@@ -23,17 +23,9 @@ export type TodoClient = ReturnType<typeof makeTodoClient>;
 
 // -- shells -----------------------------------------------------------------------
 
-export const AppShell = defineShell({
-  name: "todo-app",
-  claims: transportErrors,
-  effect: "pause",
-});
-
-export const DefectShell = defineShell({
-  name: "todo-defect",
-  from: AppShell,
-  claims: defectErrors,
-  effect: "escalate",
+/** The framework-owned rings, pre-assembled: pause, escalate, reload. */
+export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells({
+  name: "todo",
 });
 
 // -- ui ---------------------------------------------------------------------------
@@ -41,25 +33,23 @@ export const DefectShell = defineShell({
 export function TodoApp({ client }: { client: TodoClient }) {
   return (
     <ResultRpcProvider client={client}>
-      <AppShell.Provider>
-        <DefectShell.Provider>
-          <ConnectivityBanner />
-          <TodoList client={client} />
-          <AddTodo client={client} />
-        </DefectShell.Provider>
-      </AppShell.Provider>
+      <BoundaryProvider>
+        <ConnectivityBanner />
+        <TodoList client={client} />
+        <AddTodo client={client} />
+      </BoundaryProvider>
     </ResultRpcProvider>
   );
 }
 
 function ConnectivityBanner() {
-  const { latest, affected } = AppShell.useHeld();
+  const { latest, affected } = TransportShell.useHeld();
   if (!latest) return null;
   return <div role="alert">Connection trouble ({affected} requests waiting)</div>;
 }
 
 export function TodoList({ client }: { client: TodoClient }) {
-  const todos = DefectShell.useQuery(client.list);
+  const todos = StaleShell.useQuery(client.list);
 
   switch (todos.state) {
     case "pending":
@@ -84,7 +74,7 @@ function TodoRow({ client, id, title, done }: {
   title: string;
   done: boolean;
 }) {
-  const toggle = DefectShell.useMutation(client.toggle, {
+  const toggle = StaleShell.useMutation(client.toggle, {
     optimistic: (input, cache) => ({
       rollback: cache.update(client.list, {}, (todos) =>
         todos?.map((todo) => (todo.id === input.id ? { ...todo, done: !todo.done } : todo))),
@@ -96,7 +86,7 @@ function TodoRow({ client, id, title, done }: {
   return (
     <li>
       <label>
-        <input type="checkbox" checked={done} onChange={() => void toggle.mutate({ id })} />
+        <input type="checkbox" checked={done} onChange={() => void toggle.mutate({ id }).catch(() => undefined)} />
         {title}
       </label>
       {toggle.state === "failure" && (
@@ -111,7 +101,7 @@ function TodoRow({ client, id, title, done }: {
 }
 
 export function AddTodo({ client }: { client: TodoClient }) {
-  const add = DefectShell.useMutation(client.add);
+  const add = StaleShell.useMutation(client.add);
 
   async function submit(title: string) {
     const result = await add.mutate({ title });

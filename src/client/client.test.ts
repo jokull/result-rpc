@@ -485,13 +485,86 @@ describe("observability events", () => {
       }),
       onEvent: (event) => fakeSentry.addBreadcrumb({
         category: `rpc.${event.type}`,
-        message: event.path,
+        message: "path" in event ? event.path : "",
         level: event.type === "failure" ? "warning" : "info",
         data: event,
       }),
     });
     await client.ping();
     expect(breadcrumbs.map((crumb) => crumb.category)).toEqual(["rpc.call", "rpc.success"]);
+  });
+});
+
+describe("contract skew", () => {
+  const Gone = error({ tag: "skew/gone", httpStatus: 410 });
+  const makeSkewWorld = () => {
+    // The deployed server is one contract ahead: byNumber's input changed
+    // shape AND its error union grew — the union change flips the digest.
+    const server = rpc.context<{}>();
+    const serverRouter = server.router({
+      byNumber: server.procedure()
+        .input(wire.object({ id: wire.string, revision: wire.number }))
+        .output(wire.string)
+        .errors({ Gone })
+        .query(({ input }) => ok(`${input.id}@${input.revision}`)),
+    });
+    const handler = createFetchHandler({ router: serverRouter, createContext: () => ({}) });
+
+    // The stale client was built against the old shape.
+    const stale = rpc.context<{}>();
+    const staleRouter = stale.router({
+      byNumber: stale.procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .query(({ input }) => ok(input.id)),
+    });
+    const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
+      handler(new Request(input, init))) as typeof globalThis.fetch;
+    return { serverRouter, staleRouter, localFetch };
+  };
+
+  test("a stale client's contract failure becomes client/stale, once-per-client skew event included", async () => {
+    const { staleRouter, localFetch } = makeSkewWorld();
+    const events: ClientEvent[] = [];
+    const client = createClient({
+      router: staleRouter,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+      onEvent: (event) => void events.push(event),
+    });
+
+    const result = await client.byNumber({ id: "a" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error._tag).toBe("client/stale");
+    expect(result.error.data).toEqual({ reclassifiedFrom: "server/bad-request" });
+
+    await client.byNumber({ id: "b" });
+    const skews = events.filter((event) => event.type === "skew");
+    expect(skews).toHaveLength(1);
+    const failure = events.find((event) => event.type === "failure");
+    expect(failure && "tag" in failure ? failure.tag : undefined).toBe("client/stale");
+  });
+
+  test("matching contract stamps leave a genuine bad request as server/bad-request", async () => {
+    const { staleRouter } = makeSkewWorld();
+    // same build stamp on both sides: even a structurally different client
+    // is treated as current, so the failure keeps its real tag
+    const handlerSameStamp = createFetchHandler({
+      router: makeSkewWorld().serverRouter,
+      createContext: () => ({}),
+      contractVersion: "build-42",
+    });
+    const sameStampFetch = ((input: string | URL | Request, init?: RequestInit) =>
+      handlerSameStamp(new Request(input, init))) as typeof globalThis.fetch;
+    const client = createClient({
+      router: staleRouter,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: sameStampFetch }),
+      contractVersion: "build-42",
+    });
+    const result = await client.byNumber({ id: "a" });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error._tag).toBe("server/bad-request");
   });
 });
 

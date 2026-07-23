@@ -26,14 +26,14 @@ the weirdness, with hooks that read like the ones you already write.
 const query = useResultQuery(client.doc.byId, { id: "doc_123" })
 
 if (query.state === "failure") {
-  // DocNotFound | Unauthorized | ServerInternal | Offline |
-  // NetworkFailure | Timeout | HttpFailure | ProtocolViolation | DecodeFailure
+  // DocNotFound | Unauthorized | ServerInternal | Offline | NetworkFailure |
+  // Timeout | HttpFailure | ProtocolViolation | DecodeFailure | Stale
   query.result.error
 }
 ```
 
-Nine tags looks like a lot until you notice they are not new failure modes —
-every stack has all nine. tRPC spreads them across `error.data?.code`,
+Ten tags looks like a lot until you notice they are not new failure modes —
+every stack has all ten. tRPC spreads them across `error.data?.code`,
 `TRPCClientError.cause`, and unhandled fetch rejections; result-rpc's union is
 the same reality, admitted, in one place, closed. And no component has to
 branch on all of it, because the same union is narrowed by what the tree
@@ -112,6 +112,7 @@ type GetDocError =
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure
+  | Stale
 ```
 
 The shared contract declares server and middleware errors. The client boundary
@@ -715,40 +716,41 @@ with a claimed tag is routed to the shell instead of surfacing as component
 state. The 401 interceptor becomes a typed declaration with a position in the
 tree, and the tags it owns disappear from the unions below it.
 
-### Three tiers of failure, three owners
+### Three tiers of failure, three built-in owners
 
 The tiers are nothing more than which definition map you hand to which shell —
-there is no classification field, and the framework ships the two maps you'd
-otherwise assemble by hand:
+there is no classification field:
 
-| What failed | Example tags | Natural owner | The map |
+| What failed | Example tags | Reaction | The map |
 | --- | --- | --- | --- |
-| The domain said no | `doc/not-found`, `auth/unauthorized` | the component, or an auth shell | your `defineErrors` maps |
-| The world flaked | `client/offline`, `client/timeout`, `client/network-failure` | an app shell with a banner | `transportErrors` |
-| The contract broke | `client/protocol-violation`, `client/decode-failure`, `server/internal` | a React error boundary | `defectErrors` |
+| The domain said no | `doc/not-found`, `auth/unauthorized` | the component branches, or an auth shell reacts | your `defineErrors` maps |
+| The world flaked | `client/offline`, `client/timeout`, `client/network-failure` | pause, banner, resume | `transportErrors` |
+| The contract broke | `client/protocol-violation`, `client/decode-failure`, `server/internal` | escalate to the error boundary | `defectErrors` |
+| A deploy left this client behind | `client/stale` | reload — the reload *is* the fix | `staleErrors` |
 
-### Declare the shells
+The framework contributes every non-domain row, so the framework ships their
+owners pre-assembled — assembling them by hand was the same ten lines in
+every app:
 
 ```tsx
-import { defectErrors, transportErrors } from "result-rpc"
+import { boundaryShells } from "result-rpc/react"
+
+export const { TransportShell, DefectShell, StaleShell, BoundaryProvider } =
+  boundaryShells()
+// TransportShell  claims transportErrors, pauses; useHeld() feeds the banner
+// DefectShell     claims defectErrors, escalates to the React error boundary
+// StaleShell      claims staleErrors; default reaction reloads the page
+```
+
+You only ever *write* shells for what the app itself owns:
+
+```tsx
 import { defineShell } from "result-rpc/react"
 import { authErrors } from "../shared/errors"
 
-export const AppShell = defineShell({
-  name: "app",
-  claims: transportErrors,          // effect defaults to "pause"
-})
-
-export const DefectShell = defineShell({
-  name: "defect",
-  from: AppShell,
-  claims: defectErrors,
-  effect: "escalate",               // becomes a throw, for the real boundary
-})
-
 export const AuthShell = defineShell({
   name: "auth",
-  from: DefectShell,
+  from: StaleShell,                 // hang off the innermost built-in
   claims: authErrors,
   onError: (_error, { signOut }) => signOut(),
   provide: (props: { session: Session; signOut: () => void }) => ({
@@ -762,19 +764,17 @@ Mount them as an onion:
 
 ```tsx
 <ResultRpcProvider runtime={runtime}>
-  <AppShell.Provider>
-    <DefectShell.Provider>
-      <ErrorBoundary fallback={<AppBroken />}>
-        <AuthShell.Provider session={session} signOut={signOut}>
-          <Routes />
-        </AuthShell.Provider>
-      </ErrorBoundary>
-    </DefectShell.Provider>
-  </AppShell.Provider>
+  <BoundaryProvider>
+    <ErrorBoundary fallback={<AppBroken />}>
+      <AuthShell.Provider session={session} signOut={signOut}>
+        <Routes />
+      </AuthShell.Provider>
+    </ErrorBoundary>
+  </BoundaryProvider>
 </ResultRpcProvider>
 ```
 
-Inside `Routes`, an operation declaring nine tags presents one:
+Inside `Routes`, an operation resolving ten possible tags presents one:
 
 ```tsx
 export function DocPage({ id }: { id: string }) {
@@ -1084,9 +1084,10 @@ claim are assertable. The absorbed set is a runtime value:
 
 ```ts
 AuthShell.claimedTags
-// ["auth/unauthorized", "auth/session-expired", "client/http-failure",
-//  "client/protocol-violation", "client/decode-failure", "server/internal",
-//  "client/offline", "client/network-failure", "client/timeout"]
+// ["auth/unauthorized", "auth/session-expired", "client/stale",
+//  "client/http-failure", "client/protocol-violation", "client/decode-failure",
+//  "server/bad-request", "server/internal", "client/offline",
+//  "client/network-failure", "client/timeout"]
 ```
 
 and the component-visible union is a compile-time probe — a two-line pattern
@@ -1099,7 +1100,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
 type Assert<T extends true> = T
 
-// doc.byId resolves nine possible failures; under the onion the page sees one.
+// doc.byId resolves a dozen possible failures; under the onion the page sees one.
 const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" })
 type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"]
 export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>
@@ -1108,6 +1109,64 @@ export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/
 Add an application-namespace tag to a shell and the probe breaks — narrowing
 stays a deliberate, reviewable act. `examples/03-docs/app.test.tsx` runs these
 against the full onion.
+
+## Deploys and stale clients
+
+Every deploy opens a compatibility window: new server, old tabs. In most
+stacks the window is invisible — a stale client's failures are
+indistinguishable from bugs (bad requests, decode failures), Sentry counts
+every deploy as an incident spike, and the "fix" is a user who happens to
+press reload. Closed unions make the window *more* acute, not less: a stale
+client cannot even decode an error tag added after it was built.
+
+result-rpc makes the window a detected, owned state:
+
+1. The server stamps every response with a digest of its contract —
+   procedure paths, kinds, and every error tag with its policy
+   (`x-result-rpc-contract`). A router and the contract it implements digest
+   identically; nothing to configure.
+2. The client compares the stamp to its own digest. The first mismatch emits
+   a `skew` ClientEvent — observability sees the drift before anything fails.
+3. When a request **fails** with a contract-shaped tag (`server/bad-request`,
+   `client/decode-failure`, `client/protocol-violation`,
+   `client/http-failure`) *while the digests differ*, the failure is
+   reclassified as `client/stale`, carrying the original tag. Matching
+   digests change nothing — a real defect stays a defect, and successful
+   calls are never touched.
+
+And `client/stale` has a built-in owner: the boundary's `StaleShell` claims
+it, holds the affected operations, and reacts — by default with a page
+reload, because the reload fetches the current client, which *is* the fix.
+Override it to taste:
+
+```tsx
+const { BoundaryProvider } = boundaryShells({
+  onStale: () => toast("A new version is available", { action: reload }),
+})
+```
+
+The automatic digest reads what codecs expose, so a field-level change inside
+an object codec does not flip it on its own (the failure it causes usually
+travels with a visible change — but not always). For per-deploy exactness,
+stamp both sides with the build:
+
+```ts
+createFetchHandler({ router, contractVersion: BUILD_SHA, ... })
+createClient({ contract, contractVersion: BUILD_SHA, ... })
+```
+
+Detection is failure-gated, so the coarser stamp is safe: matching successful
+calls are never reclassified.
+
+Deploys then stay boring the same way database migrations do: **expand, then
+contract**. Ship additive changes first (new procedures, new tags — old
+clients never call what they don't know about), and make removals and
+reshapes a later deploy, after the previous client generation has drained.
+When a stale tab does cross the window, it reloads once instead of
+mis-reporting a bug. This is the same discipline
+[onwardpg](https://github.com/jokull/onwardpg) enforces for the database tier
+— expand while old code is live, contract after it drains — applied one
+level up, between the server and the browsers it left behind.
 
 ## Bring your own router
 
@@ -1470,7 +1529,7 @@ const client = createClient({
     data: event,
   }),
 })
-// event: call | success | failure | retry
+// event: call | success | failure | retry | skew
 //      | claimed  ← a shell took ownership: { path, tag, owner, effect }
 
 // 2. Ownership: a shell's reaction is a reporting moment.
@@ -1599,6 +1658,10 @@ Named here so they are not discovered at 2am:
   bundle carries the contract's codecs and the devalue serializer. That is
   the price of rich values and client-side validation; it is a real number of
   kilobytes, and worth measuring in your bundle before committing.
+- **The automatic contract digest is shape-coarse.** It flips on paths, kinds,
+  and error unions — not on field-level codec edits. If your deploys routinely
+  change only object fields, stamp both sides with `contractVersion` (a build
+  SHA) so stale-client detection is exact; it is failure-gated either way.
 - **Two caches during a tRPC coexistence period** — see the migration section.
 
 ## Examples
@@ -1612,7 +1675,7 @@ with its own tests:
 3. **03-docs** — the whole system: a service graph, optional→required layers,
    a four-shell onion, a rendered subscription, and a defect boundary. Its
    compile-time probes assert the payoff directly: under the full onion, a
-   query resolving nine possible failures presents exactly `doc/not-found`,
+   query resolving a dozen possible failures presents exactly `doc/not-found`,
    and a mutation presents exactly its three domain outcomes.
 4. **04-router** — TanStack Router integration by hand: routes are shells.
    Pathless layouts mount the session and viewer layers, a route claims its

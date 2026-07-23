@@ -20,7 +20,7 @@ loader prefetches its layer's context procedure — the first committed paint
 renders session, viewer, and doc with no fallback states.
 
 Rung 3's test file ends with compile-time probes: the doc query — which
-resolves nine possible failures — has a component-visible union of exactly
+resolves a dozen possible failures — has a component-visible union of exactly
 `"doc/not-found"`, and the rename mutation presents exactly its three domain
 outcomes (`doc/not-found | doc/locked | doc/forbidden`). Domain errors stay
 with the component; only the framework tiers are claimed above.

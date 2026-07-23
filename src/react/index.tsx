@@ -70,6 +70,8 @@ export type {
   SubscriptionState,
 } from "../query/runtime.js";
 export { defineShell, getLayerProcedureResolver, layerShell } from "./shell.js";
+export { boundaryShells } from "./boundary.js";
+export type { BoundaryShells, BoundaryShellsOptions } from "./boundary.js";
 
 /** Zero-input procedures may omit the input argument entirely. */
 export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =

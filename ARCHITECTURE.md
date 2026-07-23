@@ -755,6 +755,26 @@ A shell is a declared layer of failure ownership. `defineShell` takes an error
 definition map, an effect, an optional handler, and an optional `provide` that
 builds the value the layer guarantees. `from:` links it to its enclosing layer.
 
+The framework contributes three whole failure classes (transport, defect,
+stale), so it ships their owners pre-assembled: `boundaryShells()` returns
+`TransportShell` (pause), `DefectShell` (escalate), and `StaleShell` (default
+reaction: reload), plus a `BoundaryProvider` composing all three. User shells
+hang off `StaleShell`.
+
+### Contract skew
+
+Every response carries the server's contract digest (`x-result-rpc-contract`),
+computed from procedure paths, kinds, and error tags with policies — identical
+for a router and the contract it implements, overridable with a
+`contractVersion` build stamp on both sides. The client compares per response:
+the first mismatch emits a `skew` ClientEvent, and a contract-shaped failure
+(`server/bad-request`, `client/decode-failure`, `client/protocol-violation`,
+`client/http-failure`) under mismatch is reclassified to `client/stale`
+carrying the original tag. Reclassification is failure-gated and
+mismatch-gated, so matching deployments and successful calls are never
+affected. `client/stale` extends `ClientBoundaryError` and is claimed by the
+built-in `StaleShell`.
+
 Claiming and narrowing are two halves with different carriers:
 
 **Claiming is ambient.** A mounted shell provider registers a claim entry in a

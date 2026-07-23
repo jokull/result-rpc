@@ -3,7 +3,7 @@
  *
  * TanStack Router + result-rpc, reusing rung 3's server. The mapping:
  *
- *   root route        ResultRpcProvider + AppShell + DefectShell
+ *   root route        ResultRpcProvider + the built-in boundary shells
  *   errorComponent    the escalate target for defects
  *   pathless layout   SessionShell (public) and ViewerShell (authed)
  *   /docs/$docId    DocShell claims doc/not-found for the route
@@ -21,8 +21,9 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { defectErrors, errorCatalog, transportErrors } from "../../src/index.js";
+import { errorCatalog } from "../../src/index.js";
 import {
+  boundaryShells,
   createQueryRuntime,
   defineShell,
   layerShell,
@@ -35,21 +36,10 @@ import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: module level, no client instance needed --------------------------------
 
-export const AppShell = defineShell({
-  name: "router-app",
-  claims: transportErrors,
-  effect: "pause",
-});
-
-export const DefectShell = defineShell({
-  name: "router-defect",
-  from: AppShell,
-  claims: defectErrors,
-  effect: "escalate",
-});
+export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells();
 
 export const SessionShell = layerShell(SessionLayer, {
-  from: DefectShell,
+  from: StaleShell,
   procedure: (client: DocClient) => client.auth.whoami,
 });
 
@@ -75,12 +65,10 @@ interface RouterContext {
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
-    <AppShell.Provider>
-      <DefectShell.Provider>
+    <BoundaryProvider>
         <ConnectivityBanner />
         <Outlet />
-      </DefectShell.Provider>
-    </AppShell.Provider>
+    </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
     <p role="alert">Broken: {(error as { _tag?: string })._tag ?? "unknown"}</p>
@@ -178,7 +166,7 @@ declare module "@tanstack/react-router" {
 // -- components -------------------------------------------------------------------------
 
 function ConnectivityBanner() {
-  const { latest, affected } = AppShell.useHeld();
+  const { latest, affected } = TransportShell.useHeld();
   return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
 }
 

@@ -14,7 +14,7 @@ import {
 import { createClient } from "../src/client/index.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
-import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, transportErrors } from "../src/index.js";
+import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, staleErrors, transportErrors } from "../src/index.js";
 import { defineShell, layerShell, type ClaimedBy, type ValueOf } from "../src/react/index.js";
 
 type Equal<A, B> =
@@ -187,9 +187,15 @@ const DefectShell = defineShell({
   effect: "escalate",
 });
 
+const StaleShell = defineShell({
+  name: "stale",
+  from: DefectShell,
+  claims: staleErrors,
+});
+
 const AuthShell = defineShell({
   name: "auth",
-  from: DefectShell,
+  from: StaleShell,
   claims: { Conflict },
   provide: (props: { readonly userId: string }) => ({ userId: props.userId }),
 });
@@ -209,7 +215,7 @@ export type _ShellSubtractsExactlyTheClaimedTags = Assert<
 // The chain accumulates: the innermost layer sees its parents' claims too.
 export type _ChainAccumulates = Assert<Equal<
   ClaimedBy<typeof AuthShell>,
-  ClaimedBy<typeof DefectShell> | "type/conflict"
+  ClaimedBy<typeof StaleShell> | "type/conflict"
 >>;
 
 // The guaranteed value is not optional inside the layer.

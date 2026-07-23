@@ -14,8 +14,8 @@ import {
   createMemoryHistory,
   Outlet,
 } from "@tanstack/react-router";
-import { defectErrors, errorCatalog, transportErrors } from "../../src/index.js";
-import { defineShell, layerShell, useResultClient } from "../../src/react/index.js";
+import { errorCatalog } from "../../src/index.js";
+import { boundaryShells, defineShell, layerShell, useResultClient } from "../../src/react/index.js";
 import {
   createResultRouter,
   ResultRouterProvider,
@@ -27,21 +27,10 @@ import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: one chain, defined at module level ----------------------------------------
 
-export const AppShell = defineShell({
-  name: "fw-app",
-  claims: transportErrors,
-  effect: "pause",
-});
-
-export const DefectShell = defineShell({
-  name: "fw-defect",
-  from: AppShell,
-  claims: defectErrors,
-  effect: "escalate",
-});
+export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells();
 
 export const SessionShell = layerShell(SessionLayer, {
-  from: DefectShell,
+  from: StaleShell,
   procedure: (client: DocClient) => client.auth.whoami,
 });
 
@@ -61,12 +50,10 @@ export const DocShell = defineShell({
 
 const rootRoute = createRootRouteWithContext<ResultRouterContext<DocClient>>()({
   component: () => (
-    <AppShell.Provider>
-      <DefectShell.Provider>
+    <BoundaryProvider>
         <ConnectivityBanner />
         <Outlet />
-      </DefectShell.Provider>
-    </AppShell.Provider>
+    </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
     <p role="alert">Broken: {(error as { _tag?: string })._tag ?? "unknown"}</p>
@@ -155,7 +142,7 @@ export const FrameworkApp = () => <ResultRouterProvider world={world} />;
 // -- components -----------------------------------------------------------------------------
 
 function ConnectivityBanner() {
-  const { latest, affected } = AppShell.useHeld();
+  const { latest, affected } = TransportShell.useHeld();
   return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
 }
 

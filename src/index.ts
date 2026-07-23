@@ -94,10 +94,14 @@ export {
   ClientNetworkFailure,
   ClientOffline,
   ClientProtocolViolation,
+  ClientStale,
   ClientTimeout,
   defectErrors,
   ServerBadRequest,
   ServerInternal,
+  staleErrors,
   transportErrors,
 } from "./framework-errors.js";
 export type { ClientBoundaryError } from "./framework-errors.js";
+
+export { contractDigest } from "./contract-digest.js";

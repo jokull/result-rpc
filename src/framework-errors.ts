@@ -88,6 +88,29 @@ export const ClientDecodeFailure = error({
 });
 
 /**
+ * A contract failure reclassified because the server's contract digest did not
+ * match this client's: the client is a stale deploy, not a buggy one. The fix
+ * is a reload, so the built-in stale shell defaults to exactly that. Carries
+ * only the original tag — never values.
+ */
+export const ClientStale = error({
+  tag: "client/stale",
+  data: wire.object({ reclassifiedFrom: wire.string }),
+  httpStatus: 426,
+  retry: "never",
+  visibility: "public",
+  severity: "info",
+});
+
+/** The tags a contract-digest mismatch may reclassify into `client/stale`. */
+export const STALE_RECLASSIFIABLE_TAGS: ReadonlySet<string> = new Set([
+  "server/bad-request",
+  "client/decode-failure",
+  "client/protocol-violation",
+  "client/http-failure",
+]);
+
+/**
  * Transport failures: real, recoverable, and not about any single operation.
  * Every member declares `retry: "transient"`. Shell layers usually claim these
  * with `effect: "pause"` so the app shell owns the banner.
@@ -110,6 +133,11 @@ export const defectErrors = {
   ServerInternal,
 } as const;
 
+/** A deploy left this client behind; the built-in stale shell reloads by default. */
+export const staleErrors = {
+  ClientStale,
+} as const;
+
 export const frameworkErrorDefinitions = {
   ServerBadRequest,
   ServerInternal,
@@ -119,6 +147,7 @@ export const frameworkErrorDefinitions = {
   ClientHttpFailure,
   ClientProtocolViolation,
   ClientDecodeFailure,
+  ClientStale,
 } as const;
 
 // Each framework error exports its value and its error type under one name.
@@ -130,6 +159,7 @@ export type ClientTimeout = ReturnType<typeof ClientTimeout>;
 export type ClientHttpFailure = ReturnType<typeof ClientHttpFailure>;
 export type ClientProtocolViolation = ReturnType<typeof ClientProtocolViolation>;
 export type ClientDecodeFailure = ReturnType<typeof ClientDecodeFailure>;
+export type ClientStale = ReturnType<typeof ClientStale>;
 
 export type ClientBoundaryError =
   | ClientOffline
@@ -137,7 +167,8 @@ export type ClientBoundaryError =
   | ClientTimeout
   | ClientHttpFailure
   | ClientProtocolViolation
-  | ClientDecodeFailure;
+  | ClientDecodeFailure
+  | ClientStale;
 
 /** Maps codec issues into `server/bad-request` data: paths and messages only, never values. */
 export const badRequestFromIssues = (cause: unknown): ServerBadRequest => {

@@ -1,8 +1,10 @@
 import type { AnyTaggedError , ErrorPolicy } from "../error.js";
 import { frameworkError as error } from "../error.js";
 import { badRequestFromIssues, frameworkErrorDefinitions, ServerInternal } from "../framework-errors.js";
+import { contractDigest } from "../contract-digest.js";
 import { injectFiles } from "../files.js";
 import {
+  CONTRACT_HEADER,
   PROTOCOL_CONTENT_TYPE,
   PROTOCOL_VERSION,
   STREAM_CONTENT_TYPE,
@@ -226,6 +228,11 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
    * fire `onInternalError` with the full cause.
    */
   readonly onError?: (event: ErrorResponseEvent) => void;
+  /**
+   * Overrides the automatic contract digest sent on every response for stale-
+   * client detection (e.g. a build stamp). Set the same value on the client.
+   */
+  readonly contractVersion?: string;
 }
 
 export interface ErrorResponseEvent {
@@ -247,7 +254,8 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
   if (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1) {
     throw new TypeError("maxRequestBytes must be a positive integer");
   }
-  return async (request) => {
+  const contractVersion = options.contractVersion ?? contractDigest(options.router);
+  const handle = async (request: Request): Promise<Response> => {
     const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
       const policy = frameworkPolicyFor(failure)
         ?? (procedurePath === undefined
@@ -413,5 +421,10 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
       };
     }));
     return wireResponse({ v: PROTOCOL_VERSION, batch: items }, 200);
+  };
+  return async (request) => {
+    const response = await handle(request);
+    response.headers.set(CONTRACT_HEADER, contractVersion);
+    return response;
   };
 };

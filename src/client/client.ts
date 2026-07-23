@@ -6,10 +6,13 @@ import {
   ClientNetworkFailure,
   ClientOffline,
   ClientProtocolViolation,
+  ClientStale,
   ClientTimeout,
+  STALE_RECLASSIFIABLE_TAGS,
   ServerInternal,
   type ClientBoundaryError,
 } from "../framework-errors.js";
+import { contractDigest } from "../contract-digest.js";
 import {
   decodeStreamFrame,
   decodeResponseEnvelope,
@@ -39,6 +42,7 @@ import {
   requestEnvelope,
   type ClientTransport,
   type TransportRequestOptions,
+  type TransportResponse,
 } from "./transport.js";
 
 /** Zero-input procedures may be called with no argument. */
@@ -126,6 +130,13 @@ export type ClientEvent =
       tag: string;
       owner: string;
       effect: "pause" | "escalate";
+    }>
+  | Readonly<{
+      /** The server's contract digest stopped matching this client's — a
+       * deploy left this client behind. Emitted once per client. */
+      type: "skew";
+      clientContract: string;
+      serverContract: string;
     }>;
 
 export type ClientEventListener = (event: ClientEvent) => void;
@@ -137,6 +148,8 @@ export interface CreateContractClientOptions<
   readonly contract: TRouter;
   readonly transport: ClientTransport;
   readonly onEvent?: ClientEventListener;
+  /** Overrides the automatic contract digest; set the same value server-side. */
+  readonly contractVersion?: string;
 }
 
 export interface CreateRouterClientOptions<TRouter extends Router<any, RouterRecord>> {
@@ -144,6 +157,8 @@ export interface CreateRouterClientOptions<TRouter extends Router<any, RouterRec
   readonly router: TRouter;
   readonly transport: ClientTransport;
   readonly onEvent?: ClientEventListener;
+  /** Overrides the automatic contract digest; set the same value server-side. */
+  readonly contractVersion?: string;
 }
 
 export type CreateClientOptions<TRouter extends ClientRouter> =
@@ -222,11 +237,47 @@ const decodeEnvelope = (
   }
 };
 
+/**
+ * Contract-skew reconciliation. The server stamps every response with its
+ * contract digest; when it stops matching this client's, the client is a
+ * stale deploy. Contract-shaped failures are then reclassified into
+ * `client/stale` (whose built-in shell reloads), and a `skew` event fires
+ * once. Matching digests leave every failure exactly as it was — a real
+ * defect stays a defect.
+ */
+interface SkewMonitor {
+  reconcile(
+    result: Result<unknown, AnyTaggedError>,
+    serverContract: string | undefined,
+  ): Result<unknown, AnyTaggedError>;
+}
+
+const createSkewMonitor = (
+  contract: string,
+  onEvent: ClientEventListener | undefined,
+): SkewMonitor => {
+  let reported = false;
+  return {
+    reconcile: (result, serverContract) => {
+      if (serverContract === undefined || serverContract === contract) return result;
+      if (!reported) {
+        reported = true;
+        onEvent?.({ type: "skew", clientContract: contract, serverContract });
+      }
+      if (!result.ok && STALE_RECLASSIFIABLE_TAGS.has(result.error._tag)) {
+        return err(ClientStale({ reclassifiedFrom: result.error._tag }));
+      }
+      return result;
+    },
+  };
+};
+
 const callProcedureOnce = async (
   procedure: ClientProcedure,
   path: string,
   input: unknown,
   transport: ClientTransport,
+  skew: SkewMonitor,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
   const encodedInput = procedure._def.input.encode(input ?? {});
@@ -246,6 +297,13 @@ const callProcedureOnce = async (
   if (!outcome.ok) return err(clientFailure(outcome));
 
   const { response } = outcome;
+  return skew.reconcile(decodeTransportResponse(procedure, response), response.contract);
+};
+
+const decodeTransportResponse = (
+  procedure: ClientProcedure,
+  response: TransportResponse,
+): Result<unknown, AnyTaggedError> => {
   const isProtocolContent = isProtocolContentType(response.contentType);
   if (!isProtocolContent) {
     return err(response.status >= 400
@@ -288,6 +346,7 @@ const retryDelayFor = (
     ClientHttpFailure,
     ClientProtocolViolation,
     ClientDecodeFailure,
+    ClientStale,
   } as ErrorDefinitionMap;
   const definition = Object.values(definitions).find(
     (candidate) => candidate.tag === failure._tag,
@@ -325,13 +384,14 @@ const callProcedure = async (
   input: unknown,
   transport: ClientTransport,
   onEvent: ClientEventListener | undefined,
+  skew: SkewMonitor,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
   const kind = procedure._def.kind as "query" | "mutation";
   const startedAt = Date.now();
   onEvent?.({ type: "call", kind, path });
   for (let attempt = 0; ; attempt += 1) {
-    const result = await callProcedureOnce(procedure, path, input, transport, options);
+    const result = await callProcedureOnce(procedure, path, input, transport, skew, options);
     if (result.ok) {
       onEvent?.({ type: "success", kind, path, durationMs: Date.now() - startedAt });
       return result;
@@ -464,6 +524,7 @@ const createProxy = (
   router: ClientRouter,
   transport: ClientTransport,
   onEvent: ClientEventListener | undefined,
+  skew: SkewMonitor,
   path: readonly string[],
   cache: Map<string, unknown>,
   clientIdentity: object,
@@ -486,7 +547,7 @@ const createProxy = (
           || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
         if (!leadsSomewhere) return undefined;
       }
-      return createProxy(router, transport, onEvent, candidate, cache, clientIdentity);
+      return createProxy(router, transport, onEvent, skew, candidate, cache, clientIdentity);
     },
     apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);
@@ -500,7 +561,7 @@ const createProxy = (
           argumentsList[1],
         );
       }
-      return callProcedure(procedure, procedurePath, argumentsList[0], transport, onEvent, argumentsList[1]);
+      return callProcedure(procedure, procedurePath, argumentsList[0], transport, onEvent, skew, argumentsList[1]);
     },
   });
   clientIdentities.set(proxy, clientIdentity);
@@ -525,10 +586,15 @@ export function createClient(
   const router = "contract" in options ? options.contract : options.router;
   const clientIdentity = Object.freeze({});
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
+  const skew = createSkewMonitor(
+    options.contractVersion ?? contractDigest(router),
+    options.onEvent,
+  );
   return createProxy(
     router,
     options.transport,
     options.onEvent,
+    skew,
     [],
     new Map(),
     clientIdentity,

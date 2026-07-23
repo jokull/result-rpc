@@ -1,13 +1,15 @@
 /**
  * Rung 3, client: the full onion.
  *
- *   AppShell      transport failures pause → one connectivity banner
- *   DefectShell   protocol/internal defects escalate → error boundary
- *   SessionShell  provides User | null (public pages render inside this)
- *   ViewerShell   narrows to User, owns the auth union → sign-in reaction
+ *   boundaryShells()  the framework-owned rings, pre-assembled:
+ *     TransportShell  transport failures pause → one connectivity banner
+ *     DefectShell     protocol/internal defects escalate → error boundary
+ *     StaleShell      a stale deploy reloads by default
+ *   SessionShell      provides User | null (public pages render inside this)
+ *   ViewerShell       narrows to User, owns the auth union → sign-in reaction
  *
- * The payoff: `doc.byId` resolves nine possible failures — and DocPage
- * switch-matches exactly one: `doc/not-found`. `doc.rename` resolves eleven —
+ * The payoff: `doc.byId` resolves a dozen possible failures — and DocPage
+ * switch-matches exactly one: `doc/not-found`. `doc.rename` resolves fourteen —
  * and the form branches on exactly its three domain outcomes. Every framework
  * tag is owned by a named shell above, and the type probes in app.test.tsx
  * assert both unions.
@@ -17,10 +19,10 @@
  * client to be declared.
  */
 import { Component, type ReactNode } from "react";
-import { defectErrors, errorCatalog, transportErrors } from "../../src/index.js";
+import { defectErrors, errorCatalog } from "../../src/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
 import {
-  defineShell,
+  boundaryShells,
   layerShell,
   ResultRpcProvider,
   useResultClient,
@@ -39,21 +41,16 @@ export type DocClient = ReturnType<typeof makeDocClient>;
 
 // -- the onion (module-level: no client required to declare it) ---------------------
 
-export const AppShell = defineShell({
-  name: "docs-app",
-  claims: transportErrors,
-  effect: "pause",
-});
-
-export const DefectShell = defineShell({
-  name: "docs-defect",
-  from: AppShell,
-  claims: defectErrors,
-  effect: "escalate",
+/**
+ * The framework-owned outer rings, pre-assembled: transport pauses, defects
+ * escalate, a stale deploy reloads. User shells hang off StaleShell.
+ */
+export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells({
+  name: "docs",
 });
 
 export const SessionShell = layerShell(SessionLayer, {
-  from: DefectShell,
+  from: StaleShell,
   procedure: (client: DocClient) => client.auth.whoami,
 });
 
@@ -73,26 +70,24 @@ export const ViewerShell = layerShell(ViewerLayer, {
 export function DocsApp({ client, docId }: { client: DocClient; docId: string }) {
   return (
     <ResultRpcProvider client={client}>
-      <AppShell.Provider>
-        <DefectShell.Provider>
-          <Boundary>
-            <ConnectivityBanner />
-            <SessionShell.Provider fallback={<p>starting…</p>}>
-              <Greeting />
-              <ViewerShell.Provider fallback={<p>signing in…</p>}>
-                <DocPage docId={docId} />
-                <DocActivity docId={docId} />
-              </ViewerShell.Provider>
-            </SessionShell.Provider>
-          </Boundary>
-        </DefectShell.Provider>
-      </AppShell.Provider>
+      <BoundaryProvider>
+        <Boundary>
+          <ConnectivityBanner />
+          <SessionShell.Provider fallback={<p>starting…</p>}>
+            <Greeting />
+            <ViewerShell.Provider fallback={<p>signing in…</p>}>
+              <DocPage docId={docId} />
+              <DocActivity docId={docId} />
+            </ViewerShell.Provider>
+          </SessionShell.Provider>
+        </Boundary>
+      </BoundaryProvider>
     </ResultRpcProvider>
   );
 }
 
 function ConnectivityBanner() {
-  const { latest, affected } = AppShell.useHeld();
+  const { latest, affected } = TransportShell.useHeld();
   return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
 }
 
