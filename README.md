@@ -189,6 +189,8 @@ appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
 `retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an
 empty object codec — a domain error is a tag and an HTTP status until it needs
 more. Data-free definitions are called with no arguments: `Unauthorized()`.
+`httpStatus` accepts the common vocabulary by name — `"not-found"`,
+`"conflict"`, `"too-many-requests"` — or any 4xx/5xx number.
 
 Calling a definition creates the complete error value:
 
@@ -305,6 +307,19 @@ The procedure now returns:
 
 ```ts
 Result<Trip, Unauthorized | TripNotFound>
+```
+
+Builders are immutable, so a base forks freely — the `protectedProcedure`
+pattern is one line:
+
+```ts
+const protectedProcedure = app.procedure().use(authenticated)
+
+const renameTrip = protectedProcedure
+  .input(RenameInput)
+  .output(TripCodec)
+  .errors({ TripNotFound, TripLocked })   // only its own domain errors;
+  .mutation(/* ... */)                     // the auth union rides in with the base
 ```
 
 In contract-first code, middleware errors must already be present in the shared
@@ -433,6 +448,21 @@ export const handleRpc = createFetchHandler({
   },
 })
 ```
+
+`onError` is the observability tap: it fires for every declared error that
+crosses the wire — domain errors, bad requests, sanitized internals — with the
+error value, its policy (severity, retry, status), and the procedure path, so
+one hook feeds metrics and logging:
+
+```ts
+onError: ({ error, policy, procedurePath, httpStatus }) => {
+  metrics.count(error._tag, { severity: policy?.severity })
+}
+```
+
+Malformed input is the client's fault, not an incident: it becomes a public
+`server/bad-request` (400) carrying path-and-message issues — never values —
+while `onInternalError` stays reserved for genuine defects.
 
 Unknown exceptions are logged with an incident ID. The client receives only:
 

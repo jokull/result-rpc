@@ -254,6 +254,21 @@ claiming, which is keyed by tag alone. `defineErrors(namespace, specs)` derives
 tags from keys (template-literal typed), so a tag string is written once or
 never.
 
+### Input rejection tier
+
+Malformed input is a `server/bad-request` (400, public, `severity: "warning"`)
+carrying bounded path/message issues and never echoing values — emitted by both
+the HTTP handler and parity execution, with no incident. `server/internal`
+remains reserved for defects. Both are framework-namespace tags every client
+union includes and `defectErrors` claims.
+
+### Observability
+
+`createFetchHandler` takes two taps: `onInternalError` (defects, with cause and
+incident id) and `onError` (every declared error response, with the error
+value, its `ErrorPolicy`, the path, and the HTTP status). `severity` on the
+policy exists for the latter.
+
 ### Built-in errors
 
 The first version should define at least:

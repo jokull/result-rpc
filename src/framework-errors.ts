@@ -1,6 +1,20 @@
 import { frameworkError as error } from "./error.js";
 import { wire } from "./wire.js";
 
+export const ServerBadRequest = error({
+  tag: "server/bad-request",
+  data: wire.object({
+    issues: wire.array(wire.object({
+      path: wire.array(wire.string),
+      message: wire.string,
+    })),
+  }),
+  httpStatus: 400,
+  retry: "never",
+  visibility: "public",
+  severity: "warning",
+});
+
 export const ServerInternal = error({
   tag: "server/internal",
   data: wire.object({ incidentId: wire.string }),
@@ -92,10 +106,12 @@ export const defectErrors = {
   ClientHttpFailure,
   ClientProtocolViolation,
   ClientDecodeFailure,
+  ServerBadRequest,
   ServerInternal,
 } as const;
 
 export const frameworkErrorDefinitions = {
+  ServerBadRequest,
   ServerInternal,
   ClientOffline,
   ClientNetworkFailure,
@@ -105,6 +121,7 @@ export const frameworkErrorDefinitions = {
   ClientDecodeFailure,
 } as const;
 
+export type ServerBadRequest = ReturnType<typeof ServerBadRequest>;
 export type ServerInternal = ReturnType<typeof ServerInternal>;
 export type Offline = ReturnType<typeof ClientOffline>;
 export type NetworkFailure = ReturnType<typeof ClientNetworkFailure>;
@@ -120,3 +137,16 @@ export type ClientBoundaryError =
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure;
+
+/** Maps codec issues into `server/bad-request` data: paths and messages only, never values. */
+export const badRequestFromIssues = (cause: unknown): ServerBadRequest => {
+  const issues = Array.isArray(cause)
+    ? (cause as readonly { readonly path?: readonly (string | number)[]; readonly message?: unknown }[])
+        .slice(0, 20)
+        .map((issue) => ({
+          path: (issue.path ?? []).map(String),
+          message: typeof issue.message === "string" ? issue.message : "Invalid value",
+        }))
+    : [{ path: [], message: "Invalid input" }];
+  return ServerBadRequest({ issues });
+};

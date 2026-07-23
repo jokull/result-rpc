@@ -1,6 +1,6 @@
-import type { AnyErrorDefinition, AnyTaggedError } from "../error.js";
+import type { AnyErrorDefinition, AnyTaggedError , ErrorPolicy } from "../error.js";
 import { frameworkError as error } from "../error.js";
-import { ServerInternal } from "../framework-errors.js";
+import { badRequestFromIssues, frameworkErrorDefinitions, ServerInternal } from "../framework-errors.js";
 import {
   PROTOCOL_CONTENT_TYPE,
   PROTOCOL_VERSION,
@@ -175,11 +175,29 @@ const statusForError = (procedure: AnyProcedure, failure: AnyTaggedError): numbe
   return definition?.policy.httpStatus ?? 500;
 };
 
+const frameworkPolicyFor = (failure: AnyTaggedError): ErrorPolicy | undefined =>
+  Object.values(frameworkErrorDefinitions)
+    .find((definition) => definition.tag === failure._tag)?.policy;
+
+const definitionPolicyFor = (
+  router: Router<unknown, RouterRecord>,
+  procedurePath: string,
+  failure: AnyTaggedError,
+): ErrorPolicy | undefined => {
+  const procedure = router.procedures.get(procedurePath);
+  if (!procedure) return undefined;
+  return Object.values(procedure._def.definitions as ErrorDefinitionMap)
+    .find((definition) => definition.tag === failure._tag)?.policy;
+};
+
 const encodeProcedureResult = (
   procedure: AnyProcedure,
   result: Result<unknown, AnyTaggedError>,
+  notify?: (failure: AnyTaggedError, httpStatus: number) => void,
 ): Response => {
   if (!result.ok) {
+    const status = statusForError(procedure, result.error);
+    notify?.(result.error, status);
     return failureResponse(result.error, statusForError(procedure, result.error));
   }
   const encoded = procedure._def.output.encode(result.value);
@@ -199,6 +217,21 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
     readonly request: Request;
   }) => RouterContext<TRouter> | Promise<RouterContext<TRouter>>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
+  /**
+   * Observability tap for every declared error that crosses the wire —
+   * domain errors, bad requests, and sanitized internals alike. Receives the
+   * error value plus its policy (severity, retry, status), so one hook feeds
+   * metrics and logging without re-deriving anything. Defects additionally
+   * fire `onInternalError` with the full cause.
+   */
+  readonly onError?: (event: ErrorResponseEvent) => void;
+}
+
+export interface ErrorResponseEvent {
+  readonly error: AnyTaggedError;
+  readonly policy?: ErrorPolicy;
+  readonly procedurePath?: string;
+  readonly httpStatus: number;
 }
 
 export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
@@ -214,22 +247,38 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     throw new TypeError("maxRequestBytes must be a positive integer");
   }
   return async (request) => {
+    const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
+      const policy = frameworkPolicyFor(failure)
+        ?? (procedurePath === undefined
+          ? undefined
+          : definitionPolicyFor(options.router, procedurePath, failure));
+      options.onError?.({
+        error: failure,
+        ...(policy === undefined ? {} : { policy }),
+        ...(procedurePath === undefined ? {} : { procedurePath }),
+        httpStatus,
+      });
+    };
+    const failWith = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
+      notify(failure, httpStatus, procedurePath);
+      return failureResponse(failure, httpStatus);
+    };
     const url = new URL(request.url);
     if (url.pathname !== endpoint || request.method !== "POST") {
-      return failureResponse(ProtocolNotFound({}), 404);
+      return failWith(ProtocolNotFound({}), 404);
     }
     if (!isProtocolContentType(request.headers.get("content-type"))) {
-      return failureResponse(ProtocolInvalidRequest({}), 400);
+      return failWith(ProtocolInvalidRequest({}), 400);
     }
 
     const body = await readRequestBody(request, maxRequestBytes);
-    if (body === undefined) return failureResponse(ProtocolInvalidRequest({}), 400);
+    if (body === undefined) return failWith(ProtocolInvalidRequest({}), 400);
     const decodedBody = deserialize(body, { maxBytes: maxRequestBytes });
-    if (!decodedBody.ok) return failureResponse(ProtocolInvalidRequest({}), 400);
+    if (!decodedBody.ok) return failWith(ProtocolInvalidRequest({}), 400);
     const raw = decodedBody.value;
     const envelope = decodeRequestEnvelope(raw);
     const batch = envelope ? undefined : decodeBatchRequestEnvelope(raw);
-    if (!envelope && !batch) return failureResponse(ProtocolInvalidRequest({}), 400);
+    if (!envelope && !batch) return failWith(ProtocolInvalidRequest({}), 400);
     if (batch && batch.batch.length > maxBatchItems) {
       return failureResponse(ProtocolInvalidRequest({}), 400);
     }
@@ -264,7 +313,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           });
           return failureResponse(ServerInternal({ incidentId }), 500);
         }
-        if (!decodedInput.ok) return failureResponse(ProtocolInvalidRequest({}), 400);
+        if (!decodedInput.ok) return failWith(badRequestFromIssues(decodedInput.issues), 400, envelope.path);
         return streamProcedureResponse(
           subscription,
           decodedInput.value,
@@ -277,7 +326,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
 
     const dispatch = async (item: { readonly path: string; readonly input: unknown }) => {
       const procedure = options.router.procedures.get(item.path);
-      if (!procedure) return failureResponse(ProtocolNotFound({}), 404);
+      if (!procedure) return failWith(ProtocolNotFound({}), 404, item.path);
       if (procedure._kind === "subscription-procedure") {
         return failureResponse(ProtocolInvalidRequest({}), 400);
       }
@@ -294,7 +343,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         });
         return failureResponse(ServerInternal({ incidentId }), 500);
       }
-      if (!decodedInput.ok) return failureResponse(ProtocolInvalidRequest({}), 400);
+      if (!decodedInput.ok) return failWith(badRequestFromIssues(decodedInput.issues), 400, item.path);
       const result = await executeProcedure(procedure, decodedInput.value, {
         context,
         procedurePath: item.path,
@@ -303,7 +352,8 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           : { onInternalError: options.onInternalError }),
       });
       try {
-        return encodeProcedureResult(procedure, result);
+        return encodeProcedureResult(procedure, result, (failure, status) =>
+          notify(failure, status, item.path));
       } catch (cause) {
         const incidentId = `inc_${crypto.randomUUID()}`;
         options.onInternalError?.({

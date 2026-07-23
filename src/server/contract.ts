@@ -4,7 +4,7 @@ import type {
   ErrorDefinition,
   ErrorOf,
 } from "../error.js";
-import { ServerInternal } from "../framework-errors.js";
+import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
 import { wire } from "../wire.js";
 import type { InputOf, WireCodec, WireValue } from "../wire.js";
@@ -670,6 +670,12 @@ export const assertDefinitionsAreDeclared = (
 
 const incidentId = (): string => `inc_${crypto.randomUUID()}`;
 
+
+/** Malformed input is the client's fault: a 400 with path-only issues, no incident. */
+const badInputFailure = (
+  cause: unknown,
+): Result<never, ReturnType<typeof ServerBadRequest>> => err(badRequestFromIssues(cause));
+
 const internalFailure = (
   phase: InternalErrorEvent["phase"],
   cause: unknown,
@@ -694,13 +700,13 @@ export const executeProcedure = async <
   procedure: Procedure<TRootContext, TInput, TOutput, TDefinitions>,
   input: TInput,
   options: ExecutionOptions<TRootContext>,
-): Promise<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal>>> => {
+): Promise<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest>>> => {
   let decodedInput: ReturnType<typeof procedure._def.input.decode>;
   try {
     const encodedInput = procedure._def.input.encode(input);
-    if (!encodedInput.ok) return internalFailure("input", encodedInput.issues, options);
+    if (!encodedInput.ok) return badInputFailure(encodedInput.issues);
     decodedInput = procedure._def.input.decode(encodedInput.value);
-    if (!decodedInput.ok) return internalFailure("input", decodedInput.issues, options);
+    if (!decodedInput.ok) return badInputFailure(decodedInput.issues);
   } catch (cause) {
     return internalFailure("input", cause, options);
   }
@@ -789,15 +795,15 @@ export async function* executeSubscription<
   procedure: SubscriptionProcedure<TRootContext, TInput, TOutput, TDefinitions>,
   input: TInput,
   options: ExecutionOptions<TRootContext>,
-): AsyncGenerator<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal>>> {
+): AsyncGenerator<Result<TOutput, ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest>>> {
   const encodedInput = procedure._def.input.encode(input);
   if (!encodedInput.ok) {
-    yield internalFailure("input", encodedInput.issues, options);
+    yield badInputFailure(encodedInput.issues);
     return;
   }
   const decodedInput = procedure._def.input.decode(encodedInput.value);
   if (!decodedInput.ok) {
-    yield internalFailure("input", decodedInput.issues, options);
+    yield badInputFailure(decodedInput.issues);
     return;
   }
 

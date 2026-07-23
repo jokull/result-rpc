@@ -78,22 +78,23 @@ const authenticated = ViewerLayer.middleware(app, session);
 const whoami = SessionLayer.procedure(app, session);
 const me = ViewerLayer.procedure(app, authenticated);
 
-const tripById = app.procedure()
+/** The tRPC protectedProcedure pattern: builders are immutable, bases fork freely. */
+const protectedProcedure = app.procedure().use(authenticated);
+
+const tripById = protectedProcedure
   .input(wire.object({ id: wire.string }))
   .output(TripCodec)
-  .errors({ Unauthorized, TripNotFound })
-  .use(authenticated)
+  .errors({ TripNotFound })
   .query(async ({ input, context, errors }) => {
     const trip = await context.db.trip(input.id);
     if (!trip) return err(errors.TripNotFound({ tripId: input.id }));
     return ok(trip);
   });
 
-const renameTrip = app.procedure()
+const renameTrip = protectedProcedure
   .input(wire.object({ id: wire.string, title: wire.string }))
   .output(TripCodec)
-  .errors({ Unauthorized, TripNotFound, TripLocked })
-  .use(authenticated)
+  .errors({ TripNotFound, TripLocked })
   .mutation(async ({ input, context, errors }) => {
     const trip = await context.db.trip(input.id);
     if (!trip) return err(errors.TripNotFound({ tripId: input.id }));
@@ -110,11 +111,10 @@ const renameTrip = app.procedure()
     return ok(renamed);
   });
 
-const tripEvents = app.procedure()
+const tripEvents = protectedProcedure
   .input(wire.object({ id: wire.string }))
   .output(TripEventCodec)
-  .errors({ Unauthorized, TripNotFound })
-  .use(authenticated)
+  .errors({ TripNotFound })
   .subscription();
 
 export const tripRouter = app.router({

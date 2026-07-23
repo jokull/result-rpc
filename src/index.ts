@@ -11,10 +11,11 @@ export {
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
 
-export { defineErrors, error, errorCatalog, pickErrors } from "./error.js";
+export { defineErrors, error, errorCatalog, httpStatusNames, pickErrors } from "./error.js";
 export type {
   AnyTaggedError,
   ErrorSpec,
+  HttpStatusName,
   NamespacedErrors,
   ErrorDefinition,
   ErrorDefinitionOptions,
@@ -69,6 +70,7 @@ export {
   ClientProtocolViolation,
   ClientTimeout,
   defectErrors,
+  ServerBadRequest,
   ServerInternal,
   transportErrors,
 } from "./framework-errors.js";
@@ -79,6 +81,7 @@ export type {
   NetworkFailure,
   Offline,
   ProtocolViolation,
+  ServerBadRequest as ServerBadRequestError,
   ServerInternal as ServerInternalError,
   Timeout,
 } from "./framework-errors.js";

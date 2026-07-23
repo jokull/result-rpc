@@ -1,6 +1,7 @@
 import {
   type InputOf,
   type ClientBoundaryError,
+  type ServerBadRequestError,
   type Result,
   ServerInternal,
   err,
@@ -134,6 +135,7 @@ type CallError = CallResult extends Result<unknown, infer E> ? E : never;
 type ExpectedError =
   | ReturnType<typeof Missing>
   | ReturnType<typeof ServerInternal>
+  | ServerBadRequestError
   | ClientBoundaryError;
 
 type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;

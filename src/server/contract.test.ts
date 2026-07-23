@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { err, error, ok, wire } from "../index.js";
-import { executeProcedure, rpc } from "./index.js";
+import { deserialize, err, error, ok, serialize, wire } from "../index.js";
+import { createFetchHandler, executeProcedure, rpc } from "./index.js";
+import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
 
 interface TestContext {
   readonly authenticated: boolean;
@@ -211,5 +212,102 @@ describe("procedure execution", () => {
     });
     expect(() => r.procedure().errors({ Unauthorized }).errors({ OtherUnauthorized }))
       .toThrow("Conflicting definitions");
+  });
+});
+
+describe("bad input", () => {
+  test("malformed input is a 400 server/bad-request, not an incident", async () => {
+    const r = rpc.context<{}>();
+    const router = r.router({
+      echo: r.procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .query(({ input }) => ok(input.id)),
+    });
+    const incidents: unknown[] = [];
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onInternalError: (event) => incidents.push(event),
+    });
+    const envelope = serialize({ v: 1, path: "echo", input: { id: 42 } });
+    if (!envelope.ok) throw new Error("unreachable");
+    const response = await handler(new Request("https://example.test/rpc", {
+      method: "POST",
+      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+      body: envelope.value,
+    }));
+    expect(response.status).toBe(400);
+    const decoded = deserialize(await response.text());
+    if (!decoded.ok) throw new Error("unreachable");
+    const body = decoded.value as { error: { _tag: string; data: { issues: unknown[] } } };
+    expect(body.error._tag).toBe("server/bad-request");
+    expect(body.error.data.issues.length).toBeGreaterThan(0);
+    expect(incidents).toEqual([]); // the client's mistake is not our incident
+  });
+});
+
+describe("procedure bases", () => {
+  test("a base procedure with middleware is reusable across procedures", async () => {
+    const r = rpc.context<{ user: string | undefined }>();
+    const Denied = error({ tag: "base/denied", httpStatus: 403 });
+    const guard = r.middleware<{ viewer: string }>()
+      .errors({ Denied })
+      .use(({ context, errors, next }) =>
+        context.user === undefined
+          ? err(errors.Denied())
+          : next({ context: { ...context, viewer: context.user } }));
+
+    // the tRPC protectedProcedure pattern: builders are immutable, so a base forks freely
+    const protectedProcedure = r.procedure().use(guard);
+
+    const router = r.router({
+      whoami: protectedProcedure.output(wire.string).query(({ context }) => ok(context.viewer)),
+      shout: protectedProcedure
+        .input(wire.object({ word: wire.string }))
+        .output(wire.string)
+        .query(({ input, context }) => ok(`${context.viewer}: ${input.word}!`)),
+    });
+
+    const run = (path: "whoami" | "shout", user: string | undefined, input: unknown) =>
+      executeProcedure(router.procedures.get(path)! as never, input as never, {
+        context: { user },
+      });
+    expect(await run("whoami", "u_1", {})).toEqual(ok("u_1"));
+    expect(await run("shout", "u_1", { word: "hey" })).toEqual(ok("u_1: hey!"));
+    expect(await run("shout", undefined, { word: "hey" }))
+      .toEqual(err({ _tag: "base/denied", data: {} }));
+  });
+
+  test("onError observes declared errors with their policy", async () => {
+    const r = rpc.context<{}>();
+    const Missing = error({ tag: "obs/missing", httpStatus: "not-found", severity: "info" });
+    const router = r.router({
+      find: r.procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .errors({ Missing })
+        .query(({ input, errors }) =>
+          input.id === "x" ? err(errors.Missing()) : ok(input.id)),
+    });
+    const seen: { tag: string; status: number; severity?: string }[] = [];
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onError: (event) => seen.push({
+        tag: event.error._tag,
+        status: event.httpStatus,
+        ...(event.policy?.severity === undefined ? {} : { severity: event.policy.severity }),
+      }),
+    });
+    const envelope = serialize({ v: 1, path: "find", input: { id: "x" } });
+    if (!envelope.ok) throw new Error("unreachable");
+    const response = await handler(new Request("https://example.test/rpc", {
+      method: "POST",
+      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+      body: envelope.value,
+    }));
+    expect(response.status).toBe(404);
+    expect(seen).toEqual([{ tag: "obs/missing", status: 404, severity: "info" }]);
   });
 });

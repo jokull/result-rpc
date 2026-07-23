@@ -1,6 +1,7 @@
 import type { AnyTaggedError } from "../error.js";
 import {
   ClientDecodeFailure,
+  ServerBadRequest,
   ClientHttpFailure,
   ClientNetworkFailure,
   ClientOffline,
@@ -54,7 +55,7 @@ export type ProcedureClient<TProcedure> =
         ...args: ClientInputArgs<TInput>
       ) => Promise<Result<
         TOutput,
-        ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ClientBoundaryError
+        ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
       >>) & { readonly $kind: TKind }
     : TProcedure extends ProcedureContract<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
       ? TKind extends "subscription"
@@ -63,7 +64,7 @@ export type ProcedureClient<TProcedure> =
           ...args: ClientInputArgs<TInput>
         ) => Promise<Result<
           TOutput,
-          ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ClientBoundaryError
+          ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
         >>) & { readonly $kind: TKind }
     : never;
 
@@ -91,7 +92,7 @@ type SubscriptionClient<TInput, TOutput, TDefinitions extends ErrorDefinitionMap
   options?: TransportRequestOptions,
 ) => ResultSubscription<
   TOutput,
-  ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ClientBoundaryError
+  ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
 >) & { readonly $kind: "subscription" };
 
 export type ClientOf<TRouter> = TRouter extends Router<any, infer TRecord>
@@ -158,13 +159,14 @@ const decodeEnvelope = (
     const decoded = procedure._def.output.decode(envelope.value);
     return decoded.ok ? ok(decoded.value) : err(ClientDecodeFailure({ target: "success" }));
   }
-  if (ServerInternal.is(envelope.error)) {
-    if (status !== ServerInternal.policy.httpStatus && status !== 200) {
+  for (const framework of [ServerInternal, ServerBadRequest] as const) {
+    if (!framework.is(envelope.error)) continue;
+    if (status !== framework.policy.httpStatus && status !== 200) {
       return err(ClientProtocolViolation({ reason: "envelope" }));
     }
-    const decodedInternal = ServerInternal.decode(envelope.error);
-    return decodedInternal.ok
-      ? err(decodedInternal.value)
+    const decoded = framework.decode(envelope.error);
+    return decoded.ok
+      ? err(decoded.value)
       : err(ClientDecodeFailure({ target: "error" }));
   }
   const definitions = procedure._def.definitions as ErrorDefinitionMap;

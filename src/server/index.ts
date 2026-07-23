@@ -43,5 +43,5 @@ export type {
   RouterRecord,
   RpcFactory,
 } from "./contract.js";
-export type { FetchHandlerOptions } from "./http.js";
+export type { ErrorResponseEvent, FetchHandlerOptions } from "./http.js";
 export type { CreateServerClientOptions } from "./server-client.js";

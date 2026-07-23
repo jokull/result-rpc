@@ -9,19 +9,19 @@ import { defineLayer, err, error, ok, wire, type InputOf } from "../../src/index
 
 // -- errors ---------------------------------------------------------------------
 
-export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 });
-export const SessionExpired = error({ tag: "auth/session-expired", httpStatus: 401 });
+export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: "unauthorized" });
+export const SessionExpired = error({ tag: "auth/session-expired", httpStatus: "unauthorized" });
 
 export const TripNotFound = error({
   tag: "trip/not-found",
   data: wire.object({ tripId: wire.string }),
-  httpStatus: 404,
+  httpStatus: "not-found",
 });
 
 export const TripLocked = error({
   tag: "trip/locked",
   data: wire.object({ lockedBy: wire.string }),
-  httpStatus: 409,
+  httpStatus: "conflict",
 });
 
 export const authErrors = { Unauthorized, SessionExpired };

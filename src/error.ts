@@ -12,6 +12,28 @@ export interface TaggedError<
 export type AnyTaggedError = TaggedError<string, WireValue>;
 
 export type RetryPolicy = "never" | "transient" | "after";
+
+/** The common HTTP failure vocabulary, usable in place of a numeric status. */
+export const httpStatusNames = {
+  "bad-request": 400,
+  unauthorized: 401,
+  "payment-required": 402,
+  forbidden: 403,
+  "not-found": 404,
+  timeout: 408,
+  conflict: 409,
+  gone: 410,
+  "precondition-failed": 412,
+  "payload-too-large": 413,
+  "unprocessable-content": 422,
+  locked: 423,
+  "too-many-requests": 429,
+  internal: 500,
+  "not-implemented": 501,
+  "service-unavailable": 503,
+} as const;
+
+export type HttpStatusName = keyof typeof httpStatusNames;
 export type ErrorVisibility = "public" | "private";
 export type ErrorSeverity = "debug" | "info" | "warning" | "error";
 
@@ -30,7 +52,7 @@ export interface ErrorDefinitionOptions<
   readonly tag: Tag;
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
-  readonly httpStatus: number;
+  readonly httpStatus: number | HttpStatusName;
   /** Defaults to `"never"` — domain errors are not retried. */
   readonly retry?: RetryPolicy;
   /** Defaults to `"public"`. */
@@ -111,6 +133,9 @@ const createErrorDefinition = <
   const options = {
     ...rawOptions,
     data: rawOptions.data ?? (emptyDataCodec as unknown as WireCodec<Input, Data>),
+    httpStatus: typeof rawOptions.httpStatus === "string"
+      ? httpStatusNames[rawOptions.httpStatus]
+      : rawOptions.httpStatus,
     retry: rawOptions.retry ?? "never",
     visibility: rawOptions.visibility ?? "public",
   };
@@ -280,7 +305,7 @@ type KebabCase<S extends string, Acc extends string = ""> =
 export interface ErrorSpec<Input, Data extends WireValue> {
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
-  readonly httpStatus: number;
+  readonly httpStatus: number | HttpStatusName;
   /** Defaults to `"never"`. */
   readonly retry?: RetryPolicy;
   /** Defaults to `"public"`. */

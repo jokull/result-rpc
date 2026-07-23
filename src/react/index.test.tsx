@@ -6,7 +6,7 @@ import { createClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime, type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
 import { createFetchHandler, rpc } from "../server/index.js";
-import type { ClientBoundaryError, ServerInternal } from "../framework-errors.js";
+import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import {
   ResultRpcProvider,
   useResultMutation,
@@ -42,7 +42,7 @@ const client = createClient({
   router,
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });
-type FrameworkFailure = ServerInternal | ClientBoundaryError;
+type FrameworkFailure = ServerInternal | ServerBadRequest | ClientBoundaryError;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
