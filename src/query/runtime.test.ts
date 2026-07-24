@@ -647,6 +647,34 @@ describe("entity identities", () => {
     runtime.clear();
   });
 
+  test("identity invalidation never fetches for unmounted observers", async () => {
+    const { client, requestCount } = bootWorld();
+    const runtime = createQueryRuntime({ client });
+    const docs = runtime.observe(client.list, {});
+    const stop = docs.subscribe(() => undefined);
+    await waitFor(docs, (state) => state.state === "success");
+    // the component unmounts: no active observers remain
+    stop();
+    docs.destroy();
+    const before = requestCount();
+
+    // .writes() invalidates the cached list by identity...
+    const mutation = runtime.mutation(client.archive);
+    await mutation.getCurrentState().mutate({ id: "d1" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // ...but query-core's active-only refetch means nothing fetches for an
+    // unmounted query: it is marked stale and refetches on next mount.
+    expect(requestCount()).toBe(before + 1); // the mutation only
+
+    const remounted = runtime.observe(client.list, {});
+    const stopRemounted = remounted.subscribe(() => undefined);
+    await waitFor(remounted, (state) =>
+      state.state === "success" && state.result.value[0]!.archived === true);
+    stopRemounted(); remounted.destroy(); mutation.destroy();
+    runtime.clear();
+  });
+
   test("cache.updateEntity patches optimistically everywhere and rolls back", async () => {
     const { client } = bootWorld();
     const runtime = createQueryRuntime({ client });
