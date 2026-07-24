@@ -18,7 +18,15 @@ import {
   SERIALIZER_VERSION,
 } from "../serializer.js";
 import { getClientIdentity, getClientRouter, getProcedureClientMetadata } from "../client/client.js";
-import type { AffectsEntry } from "../server/contract.js";
+import type { AffectsEntry, WritesEntry } from "../server/contract.js";
+import {
+  collectEntities,
+  entityKey,
+  mergeByExistingKeys,
+  patchEntity,
+  type AnyModel,
+  type ModelValue,
+} from "../model.js";
 import type { ResultSubscription } from "../client/client.js";
 import { isCancelled } from "../client/transport.js";
 import type { ErrorDefinitionMap } from "../server/contract.js";
@@ -188,6 +196,20 @@ export interface QueryCache {
   invalidateAll<TProcedureClient extends QueryProcedureClientLike>(
     procedure: TProcedureClient,
   ): Promise<void>;
+  /** Invalidates every cached query whose result contains the entity. */
+  invalidateEntity(model: AnyModel, id: string): Promise<void>;
+  /**
+   * Patches the entity in place everywhere it appears — one call updates the
+   * detail view, every list row, the header. The updater receives the cached
+   * value (possibly a projection; treat it as the canonical shape and spread)
+   * and its result is merged by the projection rule. Returns a rollback,
+   * composing with `optimistic:` exactly like `update`.
+   */
+  updateEntity<TModel extends AnyModel>(
+    model: TModel,
+    id: string,
+    updater: (current: ModelValue<TModel>) => ModelValue<TModel>,
+  ): () => void;
 }
 
 export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTaggedError> {
@@ -383,6 +405,87 @@ export const createQueryRuntime = <TClient>(
     return [metadata.path, serialized.value] as const;
   };
 
+  // --- Entity index: entityKey ↔ cached queries containing it ---------------
+  // Maintained from query-cache events; every success value is walked for
+  // branded entity objects (the decode pass branded them).
+  const entityToQueries = new Map<string, Set<string>>();
+  const queryToEntities = new Map<string, Set<string>>();
+  const queryKeyByHash = new Map<string, readonly unknown[]>();
+
+  const dropQueryFromIndex = (hash: string) => {
+    const previous = queryToEntities.get(hash);
+    if (previous) {
+      for (const key of previous) {
+        const hashes = entityToQueries.get(key);
+        hashes?.delete(hash);
+        if (hashes && hashes.size === 0) entityToQueries.delete(key);
+      }
+    }
+    queryToEntities.delete(hash);
+    queryKeyByHash.delete(hash);
+  };
+
+  const reindexQuery = (query: {
+    readonly queryHash: string;
+    readonly queryKey: readonly unknown[];
+    readonly state: { readonly status: string; readonly data: unknown };
+  }) => {
+    dropQueryFromIndex(query.queryHash);
+    if (query.state.status !== "success" || query.state.data === undefined) return;
+    const keys = new Set<string>();
+    for (const entity of collectEntities(query.state.data)) {
+      keys.add(entityKey(entity.model.name, entity.id));
+    }
+    if (keys.size === 0) return;
+    queryToEntities.set(query.queryHash, keys);
+    queryKeyByHash.set(query.queryHash, query.queryKey);
+    for (const key of keys) {
+      const hashes = entityToQueries.get(key) ?? new Set<string>();
+      hashes.add(query.queryHash);
+      entityToQueries.set(key, hashes);
+    }
+  };
+
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type === "added" || event.type === "updated") reindexQuery(event.query);
+    else if (event.type === "removed") dropQueryFromIndex(event.query.queryHash);
+  });
+
+  const queriesContaining = (model: AnyModel, id: string): readonly string[] =>
+    [...(entityToQueries.get(entityKey(model.name, id)) ?? [])];
+
+  /**
+   * Write-through: replace the entity wherever it appears, by the projection
+   * rule. Falls back to nothing when the merge changes nothing — a patch that
+   * cannot apply is simply not a patch.
+   */
+  const patchQueriesWith = (
+    model: AnyModel,
+    id: string,
+    produce: (current: Record<string, unknown>) => Record<string, unknown>,
+  ): ReadonlyArray<() => void> => {
+    const restores: Array<() => void> = [];
+    for (const hash of queriesContaining(model, id)) {
+      const queryKey = queryKeyByHash.get(hash);
+      if (!queryKey) continue;
+      const previous = queryClient.getQueryData(queryKey);
+      if (previous === undefined) continue;
+      const { value, changed } = patchEntity(previous, model, id, produce);
+      if (!changed) continue;
+      queryClient.setQueryData(queryKey, value);
+      restores.push(() => queryClient.setQueryData(queryKey, previous));
+    }
+    return restores;
+  };
+
+  /** Mutation output entities drive write-through patches by identity. */
+  const applyEntityWrites = (output: unknown): void => {
+    for (const entity of collectEntities(output)) {
+      patchQueriesWith(entity.model, entity.id, (current) =>
+        mergeByExistingKeys(current, entity.value));
+    }
+  };
+
   /**
    * Resolves an `.affects()` target — a contract entry or procedure object —
    * to this client's procedure function, by identity against the router the
@@ -430,6 +533,24 @@ export const createQueryRuntime = <TClient>(
     invalidateAll: async (procedure) => {
       const metadata = metadataFor(procedure);
       await queryClient.invalidateQueries({ queryKey: [metadata.path] });
+    },
+    invalidateEntity: async (model, id) => {
+      await Promise.all(queriesContaining(model, id).map((hash) => {
+        const queryKey = queryKeyByHash.get(hash);
+        return queryKey
+          ? queryClient.invalidateQueries({ queryKey, exact: true })
+          : Promise.resolve();
+      }));
+    },
+    updateEntity: (model, id, updater) => {
+      const restores = patchQueriesWith(model, id, (current) =>
+        mergeByExistingKeys(
+          current,
+          updater(current as ModelValue<typeof model>) as Record<string, unknown>,
+        ));
+      return () => {
+        for (const restore of restores) restore();
+      };
     },
   };
 
@@ -558,6 +679,8 @@ export const createQueryRuntime = <TClient>(
       const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
       const declaredAffects: readonly AffectsEntry[] =
         (metadata.procedure._def as { affects?: readonly AffectsEntry[] }).affects ?? [];
+      const declaredWrites: readonly WritesEntry[] =
+        (metadata.procedure._def as { writes?: readonly WritesEntry[] }).writes ?? [];
       let activeController: AbortController | undefined;
       const configuredRetry = mutationOptions.retry;
       const retry = configuredRetry === undefined
@@ -582,22 +705,27 @@ export const createQueryRuntime = <TClient>(
         ...(mutationOptions.optimistic === undefined
           ? {}
           : { onMutate: (input: TInput) => mutationOptions.optimistic!(input, cache) }),
-        ...(mutationOptions.onSuccess === undefined && declaredAffects.length === 0
-          ? {}
-          : { onSuccess: (value: TOutput, input: TInput) => {
-              // Declared invalidation: the contract said what this mutation
-              // affects; no call-site onSettled required.
-              for (const entry of declaredAffects) {
-                const target = resolveAffectsTarget(entry.target);
-                if (!target) continue;
-                if (entry.map) {
-                  void cache.invalidate(target as never, (entry.map as (input: TInput) => never)(input));
-                } else {
-                  void cache.invalidateAll(target as never);
-                }
-              }
-              return mutationOptions.onSuccess?.(value, input);
-            } }),
+        onSuccess: (value: TOutput, input: TInput) => {
+          // Entities the mutation returned patch every containing query in
+          // place — field freshness by identity, zero refetches.
+          applyEntityWrites(value);
+          // .writes(): identity invalidation for mutations whose output
+          // doesn't carry the entity.
+          for (const entry of declaredWrites) {
+            void cache.invalidateEntity(entry.model, String((entry.map as (input: TInput) => string | number)(input)));
+          }
+          // .affects(): declared membership/blast-radius invalidation.
+          for (const entry of declaredAffects) {
+            const target = resolveAffectsTarget(entry.target);
+            if (!target) continue;
+            if (entry.map) {
+              void cache.invalidate(target as never, (entry.map as (input: TInput) => never)(input));
+            } else {
+              void cache.invalidateAll(target as never);
+            }
+          }
+          return mutationOptions.onSuccess?.(value, input);
+        },
         ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
           ? {}
           : { onError: (failure: TError, input: TInput, context: TContext | undefined) =>
@@ -834,7 +962,12 @@ export const createQueryRuntime = <TClient>(
       }
       hydrateQueryClient(queryClient, decoded.value as never);
     },
-    clear: () => queryClient.clear(),
+    clear: () => {
+      queryClient.clear();
+      entityToQueries.clear();
+      queryToEntities.clear();
+      queryKeyByHash.clear();
+    },
   };
   return runtime;
 };

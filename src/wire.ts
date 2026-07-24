@@ -345,7 +345,7 @@ const union = <const TCodecs extends readonly WireCodec<unknown, WireValue>[]>(
   },
 });
 
-type CodecShape = Readonly<Record<string, WireCodec<unknown, WireValue>>>;
+export type CodecShape = Readonly<Record<string, WireCodec<unknown, WireValue>>>;
 
 interface OptionalWireCodec<TInput, TEncoded extends WireValue>
   extends WireCodec<TInput | undefined, TEncoded | undefined> {
@@ -357,11 +357,11 @@ type OptionalShapeKeys<TShape extends CodecShape> = {
 }[keyof TShape];
 type RequiredShapeKeys<TShape extends CodecShape> = Exclude<keyof TShape, OptionalShapeKeys<TShape>>;
 
-type ShapeInput<TShape extends CodecShape> =
+export type ShapeInput<TShape extends CodecShape> =
   & { readonly [TKey in RequiredShapeKeys<TShape>]: InputOf<TShape[TKey]> }
   & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<InputOf<TShape[TKey]>, undefined> };
 
-type ShapeEncoded<TShape extends CodecShape> =
+export type ShapeEncoded<TShape extends CodecShape> =
   & { readonly [TKey in RequiredShapeKeys<TShape>]: EncodedOf<TShape[TKey]> }
   & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<EncodedOf<TShape[TKey]>, undefined> };
 

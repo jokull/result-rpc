@@ -6,6 +6,7 @@ import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { AnyTaggedError } from "../error.js";
 import { createQueryRuntime, type QueryState, type ResultQueryObserver } from "./runtime.js";
+import { defineModel } from "../model.js";
 
 const Missing = error({
   tag: "query/missing",
@@ -489,5 +490,147 @@ describe("declared invalidation", () => {
       .output(wire.string)
       // @ts-expect-error mutations cannot be invalidation targets
       .affects(mutationTarget)).toThrow("affects() targets must be query procedures");
+  });
+});
+
+describe("entity identities", () => {
+  const User = defineModel("rt-user", {
+    key: "id",
+    shape: { id: wire.string, name: wire.string, avatarUrl: wire.string },
+  });
+  const Doc = defineModel("rt-doc", {
+    key: "id",
+    shape: { id: wire.string, title: wire.string, archived: wire.boolean, author: User.codec },
+  });
+
+  const bootWorld = () => {
+    const app = rpc.context<{ readonly db: {
+      user: { id: string; name: string; avatarUrl: string };
+      docs: Map<string, { id: string; title: string; archived: boolean }>;
+    } }>();
+    const me = app.procedure()
+      .output(User.codec)
+      .query(({ context }) => ok(context.db.user));
+    const list = app.procedure()
+      .output(wire.array(Doc.codec))
+      .query(({ context }) => ok([...context.db.docs.values()].map((doc) => ({
+        ...doc,
+        author: context.db.user,
+      }))));
+    const setAvatar = app.procedure()
+      .input(wire.object({ avatarUrl: wire.string }))
+      .output(User.codec)
+      .mutation(({ input, context }) => {
+        context.db.user = { ...context.db.user, avatarUrl: input.avatarUrl };
+        return ok(context.db.user);
+      });
+    const archive = app.procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.boolean)
+      .writes(Doc, (input) => input.id)
+      .mutation(({ input, context }) => {
+        const doc = context.db.docs.get(input.id);
+        if (doc) context.db.docs.set(input.id, { ...doc, archived: true });
+        return ok(true);
+      });
+    const entityRouter = app.router({ me, list, setAvatar, archive });
+    const db = {
+      user: { id: "u1", name: "J", avatarUrl: "v1.png" },
+      docs: new Map([
+        ["d1", { id: "d1", title: "Roadmap", archived: false }],
+        ["d2", { id: "d2", title: "Budget", archived: false }],
+      ]),
+    };
+    const entityHandler = createFetchHandler({ router: entityRouter, createContext: () => ({ db }) });
+    let requests = 0;
+    const client = createClient({
+      router: entityRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+          requests += 1;
+          return entityHandler(new Request(input, init));
+        }) as typeof globalThis.fetch,
+      }),
+    });
+    return { client, requestCount: () => requests };
+  };
+
+  test("a returned entity patches every containing query — zero refetches", async () => {
+    const { client, requestCount } = bootWorld();
+    const runtime = createQueryRuntime({ client });
+    const header = runtime.observe(client.me, {});
+    const docs = runtime.observe(client.list, {});
+    const stopHeader = header.subscribe(() => undefined);
+    const stopDocs = docs.subscribe(() => undefined);
+    await waitFor(header, (state) => state.state === "success");
+    await waitFor(docs, (state) => state.state === "success");
+    const before = requestCount();
+
+    const mutation = runtime.mutation(client.setAvatar);
+    const result = await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    expect(result.ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // the flagship: header AND every doc byline updated, one request total
+    const headerState = header.getCurrentState();
+    if (headerState.state !== "success") throw new Error("unreachable");
+    expect(headerState.result.value.avatarUrl).toBe("v2.png");
+    const docsState = docs.getCurrentState();
+    if (docsState.state !== "success") throw new Error("unreachable");
+    expect(docsState.result.value.map((doc) => doc.author.avatarUrl))
+      .toEqual(["v2.png", "v2.png"]);
+    expect(requestCount()).toBe(before + 1); // the mutation itself, nothing else
+
+    stopHeader(); stopDocs();
+    header.destroy(); docs.destroy(); mutation.destroy();
+    runtime.clear();
+  });
+
+  test(".writes() invalidates containing queries when the output carries no entity", async () => {
+    const { client } = bootWorld();
+    const runtime = createQueryRuntime({ client });
+    const docs = runtime.observe(client.list, {});
+    const stop = docs.subscribe(() => undefined);
+    await waitFor(docs, (state) => state.state === "success");
+
+    const mutation = runtime.mutation(client.archive);
+    await mutation.getCurrentState().mutate({ id: "d1" });
+    await waitFor(docs, (state) =>
+      state.state === "success" && state.result.value[0]!.archived === true);
+    expect(docs.getCurrentState().state).toBe("success");
+
+    stop(); docs.destroy(); mutation.destroy();
+    runtime.clear();
+  });
+
+  test("cache.updateEntity patches optimistically everywhere and rolls back", async () => {
+    const { client } = bootWorld();
+    const runtime = createQueryRuntime({ client });
+    const header = runtime.observe(client.me, {});
+    const docs = runtime.observe(client.list, {});
+    const stopHeader = header.subscribe(() => undefined);
+    const stopDocs = docs.subscribe(() => undefined);
+    await waitFor(header, (state) => state.state === "success");
+    await waitFor(docs, (state) => state.state === "success");
+
+    const rollback = runtime.cache.updateEntity(User, "u1", (user) => ({
+      ...user,
+      name: "Optimistic",
+    }));
+    const optimistic = docs.getCurrentState();
+    if (optimistic.state !== "success") throw new Error("unreachable");
+    expect(optimistic.result.value[0]!.author.name).toBe("Optimistic");
+
+    rollback();
+    const restored = docs.getCurrentState();
+    if (restored.state !== "success") throw new Error("unreachable");
+    expect(restored.result.value[0]!.author.name).toBe("J");
+
+    stopHeader(); stopDocs();
+    header.destroy(); docs.destroy();
+    runtime.clear();
+    // after clear the index is empty: patches are no-ops, not errors
+    expect(() => runtime.cache.updateEntity(User, "u1", (user) => user)).not.toThrow();
   });
 });

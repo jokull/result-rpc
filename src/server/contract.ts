@@ -4,6 +4,7 @@ import type {
   ErrorOf,
 } from "../error.js";
 import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
+import type { AnyModel } from "../model.js";
 import { err, ok, type Result } from "../result.js";
 import { wire } from "../wire.js";
 import type { WireCodec, WireValue } from "../wire.js";
@@ -182,6 +183,17 @@ export interface AffectsEntry {
   readonly map?: (input: never) => unknown;
 }
 
+/**
+ * A mutation's declared entity write for outputs that don't carry the
+ * entity: `.writes(Doc, (input) => input.id)` invalidates every cached query
+ * containing that entity — the invalidation-only sibling of returning the
+ * entity (which patches).
+ */
+export interface WritesEntry {
+  readonly model: AnyModel;
+  readonly map: (input: never) => string | number;
+}
+
 export interface ProcedureManifest<
   TRootContext,
   TInput,
@@ -194,6 +206,7 @@ export interface ProcedureManifest<
   readonly output: WireCodec<TOutput, WireValue>;
   readonly definitions: TDefinitions;
   readonly affects?: readonly AffectsEntry[];
+  readonly writes?: readonly WritesEntry[];
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
     args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
@@ -213,6 +226,7 @@ export interface ProcedureContractManifest<
   readonly output: WireCodec<TOutput, WireValue>;
   readonly definitions: TDefinitions;
   readonly affects?: readonly AffectsEntry[];
+  readonly writes?: readonly WritesEntry[];
   readonly _rootContext?: TRootContext;
 }
 
@@ -278,7 +292,27 @@ export class ProcedureBuilder<
     private readonly definitions: TDefinitions = {} as TDefinitions,
     private readonly middlewares: readonly RuntimeMiddleware[] = [],
     private readonly affectsEntries: readonly AffectsEntry[] = [],
+    private readonly writesEntries: readonly WritesEntry[] = [],
   ) {}
+
+  /**
+   * Declares the entity this mutation writes when the output doesn't carry
+   * it. Invalidation-only: returning the entity instead earns in-place
+   * patches everywhere it appears.
+   */
+  writes<TModel extends AnyModel>(
+    model: TModel,
+    map: (input: TInput) => string | number,
+  ): ProcedureBuilder<TRootContext, TContext, TInput, TOutput, TDefinitions> {
+    return new ProcedureBuilder(
+      this.inputCodec,
+      this.outputCodec,
+      this.definitions,
+      this.middlewares,
+      this.affectsEntries,
+      [...this.writesEntries, { model, map: map as WritesEntry["map"] }],
+    );
+  }
 
   /**
    * Declares that this mutation invalidates a query on success. `map` turns
@@ -304,6 +338,7 @@ export class ProcedureBuilder<
       this.definitions,
       this.middlewares,
       [...this.affectsEntries, entry],
+      this.writesEntries,
     );
   }
 
@@ -316,6 +351,7 @@ export class ProcedureBuilder<
       this.definitions,
       this.middlewares,
       this.affectsEntries,
+      this.writesEntries,
     );
   }
 
@@ -328,6 +364,7 @@ export class ProcedureBuilder<
       this.definitions,
       this.middlewares,
       this.affectsEntries,
+      this.writesEntries,
     );
   }
 
@@ -347,6 +384,7 @@ export class ProcedureBuilder<
       { ...this.definitions, ...definitions },
       this.middlewares,
       this.affectsEntries,
+      this.writesEntries,
     );
   }
 
@@ -376,6 +414,7 @@ export class ProcedureBuilder<
       definitions,
       appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
       this.affectsEntries,
+      this.writesEntries,
     );
   }
 
@@ -434,6 +473,7 @@ export class ProcedureBuilder<
         output: this.outputCodec,
         definitions: this.definitions,
         ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
+        ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
       }),
     });
   }
@@ -441,6 +481,9 @@ export class ProcedureBuilder<
   private assertAffectsAllowed(kind: string): void {
     if (this.affectsEntries.length > 0 && kind !== "mutation") {
       throw new TypeError("Only mutations declare .affects(); queries are invalidated, not invalidating");
+    }
+    if (this.writesEntries.length > 0 && kind !== "mutation") {
+      throw new TypeError("Only mutations declare .writes()");
     }
   }
 
@@ -462,6 +505,7 @@ export class ProcedureBuilder<
         output: this.outputCodec,
         definitions: this.definitions,
         ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
+        ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
         middlewares: this.middlewares,
         handler: handler as ProcedureManifest<TRootContext, TInput, TOutput, TDefinitions>["handler"],
       }),
