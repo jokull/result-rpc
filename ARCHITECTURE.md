@@ -27,7 +27,7 @@ These are requirements, not aspirations:
 
 1. Every recoverable failure exposed to application code is a tagged structural
    value from a closed operation-specific union.
-2. Every tagged error round-docs through the versioned result-rpc serializer before
+2. Every tagged error round-trips through the versioned result-rpc serializer before
    it is created, transmitted, cached, persisted, or exposed.
 3. Error classes, application-defined prototypes, stacks, causes, arbitrary thrown
    values, and ambient `Error` types never appear in the public recoverable failure
@@ -141,11 +141,11 @@ or error-definition versions.
 ### Versioned transparent serializer
 
 The protocol uses a pinned devalue implementation behind a result-rpc serializer
-version. It transparently round-docs the values Svelte users expect: `undefined`,
+version. It transparently round-trips the values Svelte users expect: `undefined`,
 non-finite numbers, `-0`, `Date`, `BigInt`, `RegExp`, `Map`, `Set`, repeated
 references, cycles, URLs, array buffers, and typed arrays.
 When `Temporal` is installed or native in both runtimes, its standard value types
-round-doc through the same pinned profile as well.
+round-trip through the same pinned profile as well.
 
 Devalue does not promise format stability across releases, so its package version
 is not itself the protocol contract. result-rpc pins the implementation, sends a
@@ -772,16 +772,18 @@ success: `map(input)` for one cache key, or every cached input without `map`.
 `affects` is excluded from the contract digest — it is client cache behavior,
 not wire shape — and only mutations may declare it.
 
-### Forms bridge
+### Validators and forms
 
-`toStandardSchema(codec)` (and `$schema` on unary client procedures) exposes
-an input codec through the Standard Schema V1 interface, memoized per codec,
-with codec issues mapped to path-scoped standard issues. In the other
-direction, `wire.standard(schema)` adopts any synchronous Standard Schema as
-a wire codec — validation on both sides plus serializer preflight; async
-schemas and one-way transforms are rejected by construction. `fieldIssues`
-projects `server/bad-request` issues onto dot-joined field paths matching the
-client-side validation's paths.
+`wire.standard(schema)` adopts any synchronous Standard Schema (Valibot, Zod,
+ArkType) as a wire input codec — validation on both sides plus serializer
+preflight; async schemas and one-way transforms are rejected by construction.
+There is deliberately no codec→form direction: forms validate humans
+(coerced strings, progressive feedback, a projection of the input) and wires
+validate applications (typed, complete, hostile) — the shapes rarely
+coincide, and a bridge that pretends otherwise fights the form library.
+`fieldIssues` projects `server/bad-request` issues onto dot-joined
+input-shaped paths; mapping those onto a form's own field names is the
+application's mapping, made explicit.
 
 ### Contract skew
 

@@ -13,7 +13,6 @@ import {
   type ClientBoundaryError,
 } from "../framework-errors.js";
 import { contractDigest } from "../contract-digest.js";
-import { toStandardSchema, type StandardSchemaV1 } from "../standard-schema.js";
 import {
   decodeStreamFrame,
   decodeResponseEnvelope,
@@ -62,7 +61,7 @@ export type ProcedureClient<TProcedure> =
       ) => Promise<Result<
         TOutput,
         ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
-      >>) & { readonly $kind: TKind; readonly $schema: StandardSchemaV1<TInput> }
+      >>) & { readonly $kind: TKind }
     : TProcedure extends ProcedureContract<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
       ? TKind extends "subscription"
         ? SubscriptionClient<TInput, TOutput, TDefinitions>
@@ -542,8 +541,6 @@ const createProxy = (
   const proxy = new Proxy(() => undefined, {
     get: (_target, property) => {
       if (property === "$kind" && procedure) return procedure._def.kind;
-      // The input codec as a Standard Schema: the form-facing half of the contract.
-      if (property === "$schema" && procedure) return toStandardSchema(procedure._def.input);
       if (typeof property !== "string") return undefined;
       const candidate = [...path, property];
       const candidatePath = candidate.join(".");

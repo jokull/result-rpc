@@ -107,7 +107,7 @@ The payload references are unchanged and unconstrained. `deserialize<T, E>` chec
 only the outer status and then asserts caller-provided types. A tagged error loses
 its prototype and guards after JSON; `Date` changes type; `BigInt` throws; and an
 object property containing `undefined` disappears. See
-`/Users/jokull/Forks/better-result/src/result.ts:433-476` and its limited round-doc
+`/Users/jokull/Forks/better-result/src/result.ts:433-476` and its limited round-trip
 tests at `src/result.test.ts:1636-1737`.
 
 tRPC has the analogous distinction between a configurable transformer and the

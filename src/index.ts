@@ -106,7 +106,7 @@ export type { ClientBoundaryError } from "./framework-errors.js";
 
 export { contractDigest } from "./contract-digest.js";
 
-export { fieldIssues, toStandardSchema } from "./standard-schema.js";
+export { fieldIssues } from "./standard-schema.js";
 export type {
   StandardSchemaIssue,
   StandardSchemaResult,

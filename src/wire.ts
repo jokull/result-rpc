@@ -141,15 +141,16 @@ const toPathKey = (key: PropertyKey): string | number =>
   typeof key === "number" ? key : String(key);
 
 /**
- * Adopts a Standard Schema (Valibot, Zod, ArkType, ...) as a wire codec, so
- * one schema can be the source of truth for a form library AND the procedure
- * input — `useForm({ schema: LoginSchema })` and `.input(wire.standard(
- * LoginSchema))` share a declaration. Validation runs on both sides of the
- * wire, and the validated value must also survive the wire serializer.
+ * Adopts a Standard Schema (Valibot, Zod, ArkType, ...) as a wire input
+ * codec — for teams whose validator is their input vocabulary (the tRPC
+ * `.input(z.object(...))` habit). Validation runs on both sides of the wire,
+ * and the validated value must also survive the wire serializer.
  *
  * Constraints: async schemas are rejected (wire validation is synchronous),
  * and the schema must accept its own output — one-way transforms break the
- * encode/decode symmetry.
+ * encode/decode symmetry. This adopts a validator for the WIRE; it does not
+ * make the input codec a form schema — forms validate humans, wires validate
+ * applications.
  */
 const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
   schema: TSchema,
