@@ -27,6 +27,8 @@ export interface ExecutionOptions<TRootContext> {
   readonly context: TRootContext;
   readonly procedurePath?: string;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
+  /** Receives `model:id` keys the handler declared via `touch()`. */
+  readonly onTouch?: (entityKey: string) => void;
 }
 
 declare const middlewareNextResult: unique symbol;
@@ -169,6 +171,12 @@ export interface ProcedureHandlerArgs<
   readonly context: TContext;
   readonly input: TInput;
   readonly errors: TDefinitions;
+  /**
+   * Declares an entity this handler wrote that its output does not carry —
+   * cascades, side-effect writes, deletes. Rides the response envelope as
+   * `model:id` keys (never values) and invalidates by identity client-side.
+   */
+  readonly touch: (model: AnyModel, id: string | number) => void;
 }
 
 /**
@@ -821,6 +829,7 @@ export const executeProcedure = async <
         context,
         input: decodedInput.value,
         errors: procedure._def.definitions,
+        touch: (model, id) => options.onTouch?.(`${model.name}:${id}`),
       });
     } catch (cause) {
       return internalFailure("handler", cause, options);
@@ -941,6 +950,7 @@ export async function* executeSubscription<
       context: prepared.value,
       input: decodedInput.value,
       errors: procedure._def.definitions,
+      touch: (model, id) => options.onTouch?.(`${model.name}:${id}`),
     });
   } catch (cause) {
     yield internalFailure("handler", cause, options);

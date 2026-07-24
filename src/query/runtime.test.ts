@@ -604,6 +604,49 @@ describe("entity identities", () => {
     runtime.clear();
   });
 
+  test("handler touch() invalidates by identity — deletes and cascades", async () => {
+    const app = rpc.context<{ readonly db: { docs: Map<string, { id: string; title: string; archived: boolean }> } }>();
+    const TouchDoc = defineModel("touch-doc", {
+      key: "id",
+      shape: { id: wire.string, title: wire.string, archived: wire.boolean },
+    });
+    const list = app.procedure()
+      .output(wire.array(TouchDoc.codec))
+      .query(({ context }) => ok([...context.db.docs.values()]));
+    const remove = app.procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.boolean)
+      .mutation(({ input, context, touch }) => {
+        context.db.docs.delete(input.id);
+        touch(TouchDoc, input.id);   // the output cannot carry a deleted entity
+        return ok(true);
+      });
+    const touchRouter = app.router({ list, remove });
+    const db = { docs: new Map([["d1", { id: "d1", title: "A", archived: false }]]) };
+    const touchHandler = createFetchHandler({ router: touchRouter, createContext: () => ({ db }) });
+    const client = createClient({
+      router: touchRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          touchHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client });
+    const docs = runtime.observe(client.list, {});
+    const stop = docs.subscribe(() => undefined);
+    await waitFor(docs, (state) => state.state === "success");
+
+    const mutation = runtime.mutation(client.remove);
+    const result = await mutation.getCurrentState().mutate({ id: "d1" });
+    expect(result.ok).toBe(true);
+    await waitFor(docs, (state) =>
+      state.state === "success" && state.result.value.length === 0);
+
+    stop(); docs.destroy(); mutation.destroy();
+    runtime.clear();
+  });
+
   test("cache.updateEntity patches optimistically everywhere and rolls back", async () => {
     const { client } = bootWorld();
     const runtime = createQueryRuntime({ client });

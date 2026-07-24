@@ -44,7 +44,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       after mutation), projection merge preserves exact shapes, cycles/shared
       refs, optimistic create under a client-minted id (success ≈ no-op)
 
-## Wave 4 — stage 3: server-declared writes `pending`
+## Wave 4 — stage 3: server-declared writes `done`
 - [ ] `touch` in handler args (`({ input, context, errors, touch })`)
 - [ ] Envelope sidecar: `touched: ["user:u_1"]` — identities only, never
       values; tolerant decode (old clients ignore)
@@ -53,7 +53,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
 - [ ] Tests: touch invalidates without output entities; deletes; old-client
       tolerance
 
-## Wave 5 — docs, example, probes `pending`
+## Wave 5 — docs, example, probes `done`
 - [ ] README: "Entities" section (profile-pic demo, division of labor,
       client-minted ids, fractional-index pattern, decision table)
 - [ ] ARCHITECTURE: entity index design + normalized-store non-goal
@@ -73,3 +73,10 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
 - Wave 1: an entity whose untouched field references itself keeps the OLD
   reference after a merge (self-cycle through the entity node) — pathological,
   accepted.
+- Wave 4: envelope `touched` is applied by the runtime on SUCCESS only
+  (failure-path touched keys are carried but unused for now).
+- Wave 5: subscriptions live-patching from streamed entities is NOT claimed or
+  wired (PLAN open question stands); fractional indexing shipped as a README
+  pattern only, per plan.
+- Wave 5: model-name registry check remains reference-identity only (Wave 0
+  deviation), documented in Sharp edges.

@@ -17,7 +17,12 @@ import {
   serialize,
   SERIALIZER_VERSION,
 } from "../serializer.js";
-import { getClientIdentity, getClientRouter, getProcedureClientMetadata } from "../client/client.js";
+import {
+  getClientIdentity,
+  getClientRouter,
+  getProcedureClientMetadata,
+  getTouchedEntities,
+} from "../client/client.js";
 import type { AffectsEntry, WritesEntry } from "../server/contract.js";
 import {
   collectEntities,
@@ -478,6 +483,16 @@ export const createQueryRuntime = <TClient>(
     return restores;
   };
 
+  /** Invalidate every query containing any of the entity keys (`model:id`). */
+  const invalidateEntityKeys = (keys: readonly string[]): Promise<void> =>
+    Promise.all(keys.flatMap((key) =>
+      [...(entityToQueries.get(key) ?? [])].map((hash) => {
+        const queryKey = queryKeyByHash.get(hash);
+        return queryKey
+          ? queryClient.invalidateQueries({ queryKey, exact: true })
+          : Promise.resolve();
+      }))).then(() => undefined);
+
   /** Mutation output entities drive write-through patches by identity. */
   const applyEntityWrites = (output: unknown): void => {
     for (const entity of collectEntities(output)) {
@@ -534,14 +549,7 @@ export const createQueryRuntime = <TClient>(
       const metadata = metadataFor(procedure);
       await queryClient.invalidateQueries({ queryKey: [metadata.path] });
     },
-    invalidateEntity: async (model, id) => {
-      await Promise.all(queriesContaining(model, id).map((hash) => {
-        const queryKey = queryKeyByHash.get(hash);
-        return queryKey
-          ? queryClient.invalidateQueries({ queryKey, exact: true })
-          : Promise.resolve();
-      }));
-    },
+    invalidateEntity: (model, id) => invalidateEntityKeys([entityKey(model.name, id)]),
     updateEntity: (model, id, updater) => {
       const restores = patchQueriesWith(model, id, (current) =>
         mergeByExistingKeys(
@@ -692,10 +700,12 @@ export const createQueryRuntime = <TClient>(
               && configuredRetry(failure as TError, failureCount)
           : configuredRetry;
 
+      let lastTouched: readonly string[] | undefined;
       const observer = new MutationObserver<TOutput, TError, TInput, TContext>(queryClient, {
         mutationKey: [metadata.path],
         mutationFn: async (input) => {
           const result = await procedure(input, { signal: activeController!.signal });
+          lastTouched = getTouchedEntities(result);
           if (!result.ok) throw result.error;
           return result.value;
         },
@@ -709,6 +719,11 @@ export const createQueryRuntime = <TClient>(
           // Entities the mutation returned patch every containing query in
           // place — field freshness by identity, zero refetches.
           applyEntityWrites(value);
+          // Server-declared writes (handler `touch`): identity invalidation
+          // for cascades and deletes the output cannot mention.
+          if (lastTouched && lastTouched.length > 0) {
+            void invalidateEntityKeys(lastTouched);
+          }
           // .writes(): identity invalidation for mutations whose output
           // doesn't carry the entity.
           for (const entry of declaredWrites) {

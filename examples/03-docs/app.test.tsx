@@ -14,14 +14,17 @@ import {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
+let requests = 0;
 const boot = async (session?: string) => {
   const handler = await createDocHandler();
   const client = makeDocClient(((input: string | URL | Request, init?: RequestInit) => {
+    requests += 1;
     const request = new Request(input, init);
     if (session) request.headers.set("x-session", session);
     return handler(request);
   }) as typeof globalThis.fetch);
   signInReactions.count = 0;
+  requests = 0;
   return client;
 };
 
@@ -38,7 +41,7 @@ test("03-docs: signed-in flow renders through every layer", async () => {
   const client = await boot("tok_1");
   const renderer = await mount(client, "doc_1");
   const html = JSON.stringify(renderer.toJSON());
-  expect(html).toContain("Welcome back, Jokull");   // SessionShell value
+  expect(html).toContain("Welcome back, ");        // SessionShell value
   expect(html).toContain("Roadmap");                // page query
   expect(html).toContain("Planned by ");            // ViewerShell guarantee
   expect(html).toContain("Last activity: ");       // rendered subscription
@@ -93,6 +96,25 @@ test("03-docs: the subscription streams under the same union", async () => {
   ]);
 });
 
+test("03-docs: the avatar patches the header by identity — zero refetches", async () => {
+  const client = await boot("tok_1");
+  const renderer = await mount(client, "doc_1");
+  expect(JSON.stringify(renderer.toJSON())).toContain("v1.png");
+  const before = requests;
+
+  const button = renderer.root.findByType("button");
+  await act(async () => {
+    button.props.onClick();
+    await settle();
+  });
+
+  // header (whoami) AND viewer (me) both show the new avatar...
+  expect(JSON.stringify(renderer.toJSON())).toContain("v2.png");
+  // ...from exactly one request: the mutation. No query refetched.
+  expect(requests).toBe(before + 1);
+  await act(async () => renderer.unmount());
+});
+
 // -- compile-time: the narrowed unions are exactly what the prose claims -------------
 
 type Equal<A, B> =
@@ -116,3 +138,14 @@ export type _RenameIsExactlyDomain = Assert<
 >;
 void probeRename;
 void probeDoc;
+
+// cache.updateEntity is typed by the model's canonical shape.
+import { UserModel } from "./domain.js";
+import type { QueryRuntime } from "../../src/react/index.js";
+declare const probeRuntime: QueryRuntime;
+const probeUpdate = () =>
+  probeRuntime.cache.updateEntity(UserModel, "u_1", (user) => ({
+    ...user,
+    avatarUrl: "x", // typed: string
+  }));
+void probeUpdate;

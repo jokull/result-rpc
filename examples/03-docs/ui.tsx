@@ -78,6 +78,7 @@ export function DocsApp({ client, docId }: { client: DocClient; docId: string })
             <ViewerShell.Provider fallback={<p>signing in…</p>}>
               <DocPage docId={docId} />
               <DocActivity docId={docId} />
+              <AvatarForm />
             </ViewerShell.Provider>
           </SessionShell.Provider>
         </Boundary>
@@ -94,7 +95,23 @@ function ConnectivityBanner() {
 /** Public: renders for signed-out visitors too — the session value is nullable here. */
 function Greeting() {
   const viewer = SessionShell.use();
-  return <header>{viewer ? `Welcome back, ${viewer.name}` : "Welcome, guest"}</header>;
+  if (!viewer) return <header>Welcome, guest</header>;
+  // avatarUrl updates HERE the instant setAvatar succeeds anywhere below:
+  // the mutation returns the user entity, and this header's whoami query
+  // contains user:{id} — patched in place, no refetch.
+  return <header>Welcome back, {viewer.name} [{viewer.avatarUrl}]</header>;
+}
+
+/** The flagship: change the avatar, watch the header — zero refetches. */
+export function AvatarForm() {
+  const client = useResultClient<DocClient>();
+  const setAvatar = ViewerShell.useMutation(client.auth.setAvatar);
+  return (
+    <button onClick={() =>
+      void setAvatar.mutate({ avatarUrl: "v2.png" }).catch(() => undefined)}>
+      Update avatar
+    </button>
+  );
 }
 
 // -- the page ------------------------------------------------------------------------

@@ -1255,7 +1255,105 @@ target. The declaration is also documentation: the contract states which
 reads each write disturbs, and a reviewer can see a missing `.affects()` in
 the same diff that adds the mutation. Server-driven invalidation (the handler
 reporting what it actually touched, over the response envelope) is the
-planned extension of the same channel.
+planned extension of the same channel — and with entities (next section),
+`.affects()` recedes to what only a declaration can express: membership.
+
+## Entities: the graph over the denormalized cache
+
+Update your profile picture. The avatar in the header, the byline on every
+cached doc, and the member row in settings all show the new picture
+**immediately** — no query invalidated, no refetch issued, nothing written at
+any call site:
+
+```ts
+export const User = defineModel("user", {
+  key: "id",
+  shape: { id: wire.string, name: wire.string, avatarUrl: wire.url },
+})
+
+const setAvatar = app.procedure()
+  .input(wire.object({ image: wire.file({ accept: ["image/*"] }) }))
+  .output(User.codec)                     // ← returns WHO changed
+  .mutation(...)
+```
+
+The mutation returned a `user` entity; the cache knows every query whose
+result contains `user:u_1`; each one is patched in place. That is the whole
+feature: **automatic invalidation and automatic updates by model + id**.
+
+A model is to values what an error definition is to failures — a named,
+shared declaration. `Doc.codec` is the canonical shape; `Doc.pick("id",
+"title")` declares a projection (the key field is mandatory — an entity
+without its identity is just data). Use them anywhere in outputs, at any
+depth, including inside each other. The mechanics are the decode pass you
+already pay for: decoding brands entity objects, the runtime indexes every
+cached result by the entities it contains, and mutations that return
+entities patch by identity. There are no heuristics and no schema walking —
+**an inline `wire.object` collects nothing, silently**; composing outputs
+from model codecs is the one discipline this asks of query writers.
+
+Patches follow the **projection rule**: merge only the fields the cached
+object already has (one model, one field vocabulary; projections are
+subsets). Fields the mutation didn't return stay stale-until-refetch —
+correct and honest.
+
+### The division of labor
+
+> **Identities handle field freshness. `.affects()` handles membership.**
+
+A rename updates every cached row by identity. Only "which cached lists
+should now contain this new doc" needs a declaration — the same boundary
+Graphcache draws with manual updaters, except ours is typed and lives in
+the contract. The mutation writer's decision table:
+
+| The write changes… | Use |
+| --- | --- |
+| Fields of an entity | return the entity — auto-patch everywhere |
+| Fields, but the output must stay scalar | `.writes(Doc, (input) => input.id)` — invalidation by identity |
+| List membership | `.affects(listQuery)` |
+| Entities the output can't mention (cascades, **deletes**) | `touch(Model, id)` in the handler |
+
+`touch` rides the response envelope as `model:id` keys — identities only,
+never values — and invalidates by identity client-side:
+
+```ts
+.mutation(({ input, context, touch }) => {
+  await context.db.docs.delete(input.id)
+  touch(Doc, input.id)                    // a deleted entity can't be returned
+  return ok(true)
+})
+```
+
+### Optimistic by identity, trivial with client-minted ids
+
+`cache.updateEntity` addresses the cache the way you think about it:
+
+```ts
+const rename = useResultMutation(client.doc.rename, {
+  optimistic: (input, cache) => ({
+    rollback: cache.updateEntity(Doc, input.id, (doc) => ({ ...doc, title: input.title })),
+  }),
+  onFailure: (_e, _i, ctx) => ctx?.rollback(),
+})
+```
+
+One line patches the detail view, every list row, every breadcrumb. And if
+the client mints ids (cuid2, nanoid, uuidv7), optimistic **creates** stop
+being a reconciliation problem: the optimistic entity is born under its
+*final* identity, so the server's response is a no-op patch or a field
+correction — nothing re-keys, nothing flickers, and the id doubles as a
+natural idempotency key. Add
+[fractional indexing](https://github.com/rocicorp/fractional-indexing) and
+order becomes a field too: a drag-reorder is one `sortKey` patch and every
+cached list re-sorts locally — no list invalidation for reorders, ever.
+
+### What this deliberately is not
+
+There is no normalized store. Per-query results stay the source of truth —
+denormalized, exactly typed — with an identity index over them. The
+store-as-source-of-truth design (Graphcache, Apollo) exists to serve
+flexible queries and would trade away exact per-procedure output types,
+which everything else here is built on. Permanent non-goal.
 
 ## Forms and the wire
 
@@ -1662,7 +1760,7 @@ tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
 | React | Query, mutation, subscription, suspense, and SSR bindings |
 | Diagnostics | Safe incident IDs publicly; full causes only in local observability |
 | Observability | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps |
-| Cache coherence | Declared invalidation: mutations state their blast radius in the contract |
+| Cache coherence | Entity identities (patch by model+id), declared invalidation, membership via `.affects` |
 | Forms | Validator-as-wire-codec adoption, plus server-issue → field projection |
 
 The query engine uses `@tanstack/query-core` privately. That is an engine
@@ -1741,6 +1839,11 @@ Named here so they are not discovered at 2am:
   bundle carries the contract's codecs and the devalue serializer. That is
   the price of rich values and client-side validation; it is a real number of
   kilobytes, and worth measuring in your bundle before committing.
+- **An inline `wire.object` collects no identity.** Entity updates only see
+  outputs composed from model codecs (`Doc.codec`, `Doc.pick(...)`) — a
+  hand-rolled shape opts out silently. Model identity is reference identity,
+  same rule as services and middleware: one `defineModel` in a module
+  constant; two calls are two models.
 - **The automatic contract digest is shape-coarse.** It flips on paths, kinds,
   and error unions — not on field-level codec edits. If your deploys routinely
   change only object fields, stamp both sides with `contractVersion` (a build
@@ -1756,10 +1859,11 @@ with its own tests:
 2. **02-todo** — mutations, optimistic updates, the basic onion, an error
    catalog over a shell-narrowed union.
 3. **03-docs** — the whole system: a service graph, optional→required layers,
-   a four-shell onion, a rendered subscription, and a defect boundary. Its
-   compile-time probes assert the payoff directly: under the full onion, a
-   query resolving a dozen possible failures presents exactly `doc/not-found`,
-   and a mutation presents exactly its three domain outcomes.
+   a four-shell onion, entity models, a rendered subscription, and a defect
+   boundary. Its probes assert the payoffs directly: a query resolving a
+   dozen possible failures presents exactly `doc/not-found`, and the avatar
+   mutation patches the header by identity — the test proves exactly one
+   request (the mutation) with zero refetches.
 4. **04-router** — TanStack Router integration by hand: routes are shells.
    Pathless layouts mount the session and viewer layers, a route claims its
    feature error, `errorComponent` receives escalated defects, `onError`

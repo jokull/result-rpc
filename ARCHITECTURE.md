@@ -785,6 +785,23 @@ coincide, and a bridge that pretends otherwise fights the form library.
 input-shaped paths; mapping those onto a form's own field names is the
 application's mapping, made explicit.
 
+### Entity identities
+
+`defineModel(name, { key, shape })` wraps `wire.object(shape)` in a codec
+whose decode brands entity objects (global WeakMap: object → model; inert on
+the server, GC'd with the values) and exposes `pick()` projections that must
+carry the key. The query runtime walks every success value (`collectEntities`)
+to keep an entity → queries index off query-cache events, and applies writes
+by identity: mutation output entities patch containing queries in place
+(`patchEntity`: identity-matched replacement with container cloning — cycles,
+shared references, and Map/Set members handled uniformly; the projection rule
+merges only keys the cached object has, and patched objects are re-branded).
+`.writes(Model, map)` and handler `touch(Model, id)` (carried on the response
+envelope as `model:id` keys, never values) provide invalidation-only paths
+for scalar outputs, cascades, and deletes. Membership remains declared via
+`.affects()`. A normalized store as source of truth is a permanent non-goal:
+it serves flexible queries and would cost exact per-procedure output types.
+
 ### Contract skew
 
 Every response carries the server's contract digest (`x-result-rpc-contract`),

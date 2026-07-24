@@ -8,7 +8,7 @@ An escalation ladder. Each rung is a self-contained app with runtime tests
 | --- | --- | --- |
 | `01-hello` | greeting service | minimal path: one error, one query, provider + hook |
 | `02-todo` | todo list | mutations, optimistic rollback, app/defect shells, `errorCatalog` |
-| `03-docs` | shared-docs workspace | `defineService` graph, `defineLayer` + `require`, four-shell onion, rendered subscription, escalation boundary, compile-time union probes |
+| `03-docs` | shared-docs workspace | `defineService` graph, `defineLayer` + `require`, four-shell onion, entity models + zero-refetch avatar patch, rendered subscription, escalation boundary, compile-time probes |
 | `04-router` | docs + TanStack Router | routes-as-shells by hand: module-level shells via `procedure:` selectors, `onError` navigation, loaders prefetching the layer cascade |
 | `05-router-glue` | docs on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — proof no router package is needed |
 | `06-sentry` | billing form + Sentry stub | all four observability taps into one sink: wire breadcrumbs, claim trail with owner, severity-routed server capture, incident-id correlation across the wire |

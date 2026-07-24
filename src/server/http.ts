@@ -197,18 +197,23 @@ const encodeProcedureResult = (
   procedure: AnyProcedure,
   result: Result<unknown, AnyTaggedError>,
   notify?: (failure: AnyTaggedError, httpStatus: number) => void,
+  touched: readonly string[] = [],
 ): Response => {
+  const touchedField = touched.length === 0 ? {} : { touched };
   if (!result.ok) {
     const status = statusForError(procedure, result.error);
     notify?.(result.error, status);
-    return failureResponse(result.error, statusForError(procedure, result.error));
+    return wireResponse(
+      { v: PROTOCOL_VERSION, ok: false, error: result.error, ...touchedField },
+      status,
+    );
   }
   const encoded = procedure._def.output.encode(result.value);
   if (!encoded.ok) {
     const fallback = ServerInternal({ incidentId: `inc_${crypto.randomUUID()}` });
     return failureResponse(fallback, 500);
   }
-  return wireResponse({ v: PROTOCOL_VERSION, ok: true, value: encoded.value }, 200);
+  return wireResponse({ v: PROTOCOL_VERSION, ok: true, value: encoded.value, ...touchedField }, 200);
 };
 
 export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> {
@@ -386,16 +391,18 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         return failureResponse(ServerInternal({ incidentId }), 500);
       }
       if (!decodedInput.ok) return failWith(badRequestFromIssues(decodedInput.issues), 400, item.path);
+      const touched: string[] = [];
       const result = await executeProcedure(procedure, decodedInput.value, {
         context,
         procedurePath: item.path,
+        onTouch: (key) => void touched.push(key),
         ...(options.onInternalError === undefined
           ? {}
           : { onInternalError: options.onInternalError }),
       });
       try {
         return encodeProcedureResult(procedure, result, (failure, status) =>
-          notify(failure, status, item.path));
+          notify(failure, status, item.path), touched);
       } catch (cause) {
         const incidentId = `inc_${crypto.randomUUID()}`;
         options.onInternalError?.({

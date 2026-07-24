@@ -5,7 +5,7 @@
  * (optional — a cookie may or may not resolve) and the viewer layer (required —
  * refines `User | null` to `User`, owns the auth union).
  */
-import { defineLayer, err, error, ok, wire, type InputOf } from "../../src/index.js";
+import { defineLayer, defineModel, err, error, ok, wire, type InputOf } from "../../src/index.js";
 
 // -- errors ---------------------------------------------------------------------
 
@@ -36,15 +36,24 @@ export const authErrors = { Unauthorized, SessionExpired };
 
 // -- codecs ---------------------------------------------------------------------
 
-export const UserCodec = wire.object({ id: wire.string, name: wire.string });
+/** Models: identity for the cache graph. The codecs are ordinary wire codecs. */
+export const UserModel = defineModel("user", {
+  key: "id",
+  shape: { id: wire.string, name: wire.string, avatarUrl: wire.string },
+});
+export const UserCodec = UserModel.codec;
 export type User = InputOf<typeof UserCodec>;
 
-export const DocCodec = wire.object({
-  id: wire.string,
-  title: wire.string,
-  ownerId: wire.string,
-  savedAt: wire.date,
+export const DocModel = defineModel("doc", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    title: wire.string,
+    ownerId: wire.string,
+    savedAt: wire.date,
+  },
 });
+export const DocCodec = DocModel.codec;
 export type Doc = InputOf<typeof DocCodec>;
 
 export const DocEventCodec = wire.object({

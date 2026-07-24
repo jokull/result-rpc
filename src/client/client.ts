@@ -334,8 +334,21 @@ const decodeTransportResponse = (
     }));
   }
 
-  return decodeEnvelope(procedure, envelope, response.status);
+  const result = decodeEnvelope(procedure, envelope, response.status);
+  if (envelope.touched !== undefined) {
+    const keys = envelope.touched.filter((key): key is string => typeof key === "string");
+    if (keys.length > 0) touchedByResult.set(result, keys);
+  }
+  return result;
 };
+
+/** Server-declared entity writes, keyed by the exact Result the call resolved. */
+const touchedByResult = new WeakMap<object, readonly string[]>();
+
+/** Internal: `model:id` keys the server declared touching for this result. */
+export const getTouchedEntities = (
+  result: object,
+): readonly string[] | undefined => touchedByResult.get(result);
 
 const retryDelayFor = (
   procedure: ClientProcedure,

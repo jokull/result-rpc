@@ -41,12 +41,16 @@ export interface SuccessEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
   readonly ok: true;
   readonly value: WireValue;
+  /** Entity keys (`model:id`) the handler declared touching — identities only, never values. */
+  readonly touched?: readonly string[];
 }
 
 export interface FailureEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
   readonly ok: false;
   readonly error: AnyTaggedError;
+  /** Entity keys (`model:id`) the handler declared touching — identities only, never values. */
+  readonly touched?: readonly string[];
 }
 
 export type ResponseEnvelope = SuccessEnvelope | FailureEnvelope;

@@ -7,6 +7,7 @@ import { createFetchHandler } from "../../src/server/index.js";
 import {
   SessionLayer,
   DocCodec,
+  UserCodec,
   DocEventCodec,
   DocForbidden,
   DocLocked,
@@ -20,6 +21,7 @@ import {
 
 export interface DocDb {
   userBySession(token: string): Promise<User | undefined>;
+  setAvatar(userId: string, avatarUrl: string): Promise<User>;
   doc(id: string): Promise<Doc | undefined>;
   saveDoc(doc: Doc): Promise<void>;
   lockOwner(id: string): Promise<string | undefined>;
@@ -28,7 +30,9 @@ export interface DocDb {
 
 export const Db = defineService("db", {
   create: (): DocDb => {
-    const users = new Map<string, User>([["tok_1", { id: "u_1", name: "Jokull" }]]);
+    const users = new Map<string, User>([
+      ["tok_1", { id: "u_1", name: "Jokull", avatarUrl: "v1.png" }],
+    ]);
     const docs = new Map<string, Doc>([
       ["doc_1", { id: "doc_1", title: "Roadmap", ownerId: "u_1", savedAt: new Date("2026-10-01") }],
       ["doc_2", { id: "doc_2", title: "Budget", ownerId: "u_2", savedAt: new Date("2026-11-01") }],
@@ -36,6 +40,16 @@ export const Db = defineService("db", {
     const locks = new Map<string, string>([["doc_2", "u_2"]]);
     return {
       userBySession: async (token) => users.get(token),
+      setAvatar: async (userId, avatarUrl) => {
+        for (const [token, user] of users) {
+          if (user.id === userId) {
+            const next = { ...user, avatarUrl };
+            users.set(token, next);
+            return next;
+          }
+        }
+        throw new Error("unknown user");
+      },
       doc: async (id) => docs.get(id),
       saveDoc: async (doc) => void docs.set(doc.id, doc),
       lockOwner: async (id) => locks.get(id),
@@ -81,6 +95,14 @@ const authenticated = ViewerLayer.middleware(app, session);
 const whoami = SessionLayer.procedure(app, session);
 const me = ViewerLayer.procedure(app, authenticated);
 
+/** Returns WHO changed: every cached query containing this user patches in place. */
+const setAvatar = app.procedure()
+  .input(wire.object({ avatarUrl: wire.string }))
+  .output(UserCodec)
+  .use(authenticated)
+  .mutation(async ({ input, context }) =>
+    ok(await context.db.setAvatar(context.viewer.id, input.avatarUrl)));
+
 /** The tRPC protectedProcedure pattern: builders are immutable, bases fork freely. */
 const protectedProcedure = app.procedure().use(authenticated);
 
@@ -124,7 +146,7 @@ const docEvents = protectedProcedure
   .subscription();
 
 export const docRouter = app.router({
-  auth: { whoami, me },
+  auth: { whoami, me, setAvatar },
   doc: {
     byId: docById,
     rename: renameDoc,
