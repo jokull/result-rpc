@@ -1202,9 +1202,6 @@ function RenameDoc({ id }: { id: string }) {
     onCancel: (_input, context) => {
       context?.rollback()
     },
-    onSettled: (result, _input, _context, cache) => {
-      if (result.ok) cache.invalidate(client.doc.byId, { id })
-    },
   })
 
   async function submit(title: string) {
@@ -1229,6 +1226,105 @@ Cancellation is explicit because cancelling a request cannot guarantee that a
 server-side mutation did not happen: call `rename.cancel()`. Cancellation
 resets lifecycle state and rejects the pending `mutate` promise with the
 `cancelled` control sentinel; it never appears as an operation `Err`.
+
+### Declared invalidation
+
+You noticed what the example above does *not* contain: `onSettled` with a
+`cache.invalidate` call. That line — the most-repeated and most-forgotten
+line in any React Query app, whose absence is a stale-UI bug — lives in the
+contract now. A mutation declares its blast radius once, where it is defined:
+
+```ts
+const byId = app.procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(DocCodec)
+  .query()
+
+const rename = app.procedure()
+  .input(wire.object({ id: wire.string, title: wire.string }))
+  .output(DocCodec)
+  .affects(byId, (input) => ({ id: input.id }))   // rename touches this doc
+  .affects(list)                                  // and every cached list page
+  .mutation()
+```
+
+Every `useResultMutation` of `rename` — in any component, forever —
+invalidates those queries on success. The `map` turns the mutation's input
+into the target's input; omitting it invalidates every cached input of the
+target. The declaration is also documentation: the contract states which
+reads each write disturbs, and a reviewer can see a missing `.affects()` in
+the same diff that adds the mutation. Server-driven invalidation (the handler
+reporting what it actually touched, over the response envelope) is the
+planned extension of the same channel.
+
+## Forms from the contract
+
+The footgun: every form maintains a validation schema that is a hand-kept
+copy of the procedure's input — Zod on the form, something else on the wire —
+and the two drift until a "valid" form submits an invalid request, or the
+server rejects a field the form never validated.
+
+result-rpc does not ship a form library; use one that's good at forms
+(we like [Formisch](https://formisch.dev) — schema-first, headless,
+signal-fast). What result-rpc ships is the bridge that makes the contract the
+single schema, in whichever direction your team already leans:
+
+**Codec → schema.** Every procedure's input codec is exposed as a
+[Standard Schema](https://standardschema.dev) — the spec TanStack Form,
+react-hook-form (via `@hookform/resolvers/standard-schema`), and a growing
+ecosystem consume directly:
+
+```tsx
+const form = useForm({
+  defaultValues: { id: docId, title: "" },
+  validators: { onSubmit: client.doc.rename.$schema },  // the contract IS the schema
+  onSubmit: ({ value }) => rename.mutate(value),
+})
+```
+
+**Schema → codec.** Formisch and other Valibot-first stacks keep the schema
+as *their* source of truth — so let it be the contract's too. `wire.standard`
+adopts any Standard Schema (Valibot, Zod, ArkType) as the procedure's input
+codec:
+
+```ts
+// shared: one declaration for the form AND the wire
+export const RenameInput = v.object({
+  id: v.string(),
+  title: v.pipe(v.string(), v.minLength(1)),
+})
+
+// form (Formisch)
+const form = useForm({ schema: RenameInput })
+
+// contract
+const rename = app.procedure()
+  .input(wire.standard(RenameInput))
+  .output(DocCodec)
+  .mutation()
+```
+
+Validation runs on both sides of the wire either way, and validated values
+still pass the wire serializer's preflight. (Two constraints: async schemas
+are rejected — wire validation is synchronous — and the schema must accept
+its own output, so one-way transforms don't fit.)
+
+**And the round trip.** When a hostile or stale request reaches the server
+anyway, the same codec rejects it there — and `server/bad-request` carries
+path-scoped issues that project straight back onto the same fields the client
+validated:
+
+```tsx
+const result = await rename.mutate(value)
+if (!result.ok && result.error._tag === "server/bad-request") {
+  setFieldErrors(fieldIssues(result.error))
+  // { "title": ["Expected a string"], "author.email": ["Expected an email"] }
+}
+```
+
+One declaration: field types, client validation, server validation, and
+field-level errors from both sides — none of which can drift, because there
+is nothing to drift from.
 
 ## Subscriptions keep lifecycle separate from failure
 
@@ -1581,6 +1677,8 @@ tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
 | React | Query, mutation, subscription, suspense, and SSR bindings |
 | Diagnostics | Safe incident IDs publicly; full causes only in local observability |
 | Observability | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps |
+| Cache coherence | Declared invalidation: mutations state their blast radius in the contract |
+| Forms | Standard Schema bridge in both directions, plus server-issue → field projection |
 
 The query engine uses `@tanstack/query-core` privately. That is an engine
 choice, not part of the public API. Applications do not install or compose

@@ -17,7 +17,8 @@ import {
   serialize,
   SERIALIZER_VERSION,
 } from "../serializer.js";
-import { getClientIdentity, getProcedureClientMetadata } from "../client/client.js";
+import { getClientIdentity, getClientRouter, getProcedureClientMetadata } from "../client/client.js";
+import type { AffectsEntry } from "../server/contract.js";
 import type { ResultSubscription } from "../client/client.js";
 import { isCancelled } from "../client/transport.js";
 import type { ErrorDefinitionMap } from "../server/contract.js";
@@ -382,6 +383,35 @@ export const createQueryRuntime = <TClient>(
     return [metadata.path, serialized.value] as const;
   };
 
+  /**
+   * Resolves an `.affects()` target — a contract entry or procedure object —
+   * to this client's procedure function, by identity against the router the
+   * client was built from (implemented procedures share their contract's
+   * codec references, so contract-declared targets resolve on router clients
+   * too).
+   */
+  const resolveAffectsTarget = (
+    target: AffectsEntry["target"],
+  ): QueryProcedureClientLike | undefined => {
+    const router = getClientRouter(clientIdentity);
+    if (!router) return undefined;
+    for (const [path, procedure] of router.procedures) {
+      const candidate = procedure as { readonly _def: typeof target._def };
+      const matches = procedure === (target as unknown)
+        || candidate._def === target._def
+        || (candidate._def.kind === "query"
+          && candidate._def.input === target._def.input
+          && candidate._def.output === target._def.output);
+      if (!matches) continue;
+      let node: unknown = options.client;
+      for (const segment of path.split(".")) {
+        node = (node as Record<string, unknown>)[segment];
+      }
+      return node as QueryProcedureClientLike;
+    }
+    return undefined;
+  };
+
   const cache: QueryCache = {
     key: queryKey,
     get: (procedure, input) => queryClient.getQueryData(queryKey(procedure, input)),
@@ -526,6 +556,8 @@ export const createQueryRuntime = <TClient>(
         throw new TypeError(`${metadata.path} is not a mutation procedure`);
       }
       const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
+      const declaredAffects: readonly AffectsEntry[] =
+        (metadata.procedure._def as { affects?: readonly AffectsEntry[] }).affects ?? [];
       let activeController: AbortController | undefined;
       const configuredRetry = mutationOptions.retry;
       const retry = configuredRetry === undefined
@@ -550,10 +582,22 @@ export const createQueryRuntime = <TClient>(
         ...(mutationOptions.optimistic === undefined
           ? {}
           : { onMutate: (input: TInput) => mutationOptions.optimistic!(input, cache) }),
-        ...(mutationOptions.onSuccess === undefined
+        ...(mutationOptions.onSuccess === undefined && declaredAffects.length === 0
           ? {}
-          : { onSuccess: (value: TOutput, input: TInput) =>
-              mutationOptions.onSuccess!(value, input) }),
+          : { onSuccess: (value: TOutput, input: TInput) => {
+              // Declared invalidation: the contract said what this mutation
+              // affects; no call-site onSettled required.
+              for (const entry of declaredAffects) {
+                const target = resolveAffectsTarget(entry.target);
+                if (!target) continue;
+                if (entry.map) {
+                  void cache.invalidate(target as never, (entry.map as (input: TInput) => never)(input));
+                } else {
+                  void cache.invalidateAll(target as never);
+                }
+              }
+              return mutationOptions.onSuccess?.(value, input);
+            } }),
         ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
           ? {}
           : { onError: (failure: TError, input: TInput, context: TContext | undefined) =>

@@ -761,6 +761,28 @@ stale), so it ships their owners pre-assembled: `boundaryShells()` returns
 reaction: reload), plus a `BoundaryProvider` composing all three. User shells
 hang off `StaleShell`.
 
+### Declared invalidation
+
+A mutation's `.affects(target, map?)` records `AffectsEntry` values in its
+manifest (contract or procedure — `implement()` carries them over). The query
+runtime resolves each target against the router the client was built from
+(reference identity, `_def` identity, or shared input/output codec identity
+for contract-declared targets on router clients) and invalidates on mutation
+success: `map(input)` for one cache key, or every cached input without `map`.
+`affects` is excluded from the contract digest — it is client cache behavior,
+not wire shape — and only mutations may declare it.
+
+### Forms bridge
+
+`toStandardSchema(codec)` (and `$schema` on unary client procedures) exposes
+an input codec through the Standard Schema V1 interface, memoized per codec,
+with codec issues mapped to path-scoped standard issues. In the other
+direction, `wire.standard(schema)` adopts any synchronous Standard Schema as
+a wire codec — validation on both sides plus serializer preflight; async
+schemas and one-way transforms are rejected by construction. `fieldIssues`
+projects `server/bad-request` issues onto dot-joined field paths matching the
+client-side validation's paths.
+
 ### Contract skew
 
 Every response carries the server's contract digest (`x-result-rpc-contract`),

@@ -1,4 +1,5 @@
 import { isSerializable } from "./serializer.js";
+import type { StandardSchemaV1 } from "./standard-schema.js";
 
 export type WireScalar = undefined | null | boolean | string | number | bigint;
 
@@ -131,6 +132,60 @@ const urlCodec: WireCodec<URL, URL> = {
   kind: "url",
   encode: (input) => input instanceof URL ? success(new URL(input)) : failure("Expected a URL"),
   decode: (value) => value instanceof URL ? success(new URL(value)) : failure("Expected a URL"),
+};
+
+type StandardOutput<TSchema extends StandardSchemaV1<any, unknown>> =
+  NonNullable<TSchema["~standard"]["types"]>["output"];
+
+const toPathKey = (key: PropertyKey): string | number =>
+  typeof key === "number" ? key : String(key);
+
+/**
+ * Adopts a Standard Schema (Valibot, Zod, ArkType, ...) as a wire codec, so
+ * one schema can be the source of truth for a form library AND the procedure
+ * input — `useForm({ schema: LoginSchema })` and `.input(wire.standard(
+ * LoginSchema))` share a declaration. Validation runs on both sides of the
+ * wire, and the validated value must also survive the wire serializer.
+ *
+ * Constraints: async schemas are rejected (wire validation is synchronous),
+ * and the schema must accept its own output — one-way transforms break the
+ * encode/decode symmetry.
+ */
+const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
+  schema: TSchema,
+): WireCodec<StandardOutput<TSchema>, WireValue> => {
+  const validate = (value: unknown): DecodeResult<StandardOutput<TSchema>> => {
+    let result: ReturnType<TSchema["~standard"]["validate"]>;
+    try {
+      result = schema["~standard"].validate(value) as typeof result;
+    } catch {
+      return failure("Schema validation failed");
+    }
+    if (result instanceof Promise) {
+      return failure("Async schemas are not supported on the wire");
+    }
+    if (result.issues) {
+      return {
+        ok: false,
+        issues: result.issues.map((issue) => ({
+          path: (issue.path ?? []).map((segment) =>
+            typeof segment === "object" && segment !== null && "key" in segment
+              ? toPathKey(segment.key)
+              : toPathKey(segment)),
+          message: issue.message,
+        })),
+      };
+    }
+    if (!isSerializable(result.value)) {
+      return failure("Expected a value supported by the wire serializer");
+    }
+    return success(result.value as StandardOutput<TSchema>);
+  };
+  return {
+    kind: `standard(${schema["~standard"].vendor})`,
+    encode: (input) => validate(input) as DecodeResult<WireValue>,
+    decode: validate,
+  };
 };
 
 const serializable = <T>(): WireCodec<T, T & WireValue> => ({
@@ -428,4 +483,5 @@ export const wire = {
   record,
   object,
   serializable,
+  standard,
 } as const;

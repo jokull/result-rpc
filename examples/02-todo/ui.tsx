@@ -74,13 +74,14 @@ function TodoRow({ client, id, title, done }: {
   title: string;
   done: boolean;
 }) {
+  // The contract declares `.affects(list)`, so success invalidates the list
+  // automatically — only the optimistic arc is written here.
   const toggle = StaleShell.useMutation(client.toggle, {
     optimistic: (input, cache) => ({
       rollback: cache.update(client.list, {}, (todos) =>
         todos?.map((todo) => (todo.id === input.id ? { ...todo, done: !todo.done } : todo))),
     }),
     onFailure: (_error, _input, context) => context?.rollback(),
-    onSettled: (_result, _input, _context, cache) => cache.invalidate(client.list, {}),
   });
 
   return (

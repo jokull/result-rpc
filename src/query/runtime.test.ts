@@ -419,3 +419,75 @@ describe("reactive query runtime", () => {
     runtime.clear();
   });
 });
+
+describe("declared invalidation", () => {
+  test("a mutation's .affects() invalidates the target query, code-first and mapped", async () => {
+    const app = rpc.context<{ readonly state: { revision: number; titles: Map<string, string> } }>();
+    const docById = app.procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.object({ id: wire.string, title: wire.string, revision: wire.number }))
+      .query(({ input, context }) => ok({
+        id: input.id,
+        title: context.state.titles.get(input.id) ?? "untitled",
+        revision: context.state.revision,
+      }));
+    const bump = app.procedure()
+      .input(wire.object({ id: wire.string, title: wire.string }))
+      .output(wire.string)
+      .affects(docById, (input) => ({ id: input.id }))
+      .mutation(({ input, context }) => {
+        context.state.revision += 1;
+        context.state.titles.set(input.id, input.title);
+        return ok(input.title);
+      });
+    const affectsRouter = app.router({ doc: { byId: docById, bump } });
+    const state = { revision: 1, titles: new Map([["a", "first"]]) };
+    const affectsHandler = createFetchHandler({ router: affectsRouter, createContext: () => ({ state }) });
+    const client = createClient({
+      router: affectsRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          affectsHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client });
+
+    const observer = runtime.observe(client.doc.byId, { id: "a" });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await waitFor(observer, (current) => current.state === "success");
+    const before = observer.getCurrentState();
+    if (before.state !== "success") throw new Error("unreachable");
+    expect(before.result.value.revision).toBe(1);
+
+    // No onSettled anywhere: the contract's .affects() drives the refetch.
+    const mutation = runtime.mutation(client.doc.bump);
+    const result = await mutation.getCurrentState().mutate({ id: "a", title: "renamed" });
+    expect(result.ok).toBe(true);
+
+    await waitFor(observer, (current) =>
+      current.state === "success" && current.result.value.revision === 2);
+    const after = observer.getCurrentState();
+    if (after.state !== "success") throw new Error("unreachable");
+    expect(after.result.value.title).toBe("renamed");
+
+    unsubscribe();
+    observer.destroy();
+    mutation.destroy();
+    runtime.clear();
+  });
+
+  test(".affects() is rejected on queries and non-query targets", () => {
+    const app = rpc.context<{}>();
+    const target = app.procedure().output(wire.string).query(() => ok("x"));
+    const mutationTarget = app.procedure().output(wire.string).mutation(() => ok("x"));
+    expect(() => app.procedure()
+      .output(wire.string)
+      .affects(target)
+      .query(() => ok("x"))).toThrow("Only mutations declare .affects()");
+    expect(() => app.procedure()
+      .output(wire.string)
+      // @ts-expect-error mutations cannot be invalidation targets
+      .affects(mutationTarget)).toThrow("affects() targets must be query procedures");
+  });
+});

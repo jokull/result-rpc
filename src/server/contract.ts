@@ -170,6 +170,18 @@ export interface ProcedureHandlerArgs<
   readonly errors: TDefinitions;
 }
 
+/**
+ * A mutation's declared blast radius: which query it invalidates on success,
+ * and how the mutation's input maps to the query's. Declared once at the
+ * contract, executed automatically by the client cache — no `onSettled`
+ * plumbing at call sites. Without `map`, every cached input of the target
+ * query is invalidated.
+ */
+export interface AffectsEntry {
+  readonly target: AnyProcedureContract | AnyUnaryProcedure;
+  readonly map?: (input: never) => unknown;
+}
+
 export interface ProcedureManifest<
   TRootContext,
   TInput,
@@ -181,6 +193,7 @@ export interface ProcedureManifest<
   readonly input: WireCodec<TInput, WireValue>;
   readonly output: WireCodec<TOutput, WireValue>;
   readonly definitions: TDefinitions;
+  readonly affects?: readonly AffectsEntry[];
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
     args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
@@ -199,6 +212,7 @@ export interface ProcedureContractManifest<
   readonly input: WireCodec<TInput, WireValue>;
   readonly output: WireCodec<TOutput, WireValue>;
   readonly definitions: TDefinitions;
+  readonly affects?: readonly AffectsEntry[];
   readonly _rootContext?: TRootContext;
 }
 
@@ -263,7 +277,35 @@ export class ProcedureBuilder<
     private readonly outputCodec?: WireCodec<TOutput, WireValue>,
     private readonly definitions: TDefinitions = {} as TDefinitions,
     private readonly middlewares: readonly RuntimeMiddleware[] = [],
+    private readonly affectsEntries: readonly AffectsEntry[] = [],
   ) {}
+
+  /**
+   * Declares that this mutation invalidates a query on success. `map` turns
+   * the mutation's input into the target query's input; omit it to invalidate
+   * every cached input of that query. Executed automatically by the client
+   * cache — call sites need no `onSettled`.
+   */
+  affects<TTargetInput>(
+    target:
+      | ProcedureContract<any, TTargetInput, any, any, "query">
+      | Procedure<any, TTargetInput, any, any, "query">,
+    map?: (input: TInput) => TTargetInput,
+  ): ProcedureBuilder<TRootContext, TContext, TInput, TOutput, TDefinitions> {
+    if (target._def.kind !== "query") {
+      throw new TypeError("affects() targets must be query procedures");
+    }
+    const entry: AffectsEntry = map === undefined
+      ? { target }
+      : { target, map: map as (input: never) => unknown };
+    return new ProcedureBuilder(
+      this.inputCodec,
+      this.outputCodec,
+      this.definitions,
+      this.middlewares,
+      [...this.affectsEntries, entry],
+    );
+  }
 
   input<TNewInput, TEncoded extends WireValue>(
     codec: WireCodec<TNewInput, TEncoded>,
@@ -273,6 +315,7 @@ export class ProcedureBuilder<
       this.outputCodec,
       this.definitions,
       this.middlewares,
+      this.affectsEntries,
     );
   }
 
@@ -284,6 +327,7 @@ export class ProcedureBuilder<
       codec as WireCodec<TNewOutput, WireValue>,
       this.definitions,
       this.middlewares,
+      this.affectsEntries,
     );
   }
 
@@ -302,6 +346,7 @@ export class ProcedureBuilder<
       this.outputCodec,
       { ...this.definitions, ...definitions },
       this.middlewares,
+      this.affectsEntries,
     );
   }
 
@@ -330,6 +375,7 @@ export class ProcedureBuilder<
       this.outputCodec,
       definitions,
       appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
+      this.affectsEntries,
     );
   }
 
@@ -379,6 +425,7 @@ export class ProcedureBuilder<
     if (!this.outputCodec) {
       throw new TypeError("A procedure requires an output codec");
     }
+    this.assertAffectsAllowed(kind);
     return Object.freeze({
       _kind: "procedure-contract" as const,
       _def: Object.freeze({
@@ -386,8 +433,15 @@ export class ProcedureBuilder<
         input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
         output: this.outputCodec,
         definitions: this.definitions,
+        ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
       }),
     });
+  }
+
+  private assertAffectsAllowed(kind: string): void {
+    if (this.affectsEntries.length > 0 && kind !== "mutation") {
+      throw new TypeError("Only mutations declare .affects(); queries are invalidated, not invalidating");
+    }
   }
 
   private finish<TKind extends "query" | "mutation">(
@@ -399,6 +453,7 @@ export class ProcedureBuilder<
     if (!this.outputCodec) {
       throw new TypeError("A procedure requires an output codec");
     }
+    this.assertAffectsAllowed(kind);
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
@@ -406,6 +461,7 @@ export class ProcedureBuilder<
         input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
         output: this.outputCodec,
         definitions: this.definitions,
+        ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
         middlewares: this.middlewares,
         handler: handler as ProcedureManifest<TRootContext, TInput, TOutput, TDefinitions>["handler"],
       }),

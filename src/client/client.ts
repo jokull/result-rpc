@@ -13,6 +13,7 @@ import {
   type ClientBoundaryError,
 } from "../framework-errors.js";
 import { contractDigest } from "../contract-digest.js";
+import { toStandardSchema, type StandardSchemaV1 } from "../standard-schema.js";
 import {
   decodeStreamFrame,
   decodeResponseEnvelope,
@@ -61,7 +62,7 @@ export type ProcedureClient<TProcedure> =
       ) => Promise<Result<
         TOutput,
         ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
-      >>) & { readonly $kind: TKind }
+      >>) & { readonly $kind: TKind; readonly $schema: StandardSchemaV1<TInput> }
     : TProcedure extends ProcedureContract<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
       ? TKind extends "subscription"
         ? SubscriptionClient<TInput, TOutput, TDefinitions>
@@ -177,6 +178,11 @@ export interface ProcedureClientMetadata {
 const procedureClientMetadata = new WeakMap<Function, ProcedureClientMetadata>();
 const clientIdentities = new WeakMap<object, object>();
 const clientEventListeners = new WeakMap<object, ClientEventListener>();
+const clientRouters = new WeakMap<object, ClientRouter>();
+
+/** Internal: the router/contract a client was built from, by client identity. */
+export const getClientRouter = (clientIdentity: object): ClientRouter | undefined =>
+  clientRouters.get(clientIdentity);
 
 /** Internal: the event listener registered for a client, by client identity. */
 export const getClientEventListener = (
@@ -536,6 +542,8 @@ const createProxy = (
   const proxy = new Proxy(() => undefined, {
     get: (_target, property) => {
       if (property === "$kind" && procedure) return procedure._def.kind;
+      // The input codec as a Standard Schema: the form-facing half of the contract.
+      if (property === "$schema" && procedure) return toStandardSchema(procedure._def.input);
       if (typeof property !== "string") return undefined;
       const candidate = [...path, property];
       const candidatePath = candidate.join(".");
@@ -585,6 +593,7 @@ export function createClient(
 ): ClientOf<ClientRouter> {
   const router = "contract" in options ? options.contract : options.router;
   const clientIdentity = Object.freeze({});
+  clientRouters.set(clientIdentity, router);
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
   const skew = createSkewMonitor(
     options.contractVersion ?? contractDigest(router),
