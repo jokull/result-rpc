@@ -1,0 +1,23 @@
+{
+  "name": "result-rpc-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "blume dev",
+    "build": "blume build",
+    "preview": "blume preview",
+    "check": "blume check --strict",
+    "validate": "blume validate"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.6",
+    "@astrojs/mdx": "7.0.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.111.0"
+  },
+  "dependencies": {
+    "astro": "^7.1.1",
+    "blume": "1.1.2"
+  }
+}

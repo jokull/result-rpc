@@ -52,6 +52,24 @@
   "engines": {
     "node": ">=20"
   },
+  "license": "MIT",
+  "author": "Jökull Sólberg <jokull@solberg.is>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jokull/result-rpc.git"
+  },
+  "homepage": "https://result-rpc.solberg.is",
+  "bugs": "https://github.com/jokull/result-rpc/issues",
+  "keywords": [
+    "rpc",
+    "typescript",
+    "react",
+    "result",
+    "tagged-errors",
+    "trpc-alternative",
+    "query-cache",
+    "type-safe"
+  ],
   "packageManager": "pnpm@11.9.0",
   "dependencies": {
     "@tanstack/query-core": "^5.101.4",

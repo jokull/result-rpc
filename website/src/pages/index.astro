@@ -1,0 +1,194 @@
+---
+import PageLayout from 'blume/components/layout/PageLayout.astro';
+import data from 'blume:data';
+
+const pageDescription = 'One Result and one wire-safe error union from server to screen — the RPC regime for React.';
+
+const owners = [
+  { number: '01', label: 'Components', detail: 'Branch on domain errors only — exhaustively, or it fails to compile.' },
+  { number: '02', label: 'Shells', detail: 'Claim transport blips, auth expiry, and defects at the tree position that owns them.' },
+  { number: '03', label: 'Entities', detail: 'Mutations return who changed; every cached view patches in place. Zero refetches.' },
+  { number: '04', label: 'Deploys', detail: 'Contract digests detect stale clients; the reload is the fix, not a mystery incident.' },
+];
+
+const features = [
+  { eyebrow: 'Closed unions', title: 'Errors are values with owners', body: 'Every failure a call can produce is a typed, wire-safe tag in that operation’s own closed union — domain, transport, protocol, and staleness in one place.' },
+  { eyebrow: 'Error boundaries for values', title: 'Shells subtract what they own', body: 'Providers claim failure classes ambiently — pause and resume, or escalate to the real error boundary — and remove those tags from the unions components see.' },
+  { eyebrow: 'The identity graph', title: 'Update by model + id', body: 'defineModel gives values identity. Change an avatar and the header, bylines, and member rows patch in place — automatic invalidation and updates, no normalized store.' },
+];
+---
+
+<PageLayout
+  site={{ title: data.config.title, description: data.config.description }}
+  logo={data.config.logo}
+  favicon={data.config.favicon}
+  appleIcon={data.config.appleIcon}
+  banner={data.config.banner}
+  analytics={data.config.analytics}
+  navigation={data.navigation}
+  themeMode={data.config.theme.mode}
+  fontCssVars={data.fontCssVars}
+  searchEnabled={data.config.search.enabled}
+  siteUrl={data.config.site}
+  ogEnabled={data.config.og.enabled}
+  page={{
+    title: 'result-rpc — one Result, one error union',
+    description: pageDescription,
+    route: '/',
+  }}
+>
+  <header class="nav shell">
+    <a class="brand" href="/" aria-label="result-rpc home">
+      <span class="mark" aria-hidden="true">⟨→⟩</span>
+      <span>result-rpc</span>
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="/start/introduction/">Docs</a>
+      <a href="/concepts/shells/">Shells</a>
+      <a href="/concepts/entities/">Entities</a>
+      <a href="/guides/migrating-from-trpc/">From tRPC</a>
+      <a class="github" href="https://github.com/jokull/result-rpc">GitHub <span>↗</span></a>
+    </nav>
+  </header>
+
+  <div class="home-content">
+    <section class="hero shell">
+      <div class="hero-copy">
+        <div class="kicker"><span></span> The migration path for the tRPC app that grew up</div>
+        <h1>One Result.<br /><em>One error union.</em><br />Server to screen.</h1>
+        <p class="lede">Every way an operation can fail is a typed, wire-safe value in its own closed union — and responsibility for each failure is assigned to exactly one place in the component tree.</p>
+        <div class="actions">
+          <a class="button primary" href="/start/quickstart/">Read the quickstart <span>→</span></a>
+          <a class="button secondary" href="/start/introduction/">Why the error channel is the architecture</a>
+        </div>
+      </div>
+      <figure class="hero-code" aria-label="The same call, unnarrowed and under the shells">
+        <pre><code><span class="c">// the honest base: the complete union</span>
+<span class="k">const</span> query = useResultQuery(client.doc.byId, &#123; id &#125;)
+<span class="c">// DocNotFound | Unauthorized | ServerInternal | Offline |
+// NetworkFailure | Timeout | HttpFailure |
+// ProtocolViolation | DecodeFailure | Stale</span>
+
+<span class="c">// under the onion: each shell subtracted what it owns</span>
+<span class="k">const</span> query = AuthShell.useQuery(client.doc.byId, &#123; id &#125;)
+<span class="c">// DocNotFound — and a missing case fails to compile</span></code></pre>
+        <figcaption>Nothing was hidden. Each tag left the union because a named owner took responsibility for it.</figcaption>
+      </figure>
+    </section>
+
+    <section class="owners shell" aria-labelledby="owners-title">
+      <div class="section-heading">
+        <p class="section-label">Failure ownership, end to end</p>
+        <h2 id="owners-title">Every tag has exactly one owner.</h2>
+      </div>
+      <div class="route">
+        {owners.map((step) => (
+          <article class="route-step">
+            <span class="route-number">{step.number}</span>
+            <h3>{step.label}</h3>
+            <p>{step.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="features shell">
+      <div class="section-heading compact">
+        <p class="section-label">Why result-rpc</p>
+        <h2>tRPC ergonomics. Effect-grade errors.<br />A cache that understands identity.</h2>
+      </div>
+      <div class="feature-grid">
+        {features.map((feature, index) => (
+          <article>
+            <span class="feature-index">0{index + 1}</span>
+            <p class="eyebrow">{feature.eyebrow}</p>
+            <h3>{feature.title}</h3>
+            <p>{feature.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="shell cta-inner">
+        <div>
+          <p class="section-label">Coming from tRPC?</p>
+          <h2>Migrate per router.<br />Start with the auth layer.</h2>
+        </div>
+        <div class="cta-actions">
+          <a class="button primary light" href="/guides/migrating-from-trpc/">Read the migration guide <span>→</span></a>
+          <a href="/reference/examples/">Browse the examples ladder</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="shell" slot="footer">
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">⟨→⟩</span><span>result-rpc</span></a>
+    <p>One Result. One error union. Server to screen.</p>
+    <div><a href="/reference/sharp-edges/">Sharp edges</a><a href="https://github.com/jokull/result-rpc">GitHub</a></div>
+  </footer>
+</PageLayout>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(html) { scroll-behavior: smooth; }
+  :global(body) { margin: 0; overflow-x: clip; color: #212636; background: #fbfbfd; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  :global([data-blume-header]) { display: none; }
+  :global(a) { color: inherit; }
+  .shell { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
+  .nav { height: 82px; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; font: 700 20px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -1px; text-decoration: none; }
+  .mark { color: #4056c8; font-weight: 600; letter-spacing: -2px; }
+  .nav nav { display: flex; align-items: center; gap: 28px; font-size: 14px; }
+  .nav nav a { text-decoration: none; color: #565e75; }
+  .nav nav a:hover { color: #10131a; }
+  .nav nav .github { padding-left: 27px; border-left: 1px solid #d9dceb; color: #212636; font-weight: 650; }
+  .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; padding-block: 64px 88px; }
+  .kicker, .section-label, .eyebrow { color: #5a63a8; font: 700 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .13em; text-transform: uppercase; }
+  .kicker { display: flex; align-items: center; gap: 10px; }
+  .kicker span { width: 32px; height: 1px; background: #8b93c9; }
+  h1 { margin: 25px 0 22px; color: #171b28; font: 500 clamp(44px, 5vw, 66px)/1.0 "Source Serif 4", Georgia, serif; letter-spacing: -.045em; }
+  h1 em { color: #4056c8; font-style: normal; }
+  .lede { max-width: 540px; margin: 0; color: #565e75; font-size: 18px; line-height: 1.65; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .button { min-height: 48px; display: inline-flex; justify-content: center; align-items: center; gap: 14px; padding: 0 20px; border: 1px solid #cdd2e6; border-radius: 4px; text-decoration: none; font-weight: 700; font-size: 13px; }
+  .button.primary { color: #f5f6fd; background: #2d3a86; border-color: #2d3a86; }
+  .button.primary:hover { background: #202a63; }
+  .button.secondary { background: rgba(255,255,255,.5); }
+  .button.secondary:hover { border-color: #8b93c9; }
+  .hero-code { margin: 0; border: 1px solid #d9dceb; border-radius: 6px; background: #10131a; color: #d5dae9; box-shadow: 0 30px 80px rgba(32,42,99,.12); overflow: hidden; }
+  .hero-code pre { margin: 0; padding: 26px 28px; overflow-x: auto; font: 400 13.5px/1.7 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .hero-code .c { color: #7c86a8; }
+  .hero-code .k { color: #9caeff; }
+  .hero-code figcaption { padding: 14px 28px; border-top: 1px solid #232a3d; color: #9aa3bf; font-size: 12.5px; }
+  .section-heading { margin-bottom: 44px; }
+  .section-heading h2, .features h2, .cta h2 { margin: 12px 0 0; font: 500 clamp(30px, 3.6vw, 46px)/1.1 "Source Serif 4", Georgia, serif; letter-spacing: -.03em; }
+  .owners { padding-block: 40px 90px; }
+  .route { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .route-step { padding: 22px; border: 1px solid #e0e3f0; border-radius: 6px; background: #ffffff; }
+  .route-number { color: #8b93c9; font: 700 12px/1 ui-monospace, monospace; }
+  .route-step h3 { margin: 12px 0 8px; font-size: 17px; }
+  .route-step p { margin: 0; color: #565e75; font-size: 14px; line-height: 1.6; }
+  .features { padding-block: 20px 100px; }
+  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 40px; }
+  .feature-grid article { padding: 26px; border: 1px solid #e0e3f0; border-radius: 6px; background: #fff; }
+  .feature-index { color: #8b93c9; font: 700 12px/1 ui-monospace, monospace; }
+  .feature-grid .eyebrow { margin: 14px 0 0; }
+  .feature-grid h3 { margin: 8px 0 10px; font-size: 19px; }
+  .feature-grid p:last-child { margin: 0; color: #565e75; font-size: 14.5px; line-height: 1.65; }
+  .cta { background: #1a2030; color: #eef0fa; }
+  .cta-inner { padding-block: 84px; display: flex; flex-wrap: wrap; gap: 40px; align-items: center; justify-content: space-between; }
+  .cta .section-label { color: #9caeff; }
+  .cta-actions { display: flex; align-items: center; gap: 26px; }
+  .cta-actions > a:last-child { color: #b8c0dd; font-size: 14px; }
+  .button.primary.light { background: #9caeff; border-color: #9caeff; color: #10131a; }
+  .button.primary.light:hover { background: #b7c4ff; }
+  footer.shell { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; padding-block: 40px; color: #565e75; font-size: 14px; }
+  footer div { display: flex; gap: 22px; }
+  footer a { text-decoration: none; }
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; padding-block: 32px 56px; }
+    .route, .feature-grid { grid-template-columns: 1fr; }
+  }
+</style>

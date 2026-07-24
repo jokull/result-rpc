@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "result-rpc-docs",
+  "compatibility_date": "2026-07-19",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    {
+      "pattern": "result-rpc.solberg.is",
+      "custom_domain": true
+    }
+  ]
+}
