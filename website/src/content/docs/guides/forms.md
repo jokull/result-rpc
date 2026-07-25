@@ -36,6 +36,18 @@ a form's shape happens to coincide exactly with an input, sharing the schema
 is free — but treat that as a coincidence to notice, not an architecture to
 force.)
 
+**And the form runs the same schema first**, with `validateStandard` — the
+form-side companion to `wire.standard`. Per-field feedback before a request
+exists, no `~standard` spec plumbing:
+
+```ts
+import { validateStandard } from "result-rpc"
+
+const validated = validateStandard(RenameInput, { id, title })
+if (!validated.ok) return setFieldErrors(validated.fields)  // dot-joined keys
+await rename.mutate(validated.value)
+```
+
 **Server rejections land on fields.** Whatever validates the form, the
 codec still validates the wire — and when a request fails there,
 `server/bad-request` carries path-scoped issues that project onto field
@@ -62,7 +74,7 @@ the same codec before sending, and input the codec rejects throws a
 The wire rejection arc exists for callers whose codec disagrees with the
 server's: skewed clients mid-deploy, hand-rolled HTTP callers, other
 services. So the division of labor is: **your form validates the human**
-(run the Standard Schema directly — that is what it is for) before `mutate`
+(`validateStandard` — see above) before `mutate`
 is ever called; `fieldIssues` is the safety net for the wire's own
 validation, not your form's primary path.
 

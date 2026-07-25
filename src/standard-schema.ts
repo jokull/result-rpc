@@ -32,6 +32,65 @@ export type StandardSchemaResult<Output> =
   | { readonly value: Output; readonly issues?: undefined }
   | { readonly issues: readonly StandardSchemaIssue[] };
 
+const dotKey = (
+  path: readonly (PropertyKey | { readonly key: PropertyKey })[] | undefined,
+): string =>
+  (path ?? [])
+    .map((segment) =>
+      typeof segment === "object" && segment !== null
+        ? String(segment.key)
+        : String(segment))
+    .join(".");
+
+/**
+ * The outcome of running a Standard Schema synchronously: the parsed value,
+ * or its issues — both raw and already projected onto dot-joined field keys,
+ * ready for form state.
+ */
+export type StandardValidation<Output> =
+  | Readonly<{ ok: true; value: Output }>
+  | Readonly<{
+      ok: false;
+      issues: readonly StandardSchemaIssue[];
+      fields: Readonly<Record<string, readonly string[]>>;
+    }>;
+
+/**
+ * Runs a Standard Schema against a value, synchronously — the form-side
+ * companion to `wire.standard`. The doctrine is "the form validates the
+ * human before the wire is ever involved"; this is the two-line way to do
+ * it without touching the `~standard` spec plumbing:
+ *
+ * ```ts
+ * const validated = validateStandard(createIssueSchema, { id, title })
+ * if (!validated.ok) return setFieldErrors(validated.fields)
+ * await create.mutate(validated.value)
+ * ```
+ *
+ * Throws on async schemas — validation that suspends cannot run during a
+ * render or a submit handler, and the wire side (`wire.standard`) rejects
+ * them for the same reason.
+ */
+export const validateStandard = <Input, Output>(
+  schema: StandardSchemaV1<Input, Output>,
+  value: unknown,
+): StandardValidation<Output> => {
+  const result = schema["~standard"].validate(value);
+  if (result instanceof Promise) {
+    throw new TypeError(
+      "validateStandard requires a synchronous schema — async validation cannot run during render or submit",
+    );
+  }
+  if (result.issues) {
+    const fields: Record<string, string[]> = {};
+    for (const issue of result.issues) {
+      (fields[dotKey(issue.path)] ??= []).push(issue.message);
+    }
+    return { ok: false, issues: result.issues, fields };
+  }
+  return { ok: true, value: result.value };
+};
+
 /**
  * Projects a `server/bad-request` failure onto form fields: issue paths
  * become dot-joined keys. Paths are shaped like the *procedure input* — when

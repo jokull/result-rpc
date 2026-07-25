@@ -85,7 +85,7 @@ const createIssue = app
     }
     const issue = {
       id: input.id,
-      projectId: "proj-main",
+      projectId: input.projectId,
       title: input.title,
       status: "open" as const,
       assigneeId: null,

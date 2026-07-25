@@ -16,8 +16,8 @@ import {
   useResultQuery,
 } from "../../src/react/index.js";
 import { makeClient, type AppClient } from "./client.js";
-import { makeHandler, type AppContext, type TrackerDb } from "./server.js";
-import type { ActivityEvent } from "./models.js";
+import { CLOSED_AT, seedDb } from "./world.js";
+import { makeHandler, type AppContext } from "./server.js";
 import {
   App,
   BoundaryProvider,
@@ -29,31 +29,6 @@ import { authErrors, issueErrors } from "./errors.js";
 import { Issue } from "./models.js";
 
 // -- world ----------------------------------------------------------------------
-
-const CLOSED_AT = new Date("2026-07-01T12:00:00.000Z");
-
-function seedDb(): TrackerDb {
-  const activity: ActivityEvent[] = [
-    { id: "act-1", issueId: "issue-1", message: "created by alice", at: new Date("2026-07-10T09:00:00Z") },
-    { id: "act-2", issueId: "issue-1", message: "assigned to bob", at: new Date("2026-07-10T10:00:00Z") },
-  ];
-  return {
-    users: new Map([
-      ["user-alice", { id: "user-alice", name: "Alice" }],
-      ["user-bob", { id: "user-bob", name: "Bob" }],
-    ]),
-    projects: new Map([
-      ["proj-main", { id: "proj-main", name: "Main App", openCount: 1 }],
-      ["proj-secret", { id: "proj-secret", name: "Skunkworks", openCount: 1 }],
-    ]),
-    issues: new Map([
-      ["issue-1", { id: "issue-1", projectId: "proj-main", title: "Fix login bug", status: "open" as const, assigneeId: "user-bob", closedAt: null }],
-      ["issue-2", { id: "issue-2", projectId: "proj-main", title: "Archive old docs", status: "closed" as const, assigneeId: "user-alice", closedAt: CLOSED_AT }],
-      ["issue-3", { id: "issue-3", projectId: "proj-secret", title: "Top secret", status: "open" as const, assigneeId: null, closedAt: null }],
-    ]),
-    activity: new Map([["issue-1", activity]]),
-  };
-}
 
 /** Every procedure path, matched against the request envelope in the fetch wrapper. */
 const PATHS = [
@@ -442,7 +417,7 @@ test("codec-rejected input on the same-version client is a caller bug: mutate re
 
   // The contract: the client-side codec preflight treats schema-invalid input
   // as a programmer error and throws — it never becomes an operation Result.
-  await expect(client.issues.create({ id: "x", title: "no" })).rejects.toThrow(
+  await expect(client.issues.create({ id: "x", projectId: "proj-main", title: "no" })).rejects.toThrow(
     /Title must be at least 3 characters/,
   );
 
@@ -456,7 +431,7 @@ test("codec-rejected input on the same-version client is a caller bug: mutate re
       <div>
         <button
           onClick={() =>
-            void create.mutate({ id: "x", title: "no" }).catch((reason) => {
+            void create.mutate({ id: "x", projectId: "proj-main", title: "no" }).catch((reason) => {
               rejections.push(reason);
             })
           }

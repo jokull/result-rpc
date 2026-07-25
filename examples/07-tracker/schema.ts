@@ -15,6 +15,7 @@ import type {
 
 export interface CreateIssueInput {
   id: string;
+  projectId: string;
   title: string;
 }
 
@@ -31,6 +32,9 @@ export const createIssueSchema: StandardSchemaV1<CreateIssueInput, CreateIssueIn
       if (typeof record.id !== "string" || record.id.length === 0) {
         issues.push({ message: "A client-minted id is required", path: ["id"] });
       }
+      if (typeof record.projectId !== "string" || record.projectId.length === 0) {
+        issues.push({ message: "A project is required", path: ["projectId"] });
+      }
       if (typeof record.title !== "string" || record.title.trim().length < 3) {
         issues.push({ message: "Title must be at least 3 characters", path: ["title"] });
       }
@@ -38,25 +42,10 @@ export const createIssueSchema: StandardSchemaV1<CreateIssueInput, CreateIssueIn
       return {
         value: {
           id: record.id as string,
+          projectId: record.projectId as string,
           title: (record.title as string).trim(),
         },
       };
     },
   },
-};
-
-/** Projects schema issues onto field keys, the same shape `fieldIssues` produces. */
-export const schemaFieldIssues = (
-  issues: readonly StandardSchemaIssue[],
-): Record<string, readonly string[]> => {
-  const fields: Record<string, string[]> = {};
-  for (const issue of issues) {
-    const key = (issue.path ?? [])
-      .map((segment) =>
-        typeof segment === "object" ? String(segment.key) : String(segment),
-      )
-      .join(".");
-    (fields[key] ??= []).push(issue.message);
-  }
-  return fields;
 };

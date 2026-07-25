@@ -8,7 +8,7 @@
  * patched in place with zero refetches.
  */
 import { useState } from "react";
-import { errorCatalog, matchError, type InputOf } from "../../src/index.js";
+import { errorCatalog, matchError, validateStandard, type InputOf } from "../../src/index.js";
 import {
   boundaryShells,
   layerShell,
@@ -19,7 +19,7 @@ import type { AppClient } from "./client.js";
 import { SessionLayer } from "./contract.js";
 import { issueErrors, projectErrors } from "./errors.js";
 import { Issue } from "./models.js";
-import { createIssueSchema, schemaFieldIssues } from "./schema.js";
+import { createIssueSchema } from "./schema.js";
 
 type IssueView = InputOf<typeof Issue.codec>;
 
@@ -180,6 +180,8 @@ export function AssignControls({ issue }: { issue: IssueView }) {
             <select
               value={issue.assigneeId ?? ""}
               onChange={(event) =>
+                // claimed/cancelled rejections are control flow — the
+                // owning shell already reacted; there is nothing to handle.
                 void assign
                   .mutate({ issueId: issue.id, assigneeId: event.target.value })
                   .catch(() => undefined)
@@ -208,6 +210,8 @@ export function CloseButton({ issueId }: { issueId: string }) {
   const close = ViewerShell.useMutation(client.issues.close);
   return (
     <div>
+      {/* claimed/cancelled rejections are control flow — the owning shell
+          already reacted; there is nothing to handle. */}
       <button onClick={() => void close.mutate({ issueId }).catch(() => undefined)}>
         Close issue
       </button>
@@ -251,21 +255,29 @@ export function ProjectsPanel() {
 export function ActivityFeed({ issueId }: { issueId: string }) {
   const client = useResultClient<AppClient>();
   const feed = ViewerShell.useSubscription(client.issues.activity, { issueId });
+  const ended = feed.connection === "closed" ? <p>Activity feed ended.</p> : null;
 
-  return (
-    <section>
-      {feed.result === undefined ? (
-        <p>No activity yet.</p>
-      ) : feed.result.ok ? (
-        <p>Latest activity: {feed.result.value.message}</p>
-      ) : (
+  // Subscriptions keep the Result envelope (connection is orthogonal to the
+  // latest outcome), so this reads as a Result, not a state switch.
+  if (feed.result === undefined) {
+    return <section><p>No activity yet.</p>{ended}</section>;
+  }
+  if (!feed.result.ok) {
+    return (
+      <section>
         <p role="alert">
           {matchError(feed.result.error, {
             "issue/not-found": () => "No activity: this issue does not exist.",
           })}
         </p>
-      )}
-      {feed.connection === "closed" ? <p>Activity feed ended.</p> : null}
+        {ended}
+      </section>
+    );
+  }
+  return (
+    <section>
+      <p>Latest activity: {feed.result.value.message}</p>
+      {ended}
     </section>
   );
 }
@@ -279,13 +291,16 @@ export function ActivityFeed({ issueId }: { issueId: string }) {
 // is the correct reaction. The optimistic issue is born under its final,
 // client-minted identity, so success is a no-op patch — nothing re-keys.
 
+// A stand-in for cuid2/nanoid/uuidv7: the point is only that the id is
+// minted on the CLIENT, so the optimistic row is born under its final
+// identity and the server response is a no-op patch — nothing re-keys.
 let issueCounter = 0;
 export const mintIssueId = () => `iss_${++issueCounter}`;
 
-export function NewIssueForm() {
+export function NewIssueForm({ projectId }: { projectId: string }) {
   const client = useResultClient<AppClient>();
   const [title, setTitle] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Record<string, readonly string[]>>({});
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, readonly string[]>>>({});
 
   const create = ViewerShell.useMutation(client.issues.create, {
     optimistic: (input, cache) => ({
@@ -294,7 +309,7 @@ export function NewIssueForm() {
           ...issues,
           {
             id: input.id,
-            projectId: "proj-main",
+            projectId: input.projectId,
             title: input.title,
             status: "open" as const,
             assigneeId: null,
@@ -308,13 +323,15 @@ export function NewIssueForm() {
   });
 
   async function submit() {
-    const validated = createIssueSchema["~standard"].validate({
+    // The form validates the human with the SAME schema the wire uses —
+    // per-field feedback before a request exists.
+    const validated = validateStandard(createIssueSchema, {
       id: mintIssueId(),
+      projectId,
       title,
     });
-    if (validated instanceof Promise) throw new TypeError("schema must be synchronous");
-    if (validated.issues) {
-      setFieldErrors(schemaFieldIssues(validated.issues));
+    if (!validated.ok) {
+      setFieldErrors(validated.fields);
       return;
     }
     setFieldErrors({});
@@ -335,10 +352,7 @@ export function NewIssueForm() {
     >
       <label>
         Title
-        <input
-          value={title}
-          onChange={(event: { target: { value: string } }) => setTitle(event.target.value)}
-        />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} />
       </label>
       <button type="submit">Create issue</button>
       {create.state === "pending" ? <p>Creating…</p> : null}
@@ -364,7 +378,7 @@ export function Tracker({ detailId }: { detailId: string }) {
       <IssueList />
       <IssueDetail id={detailId} />
       <ActivityFeed issueId={detailId} />
-      <NewIssueForm />
+      <NewIssueForm projectId="proj-main" />
     </main>
   );
 }

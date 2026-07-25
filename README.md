@@ -1549,6 +1549,18 @@ a form's shape happens to coincide exactly with an input, sharing the schema
 is free — but treat that as a coincidence to notice, not an architecture to
 force.)
 
+**And the form runs the same schema first**, with `validateStandard` — the
+form-side companion to `wire.standard`. Per-field feedback before a request
+exists, no `~standard` spec plumbing:
+
+```ts
+import { validateStandard } from "result-rpc"
+
+const validated = validateStandard(RenameInput, { id, title })
+if (!validated.ok) return setFieldErrors(validated.fields)  // dot-joined keys
+await rename.mutate(validated.value)
+```
+
 **Server rejections land on fields.** Whatever validates the form, the
 codec still validates the wire — and when a request fails there,
 `server/bad-request` carries path-scoped issues that project onto field
@@ -1572,7 +1584,7 @@ Note when this arc actually fires: your own same-version client never sends
 codec-invalid input — the encode preflight throws a programmer error at the
 call site instead. `server/bad-request` arrives from callers whose codec
 disagrees with the server's (skewed clients mid-deploy, hand-rolled HTTP).
-So the form validates the human first — run the Standard Schema directly —
+So the form validates the human first — `validateStandard(schema, values)`, two lines —
 and `fieldIssues` is the wire's safety net, not the form's primary path.
 Also positional: the built-in defect shell claims `server/bad-request`, so a
 form that branches on it mounts outside that shell's subtree.

@@ -1,33 +1,11 @@
 /**
  * Dev server for the browser entry: `bun run examples/07-tracker/serve.ts`.
- * Serves the RPC handler at /rpc (the same makeHandler the tests use, seeded
- * with the same world) and bundles browser.tsx on demand.
+ * Serves the RPC handler at /rpc (the same makeHandler and seeded world the
+ * tests use) and bundles browser.tsx on demand.
  */
-import type { ActivityEvent } from "./models.js";
-import { makeHandler, type AppContext, type TrackerDb } from "./server.js";
-
-function seedDb(): TrackerDb {
-  const activity: ActivityEvent[] = [
-    { id: "act-1", issueId: "issue-1", message: "created by alice", at: new Date("2026-07-10T09:00:00Z") },
-    { id: "act-2", issueId: "issue-1", message: "assigned to bob", at: new Date("2026-07-10T10:00:00Z") },
-  ];
-  return {
-    users: new Map([
-      ["user-alice", { id: "user-alice", name: "Alice" }],
-      ["user-bob", { id: "user-bob", name: "Bob" }],
-    ]),
-    projects: new Map([
-      ["proj-main", { id: "proj-main", name: "Main App", openCount: 1 }],
-      ["proj-secret", { id: "proj-secret", name: "Skunkworks", openCount: 1 }],
-    ]),
-    issues: new Map([
-      ["issue-1", { id: "issue-1", projectId: "proj-main", title: "Fix login bug", status: "open", assigneeId: "user-bob", closedAt: null }],
-      ["issue-2", { id: "issue-2", projectId: "proj-main", title: "Archive old docs", status: "closed", assigneeId: "user-alice", closedAt: new Date("2026-07-01T12:00:00.000Z") }],
-      ["issue-3", { id: "issue-3", projectId: "proj-secret", title: "Top secret", status: "open", assigneeId: null, closedAt: null }],
-    ]),
-    activity: new Map([["issue-1", activity]]),
-  };
-}
+import type { AppContext } from "./server.js";
+import { makeHandler } from "./server.js";
+import { seedDb } from "./world.js";
 
 const context: AppContext = {
   db: seedDb(),

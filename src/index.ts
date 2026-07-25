@@ -115,7 +115,8 @@ export { contractDigest } from "./contract-digest.js";
 export { defineModel } from "./model.js";
 export type { AnyModel, DefineModelOptions, ModelDefinition, ModelValue } from "./model.js";
 
-export { fieldIssues } from "./standard-schema.js";
+export { fieldIssues, validateStandard } from "./standard-schema.js";
+export type { StandardValidation } from "./standard-schema.js";
 export type {
   StandardSchemaIssue,
   StandardSchemaResult,
