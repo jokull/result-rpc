@@ -19,6 +19,14 @@ Calls issued in the same microtask share one HTTP request. Every batch item
 keeps its own status, decoder, rich-value envelope, and tagged Result. Use
 `fetchTransport` when batching is not wanted; the client API is unchanged.
 
+One deliberate carve-out from "every call resolves `Result`": input that the
+procedure's **own input codec** rejects throws a `TypeError` at the call site
+and never reaches the wire. That is a programmer error — the types prevent it
+for structural codecs, and for runtime-validating codecs (`wire.standard`)
+your form validates the human first (see [Forms and the
+wire](/guides/forms/)). Errors-as-values is a contract about *outcomes of
+operations*, not a net under code the compiler already rejects.
+
 The direct client is the honest base: it always resolves the complete union.
 Narrowing is a property of where a call is *rendered*, and the direct client
 is not rendered anywhere, so it never subtracts anything.

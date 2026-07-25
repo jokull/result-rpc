@@ -48,3 +48,28 @@ expect(events[0]).toEqual(ok({ docId: "doc_1", kind: "renamed", at: new Date("20
 ```
 
 Note the `Date` inside the assertion — it crossed the wire as a `Date`.
+
+## Simulating offline
+
+The connectivity source listens on **`globalThis`** (in a browser that *is*
+`window`; in Bun and Node it is not — do not stub `window`). Its online
+snapshot is seeded from `navigator.onLine` at module import and is
+**event-driven afterwards** — flipping `navigator.onLine` does nothing; you
+dispatch events. Listeners attach lazily when the first subscriber appears
+(creating a runtime or mounting `BoundaryProvider`), so mount first, dispatch
+second:
+
+```tsx
+const runtime = createQueryRuntime({ client })   // attaches listeners
+// ... render under BoundaryProvider ...
+
+await act(async () => {
+  globalThis.dispatchEvent(new Event("offline")) // reads pause, banner flips
+})
+await act(async () => {
+  globalThis.dispatchEvent(new Event("online"))  // held work resumes
+})
+```
+
+Always dispatch a final `online` in test teardown — the source is a module
+singleton, and a test that leaves it offline starves the next one.

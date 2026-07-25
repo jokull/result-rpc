@@ -238,4 +238,68 @@ describe("boundaryShells", () => {
     await act(async () => renderer!.unmount());
     runtime.clear();
   });
+
+  test("a mutation held offline drains on reconnect without being replayed", async () => {
+    const app = rpc.context<{}>();
+    const router = app.router({
+      save: app.procedure().input(wire.object({ note: wire.string })).output(wire.string)
+        .mutation(({ input }) => ok(input.note)),
+    });
+    let attempts = 0;
+    const transport: ClientTransport = {
+      request: async () => {
+        attempts += 1;
+        return { ok: false, reason: "offline" };
+      },
+    };
+    const client = createClient({ router, transport });
+    const { TransportShell, BoundaryProvider, useConnectivity } =
+      boundaryShells({ name: "test-e" });
+
+    let net: { status: string; held: number } | undefined;
+    let mutationState: { mutate: (input: { note: string }) => Promise<unknown>; state: string } | undefined;
+    function Probe() {
+      mutationState = TransportShell.useMutation(client.save, { retry: false }) as never;
+      net = useConnectivity();
+      return null;
+    }
+
+    const runtime = createQueryRuntime({ client });
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(async () => {
+        renderer = create(
+          <ResultRpcProvider runtime={runtime}>
+            <BoundaryProvider>
+              <Probe />
+            </BoundaryProvider>
+          </ResultRpcProvider>,
+        );
+        await settle();
+      });
+      await act(async () => {
+        await mutationState!.mutate({ note: "while offline" }).catch(() => undefined);
+        await settle();
+      });
+      // claimed and held: projects idle, banner shows degraded with one waiting
+      expect(mutationState?.state).toBe("idle");
+      expect(net?.status).toBe("degraded");
+      expect(net?.held).toBe(1);
+      expect(attempts).toBe(1);
+
+      await act(async () => {
+        globalThis.dispatchEvent(new Event("online"));
+        await settle();
+      });
+      // the arc ends: holdings drain, banner clears — and the side effect
+      // was NOT fired again
+      expect(net?.held).toBe(0);
+      expect(net?.status).toBe("online");
+      expect(attempts).toBe(1);
+      await act(async () => renderer!.unmount());
+    } finally {
+      globalThis.dispatchEvent(new Event("online"));
+      runtime.clear();
+    }
+  });
 });

@@ -29,3 +29,13 @@ with its own tests:
    severity-routed server captures, and a defect whose captured exception
    carries the same incident id the client received — correlation with no
    request-id plumbing.
+7. **07-tracker** — the whole surface as one real app, built *blind* by an
+   engineer working from the docs alone (its `FRICTION.md` is the honest
+   log). A team issue tracker: session layer, entity models with the
+   zero-refetch assign patch and a `touch` cascade, declared invalidation,
+   optimistic create with client-minted ids, the three-state connection
+   banner with offline pause → auto-resume proven by request counters,
+   `gen`/`tryPromise` composition collapsed at the procedure boundary, a
+   subscription feed, and `wire.standard` + `fieldIssues` — including the
+   loose-client test that demonstrates the stale-window field-projection
+   flow.

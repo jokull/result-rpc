@@ -63,6 +63,7 @@ export type {
   FetchState,
   MutationOptions,
   MutationState,
+  QueryCache,
   QueryOptions,
   QueryRuntime,
   QueryState,
@@ -183,8 +184,17 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   ];
   const runtime = useRuntime();
   const inputKey = runtime.cache.key(procedure, input)[1];
+  // Options are read through a ref so inline objects (and inline retry
+  // functions) never recreate the observer — the current render's values win.
+  const queryOptionsRef = useRef(options);
+  queryOptionsRef.current = options;
   const observer = useMemo(
-    () => runtime.observe(procedure, input, options),
+    () => runtime.observe(procedure, input, {
+      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+      ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
+      ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
+      get retry() { return queryOptionsRef.current.retry; },
+    } as QueryOptions<ProcedureClientError<TProcedureClient>>),
     [
       runtime,
       procedure,
@@ -192,7 +202,6 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
       options.enabled,
       options.staleTime,
       options.gcTime,
-      options.retry,
     ],
   );
   useEffect(() => () => observer.destroy(), [observer]);
@@ -273,18 +282,32 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
   ProcedureClientError<TProcedureClient>
 > => {
   const runtime = useRuntime();
+  // The observer is created once per (runtime, procedure); every option is
+  // read through a ref at use time. Inline options objects — the way React
+  // codebases naturally write them — must never resubscribe or loop.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   const observer = useMemo(
-    () => runtime.mutation(procedure, options),
-    [
-      runtime,
-      procedure,
-      options.retry,
-      options.optimistic,
-      options.onSuccess,
-      options.onFailure,
-      options.onCancel,
-      options.onSettled,
-    ],
+    () => runtime.mutation(procedure, {
+      get retry() { return optionsRef.current.retry; },
+      optimistic: (input, cache) =>
+        (optionsRef.current.optimistic
+          ? optionsRef.current.optimistic(input, cache)
+          : undefined) as TContext,
+      onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
+      onFailure: (error, input, context, cache) =>
+        optionsRef.current.onFailure?.(error, input, context, cache),
+      onCancel: (input, context, cache) =>
+        optionsRef.current.onCancel?.(input, context, cache),
+      onSettled: (result, input, context, cache) =>
+        optionsRef.current.onSettled?.(result, input, context, cache),
+    } as MutationOptions<
+      ProcedureClientInput<TProcedureClient>,
+      ProcedureClientOutput<TProcedureClient>,
+      ProcedureClientError<TProcedureClient>,
+      TContext
+    >),
+    [runtime, procedure],
   );
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(
@@ -310,9 +333,15 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
     return result;
   });
   const notifyClaim = useClaimNotifier(procedure);
+  // On shell resume a held mutation RESETS instead of replaying: the failure
+  // was already delivered to the caller as the claimed rejection, and firing
+  // a side effect again is never the shell's call. Resetting ends the pause
+  // arc so holdings (and the connection banner) drain on reconnect.
+  const [resetHeld] = useState(() => () => stateRef.current.reset());
   const claim = useAmbientClaim(
     state.state === "failure" ? (state.error as AnyTaggedError) : undefined,
     notifyClaim,
+    resetHeld,
   );
   if (!claim) return { ...state, mutate };
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire } from "../index.js";
 import { createClient } from "../client/client.js";
@@ -142,6 +142,83 @@ describe("React bindings", () => {
     expect(subscriptionState?.connection).toBe("closed");
     expect(subscriptionState?.result).toEqual(ok("event:one"));
     expect(JSON.stringify(renderer?.toJSON())).toContain("suspense");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("inline hook options never loop, and the current render's callbacks win", async () => {
+    const runtime = createQueryRuntime({ client });
+    const successCalls: string[] = [];
+    let mutationState: MutationState<{ readonly title: string }, string, RenameFailure> | undefined;
+    let rerender: () => void = () => undefined;
+
+    function Probe({ generation }: { generation: number }) {
+      // Inline options object with an inline callback — new identity every
+      // render, exactly how React codebases write it. Must not resubscribe,
+      // must not "Maximum update depth exceeded", and the latest render's
+      // callback is the one that fires.
+      mutationState = useResultMutation(client.demo.rename, {
+        onSuccess: () => void successCalls.push(`gen-${generation}`),
+      });
+      // Inline query options too (retry as an inline function).
+      useResultQuery(client.demo.value, { id: "one" }, { retry: () => false });
+      return null;
+    }
+    function Host() {
+      const [generation, setGeneration] = useState(0);
+      rerender = () => setGeneration((n) => n + 1);
+      return <Probe generation={generation} />;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<ResultRpcProvider runtime={runtime}><Host /></ResultRpcProvider>);
+      await settle();
+    });
+    await act(async () => {
+      rerender();
+      rerender();
+      await settle();
+    });
+    await act(async () => {
+      await mutationState!.mutate({ title: "renamed" });
+      await settle();
+    });
+    expect(successCalls).toEqual(["gen-2"]);
+    expect(mutationState?.state).toBe("success");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("a programmer error travels by throw: mutate rejects, state resets to idle", async () => {
+    const runtime = createQueryRuntime({ client });
+    const failures: unknown[] = [];
+    let mutationState: MutationState<{ readonly title: string }, string, RenameFailure> | undefined;
+
+    function Probe() {
+      mutationState = useResultMutation(client.demo.rename, {
+        onFailure: (failure) => void failures.push(failure),
+      });
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<ResultRpcProvider runtime={runtime}><Probe /></ResultRpcProvider>);
+      await settle();
+    });
+    let rejection: unknown;
+    await act(async () => {
+      // Input the client's own codec rejects — never reaches the wire.
+      await mutationState!.mutate({ wrong: true } as never).catch((reason: unknown) => {
+        rejection = reason;
+      });
+      await settle();
+    });
+    expect(rejection).toBeInstanceOf(TypeError);
+    // Not laundered into the tagged channel: no failure state, no onFailure.
+    expect(mutationState?.state).toBe("idle");
+    expect(failures).toEqual([]);
     await act(async () => renderer?.unmount());
     runtime.clear();
   });

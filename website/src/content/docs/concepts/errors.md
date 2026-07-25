@@ -39,6 +39,11 @@ export const docErrors = defineErrors("doc", {
 docErrors.notFound({ docId })  // { _tag: "doc/not-found", data: { docId } }
 ```
 
+The key→tag rule is mechanical: camelCase keys become kebab-case tag
+segments under the namespace — `notFound` → `doc/not-found`, `titleTaken` →
+`doc/title-taken`. Shells claim by tag and tests assert tags, so knowing the
+derivation beats guessing it at a distance.
+
 The returned map is the shape everything else accepts: procedure `.errors()`,
 middleware `.errors()`, and shell `claims:` all take a map of definitions, so
 one exported map is declared once and reused on both sides of the wire.

@@ -12,6 +12,7 @@ An escalation ladder. Each rung is a self-contained app with runtime tests
 | `04-router` | docs + TanStack Router | routes-as-shells by hand: module-level shells via `procedure:` selectors, `onError` navigation, loaders prefetching the layer cascade |
 | `05-router-glue` | docs on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — proof no router package is needed |
 | `06-sentry` | billing form + Sentry stub | all four observability taps into one sink: wire breadcrumbs, claim trail with owner, severity-routed server capture, incident-id correlation across the wire |
+| `07-tracker` | team issue tracker | the whole surface as one app, built blind from the docs (see its `FRICTION.md`): session layer, entity patch + `touch` cascade, `.affects`, optimistic create with client-minted ids, connection banner + offline resume, `gen`/`tryPromise` collapse, subscription feed, `wire.standard` + `fieldIssues` loose-client flow |
 
 Rung 4 reuses rung 3's server and proves the router mapping: pathless layout
 routes mount the session and viewer shells, the doc route claims

@@ -405,6 +405,24 @@ describe("unary client and server", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe("client/protocol-violation");
   });
+
+  test("the proxy is inert under introspection: only router paths mint nodes", () => {
+    const client = createClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+    });
+    const probe = client as unknown as Record<string, unknown>;
+    // Dev tooling (react-test-renderer prop logging, console.log, JSON views)
+    // walks these — none of them may mint a callable that throws later.
+    expect(probe.valueOf).toBeUndefined();
+    expect(probe.toJSON).toBeUndefined();
+    expect(probe.then).toBeUndefined();
+    const procedure = client.value.byId as unknown as Record<string, unknown>;
+    expect(procedure.name).toBeUndefined();
+    expect(procedure.valueOf).toBeUndefined();
+    expect((procedure as { $kind?: string }).$kind).toBe("query");
+    expect(() => JSON.stringify(client)).not.toThrow();
+  });
 });
 
 describe("observability events", () => {

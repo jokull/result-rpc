@@ -54,3 +54,22 @@ the input — it usually does — map the keys where the shapes diverge, in the
 same place you already map values (`toInput` above). The mapping is the
 honest artifact: it is where "what the human edits" and "what the wire
 carries" meet, and no bridge should hide it.
+
+**When does `server/bad-request` actually happen?** Not from your own
+same-version client submitting a bad value — the client encodes input through
+the same codec before sending, and input the codec rejects throws a
+`TypeError` at the call site (a programmer error; it never reaches the wire).
+The wire rejection arc exists for callers whose codec disagrees with the
+server's: skewed clients mid-deploy, hand-rolled HTTP callers, other
+services. So the division of labor is: **your form validates the human**
+(run the Standard Schema directly — that is what it is for) before `mutate`
+is ever called; `fieldIssues` is the safety net for the wire's own
+validation, not your form's primary path.
+
+**Mind the DefectShell.** `boundaryShells()`'s defect ring claims
+`server/bad-request` — under the recommended onion it escalates to the error
+boundary and leaves the unions components see. A form that branches on it
+must mount outside the defect shell's subtree (or catch the `claimed`
+rejection with `isClaimed`). If your form validates the human first, this
+rarely matters — but it is a positional fact worth knowing before you wonder
+where the tag went.

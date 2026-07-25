@@ -65,8 +65,9 @@ export interface ShellHoldings<TError extends AnyTaggedError> {
   /**
    * Retries every operation this shell is holding — the end of the pause arc:
    * claim, hold, fix the condition (re-authenticate, reconnect), resume.
-   * Queries refetch and subscriptions reconnect; held mutations stay idle,
-   * because replaying a side effect is never the shell's call to make.
+   * Queries refetch and subscriptions reconnect; held mutations reset to
+   * idle — their failure was already delivered to the caller as the claimed
+   * rejection, and replaying a side effect is never the shell's call to make.
    */
   readonly resume: () => void;
 }

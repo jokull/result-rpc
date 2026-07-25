@@ -49,6 +49,12 @@ createClient({ contract, contractVersion: BUILD_SHA, ... })
 Detection is failure-gated, so the coarser stamp is safe: matching successful
 calls are never reclassified.
 
+`contractVersion` *replaces* the structural digest entirely — it does not
+combine with it. Matching version strings on both sides suppress stale
+reclassification even when the underlying shapes differ, which is exactly
+the escape hatch a deliberately loose client (a canary, a test double, a
+tolerant reader during an expand window) needs.
+
 Deploys then stay boring the same way database migrations do: **expand, then
 contract**. Ship additive changes first (new procedures, new tags — old
 clients never call what they don't know about), and make removals and

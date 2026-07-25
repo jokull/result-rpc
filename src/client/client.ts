@@ -561,14 +561,13 @@ const createProxy = (
       if (typeof property !== "string") return undefined;
       const candidate = [...path, property];
       const candidatePath = candidate.join(".");
-      // Await-safety: the thenable check on `await client` (or any promise
-      // resolving to a proxy node) reads `.then`. Only follow the property if
-      // it actually leads somewhere in the router.
-      if (property === "then") {
-        const leadsSomewhere = router.procedures.has(candidatePath)
-          || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
-        if (!leadsSomewhere) return undefined;
-      }
+      // Only mint a sub-proxy for paths that actually lead somewhere in the
+      // router. Everything else — `then` (await-safety), `valueOf`, `toJSON`,
+      // `name`, dev-tooling introspection — reads `undefined` instead of a
+      // callable that throws later inside whoever poked at it.
+      const leadsSomewhere = router.procedures.has(candidatePath)
+        || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
+      if (!leadsSomewhere) return undefined;
       return createProxy(router, transport, onEvent, skew, candidate, cache, clientIdentity);
     },
     apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {

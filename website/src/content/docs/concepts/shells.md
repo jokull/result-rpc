@@ -240,7 +240,7 @@ const { latest, affected, resume } = AuthShell.useHeld()
 resume() // every held query refetches; held subscriptions reconnect
 ```
 
-Held mutations stay idle — replaying a side effect is never the shell's call.
+Held mutations reset to idle — their failure already reached the caller as the claimed rejection, and replaying a side effect is never the shell's call. Resetting ends the pause arc, so holdings (and the connection banner) drain on resume.
 
 Layer shells (below) close the loop automatically: when the layer's context
 procedure re-establishes its value (sign back in, invalidate `client.auth.me`),

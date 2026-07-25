@@ -661,18 +661,20 @@ export const createQueryRuntime = <TClient>(
           });
         }
       }
-      const configuredRetry = queryOptions.retry;
-      const retry = configuredRetry === undefined
-        ? (failureCount: number, failure: unknown) =>
-            defaultShouldRetry(definitions, failureCount, failure)
-        : typeof configuredRetry === "function"
-          ? (failureCount: number, failure: unknown) =>
-              isTaggedError(failure)
-              && configuredRetry(
-                failure as ProcedureClientError<TProcedureClient>,
-                failureCount,
-              )
-          : configuredRetry;
+      // Read retry lazily on every attempt — see the mutation counterpart.
+      const retry = (failureCount: number, failure: unknown) => {
+        const configured = queryOptions.retry;
+        if (configured === undefined) {
+          return defaultShouldRetry(definitions, failureCount, failure);
+        }
+        if (typeof configured === "function") {
+          return isTaggedError(failure) && configured(
+            failure as ProcedureClientError<TProcedureClient>,
+            failureCount,
+          );
+        }
+        return configured !== false && failureCount < configured;
+      };
       const observerOptions = {
         queryKey: key,
         queryFn: async ({ signal }: { signal: AbortSignal }) => {
@@ -761,15 +763,18 @@ export const createQueryRuntime = <TClient>(
       const declaredWrites: readonly WritesEntry[] =
         (metadata.procedure._def as { writes?: readonly WritesEntry[] }).writes ?? [];
       let activeController: AbortController | undefined;
-      const configuredRetry = mutationOptions.retry;
-      const retry = configuredRetry === undefined
-        ? (failureCount: number, failure: unknown) =>
-            defaultShouldRetry(definitions, failureCount, failure)
-        : typeof configuredRetry === "function"
-          ? (failureCount: number, failure: unknown) =>
-              isTaggedError(failure)
-              && configuredRetry(failure as TError, failureCount)
-          : configuredRetry;
+      // Read retry lazily on every attempt: React callers hand in a fresh
+      // options object per render, and the current value must win.
+      const retry = (failureCount: number, failure: unknown) => {
+        const configured = mutationOptions.retry;
+        if (configured === undefined) {
+          return defaultShouldRetry(definitions, failureCount, failure);
+        }
+        if (typeof configured === "function") {
+          return isTaggedError(failure) && configured(failure as TError, failureCount);
+        }
+        return configured !== false && failureCount < configured;
+      };
 
       let lastTouched: readonly string[] | undefined;
       const observer = new MutationObserver<TOutput, TError, TInput, TContext>(queryClient, {
@@ -814,10 +819,15 @@ export const createQueryRuntime = <TClient>(
         },
         ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
           ? {}
-          : { onError: (failure: TError, input: TInput, context: TContext | undefined) =>
-              isCancelled(failure)
-                ? mutationOptions.onCancel?.(input, context, cache)
-                : mutationOptions.onFailure?.(failure, input, context, cache) }),
+          : { onError: (failure: TError, input: TInput, context: TContext | undefined) => {
+              if (isCancelled(failure)) {
+                return mutationOptions.onCancel?.(input, context, cache);
+              }
+              // Untagged failures are programmer errors travelling by throw —
+              // they never enter the tagged callback channel.
+              if (!isTaggedError(failure)) return undefined;
+              return mutationOptions.onFailure?.(failure, input, context, cache);
+            } }),
         ...(
           mutationOptions.onSettled === undefined && mutationOptions.onCancel === undefined
             ? {}
@@ -826,7 +836,7 @@ export const createQueryRuntime = <TClient>(
               failure: TError | null,
               input: TInput,
               context: TContext | undefined,
-            ) => failure !== null && isCancelled(failure)
+            ) => failure !== null && (isCancelled(failure) || !isTaggedError(failure))
               ? undefined
               : mutationOptions.onSettled?.(
                   failure === null ? ok(value as TOutput) : err(failure),
@@ -883,7 +893,11 @@ export const createQueryRuntime = <TClient>(
               return { ...controls, state: "idle" };
             }
             if (!isTaggedError(observed.error)) {
-              throw new TypeError("Mutation engine received an untagged failure");
+              // A programmer error — e.g. input the client's own codec
+              // rejects — travels by throw: the mutate() promise already
+              // rejected with it. Projecting a failure state would launder
+              // it into the tagged channel; reset to idle instead.
+              return { ...controls, state: "idle" };
             }
             return {
               ...controls,

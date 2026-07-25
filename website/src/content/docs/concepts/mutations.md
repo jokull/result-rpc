@@ -38,6 +38,12 @@ function RenameDoc({ id }: { id: string }) {
 }
 ```
 
+Write the options inline, exactly as above. The hook reads them through a
+ref: the observer is created once per procedure, inline objects and inline
+callbacks never resubscribe it, and the current render's callbacks are the
+ones that fire. (`MutationOptions` and `QueryCache` are exported from
+`result-rpc/react` when you want to hoist an options object anyway.)
+
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
 `onFailure` or the returned state, and the `mutate` promise rejects with the
 distinguishable `claimed` signal, as described under

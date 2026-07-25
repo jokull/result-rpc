@@ -69,7 +69,9 @@ The pieces, in the order this document builds them:
 2. **Middleware and services** — request context that grows as middleware adds
    guarantees; process-lifetime resources resolved once as a dependency graph.
 3. **A client** whose every call resolves `Result<T, ExactUnion>` — never a
-   thrown transport error on the side.
+   thrown transport error on the side. (One deliberate carve-out: input the
+   procedure's own codec rejects throws at the call site — a programmer
+   error, not a wire outcome.)
 4. **A Result-native query cache** — caching, retries, optimistic updates,
    SSR, all speaking Result.
 5. **Shells** — error boundaries for values: providers that own classes of
@@ -1019,7 +1021,7 @@ const { latest, affected, resume } = AuthShell.useHeld()
 resume() // every held query refetches; held subscriptions reconnect
 ```
 
-Held mutations stay idle — replaying a side effect is never the shell's call.
+Held mutations reset to idle — their failure already reached the caller as the claimed rejection, and replaying a side effect is never the shell's call. Resetting ends the pause arc, so holdings (and the connection banner) drain on resume.
 
 Layer shells (below) close the loop automatically: when the layer's context
 procedure re-establishes its value (sign back in, invalidate `client.auth.me`),
@@ -1533,6 +1535,15 @@ same place you already map values (`toInput` above). The mapping is the
 honest artifact: it is where "what the human edits" and "what the wire
 carries" meet, and no bridge should hide it.
 
+Note when this arc actually fires: your own same-version client never sends
+codec-invalid input — the encode preflight throws a programmer error at the
+call site instead. `server/bad-request` arrives from callers whose codec
+disagrees with the server's (skewed clients mid-deploy, hand-rolled HTTP).
+So the form validates the human first — run the Standard Schema directly —
+and `fieldIssues` is the wire's safety net, not the form's primary path.
+Also positional: the built-in defect shell claims `server/bad-request`, so a
+form that branches on it mounts outside that shell's subtree.
+
 ## Subscriptions keep lifecycle separate from failure
 
 Declare the stream in the shared contract and attach its generator only on the
@@ -2008,6 +2019,16 @@ with its own tests:
    severity-routed server captures, and a defect whose captured exception
    carries the same incident id the client received — correlation with no
    request-id plumbing.
+7. **07-tracker** — the whole surface as one real app, built *blind* by an
+   engineer working from the docs alone (its `FRICTION.md` is the honest
+   log). A team issue tracker: session layer, entity models with the
+   zero-refetch assign patch and a `touch` cascade, declared invalidation,
+   optimistic create with client-minted ids, the three-state connection
+   banner with offline pause → auto-resume proven by request counters,
+   `gen`/`tryPromise` composition collapsed at the procedure boundary, a
+   subscription feed, and `wire.standard` + `fieldIssues` — including the
+   loose-client test that demonstrates the stale-window field-projection
+   flow.
 
 ## Design and verification
 
