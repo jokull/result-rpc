@@ -314,6 +314,29 @@ const defaultShouldRetry = (
   return (retry === "transient" || retry === "after") && failureCount < 3;
 };
 
+/**
+ * Mutations get a stricter default: a mutation whose connection died
+ * MID-FLIGHT is ambiguous — the server may have processed it, and a blind
+ * retry is the double-side-effect bug. Only two failures are safe by
+ * default:
+ * - `client/offline`: the transport short-circuits BEFORE sending, so the
+ *   request provably never left the client;
+ * - policy `retry: "after"`: the server responded and explicitly scheduled
+ *   the retry, so it chose not to process the attempt.
+ * Everything else (network-failure, timeout, 5xx) surfaces immediately.
+ * Callers with idempotent mutations can opt back in via `retry:`;
+ * idempotency keys are the roadmap for making full retry the default.
+ */
+const defaultShouldRetryMutation = (
+  definitions: ErrorDefinitionMap,
+  failureCount: number,
+  failure: unknown,
+): boolean => {
+  if (!isTaggedError(failure) || failureCount >= 3) return false;
+  if (failure._tag === "client/offline") return getOnlineSnapshot();
+  return definitionFor(definitions, failure)?.policy.retry === "after";
+};
+
 const defaultRetryDelay = (
   definitions: ErrorDefinitionMap,
   failureCount: number,
@@ -886,7 +909,7 @@ export const createQueryRuntime = <TClient>(
       const retry = (failureCount: number, failure: unknown) => {
         const configured = mutationOptions.retry;
         if (configured === undefined) {
-          return defaultShouldRetry(definitions, failureCount, failure);
+          return defaultShouldRetryMutation(definitions, failureCount, failure);
         }
         if (typeof configured === "function") {
           return isTaggedError(failure) && configured(failure as TError, failureCount);

@@ -764,3 +764,66 @@ describe("offline anti-thrash", () => {
     }
   });
 });
+
+describe("mutation retry safety", () => {
+  test("a mutation NEVER retries an ambiguous mid-flight failure by default", async () => {
+    let attempts = 0;
+    const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
+    const transport: ClientTransport = {
+      request: async (...args) => {
+        attempts += 1;
+        if (attempts === 1) return { ok: false, reason: "network" };
+        return local.request(...args);
+      },
+    };
+    const client = createClient({ router, transport });
+    const runtime = createQueryRuntime({ client });
+    const mutation = runtime.mutation(client.value.rename);
+    const result = await mutation.getCurrentState().mutate({ value: "available" });
+    // The server may have processed the first attempt — surfacing beats
+    // double-firing the side effect. One attempt, honest failure.
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error._tag).toBe("client/network-failure");
+    expect(attempts).toBe(1);
+    mutation.destroy();
+    runtime.clear();
+  });
+
+  test("a server-scheduled retry (policy \"after\") DOES retry: the server chose not to process", async () => {
+    const Busy = error({
+      tag: "retrysafety/busy",
+      data: wire.object({ retryAfterMs: wire.number }),
+      httpStatus: 503,
+      retry: "after",
+    });
+    const app2 = rpc.context<{ state: { calls: number } }>();
+    const save = app2.procedure()
+      .input(wire.object({ value: wire.string }))
+      .output(wire.string)
+      .errors({ Busy })
+      .mutation(({ input, context, errors }) => {
+        context.state.calls += 1;
+        return context.state.calls === 1
+          ? err(errors.Busy({ retryAfterMs: 5 }))
+          : ok(input.value);
+      });
+    const busyRouter = app2.router({ save });
+    const state = { calls: 0 };
+    const busyHandler = createFetchHandler({ router: busyRouter, createContext: () => ({ state }) });
+    const client = createClient({
+      router: busyRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          busyHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client });
+    const mutation = runtime.mutation(client.save);
+    const result = await mutation.getCurrentState().mutate({ value: "saved" });
+    expect(result.ok).toBe(true);
+    expect(state.calls).toBe(2);
+    mutation.destroy();
+    runtime.clear();
+  });
+});

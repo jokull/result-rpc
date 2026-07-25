@@ -199,7 +199,10 @@ export const getClientIdentity = (value: object): object | undefined =>
 const clientFailure = (outcome: Exclude<Awaited<ReturnType<ClientTransport["request"]>>, { ok: true }>) => {
   switch (outcome.reason) {
     case "offline": return ClientOffline({});
-    case "network": return ClientNetworkFailure({ retryable: true });
+    // A fetch rejection is AMBIGUOUS — DNS failure (never sent) and a
+    // connection dropped mid-response (sent, maybe processed) look the same.
+    // `retryable` means "provably never left the client", so: false.
+    case "network": return ClientNetworkFailure({ retryable: false });
     case "timeout": return ClientTimeout({ timeoutMs: outcome.timeoutMs });
   }
 };
@@ -353,6 +356,7 @@ export const getTouchedEntities = (
 
 const retryDelayFor = (
   procedure: ClientProcedure,
+  kind: "query" | "mutation",
   failure: AnyTaggedError,
   attempt: number,
 ): number | undefined => {
@@ -374,6 +378,14 @@ const retryDelayFor = (
   // recovery path is reconnect, not a retry timer.
   if (failure._tag === "client/offline" && !getOnlineSnapshot()) return undefined;
   if (!definition || definition.policy.retry === "never" || attempt >= 3) return undefined;
+  // A mutation that died mid-flight is ambiguous — the server may have
+  // processed it. Only provably-unsent (offline short-circuit) and
+  // server-scheduled (retry: "after") failures retry for mutations.
+  if (
+    kind === "mutation"
+    && failure._tag !== "client/offline"
+    && definition.policy.retry !== "after"
+  ) return undefined;
   if (definition.policy.retry === "after") {
     const retryAfterMs = failure.data !== null
       && typeof failure.data === "object"
@@ -419,7 +431,7 @@ const callProcedure = async (
       return result;
     }
     const delay = options?.retry === "from-error-policy"
-      ? retryDelayFor(procedure, result.error, attempt)
+      ? retryDelayFor(procedure, kind, result.error, attempt)
       : undefined;
     if (delay === undefined) {
       onEvent?.({
@@ -512,7 +524,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
         }
       } catch (failure) {
         if (isCancelled(failure)) throw failure;
-        yield err(ClientNetworkFailure({ retryable: true })) as unknown as Result<T, E>;
+        yield err(ClientNetworkFailure({ retryable: false })) as unknown as Result<T, E>;
       } finally {
         reader.releaseLock();
       }

@@ -137,6 +137,21 @@ export const RateLimited = error({
 })
 ```
 
+
+**Mutations are stricter by default.** A query retries `transient` and
+`after` tags freely — reads are idempotent. A mutation whose connection
+died mid-flight is *ambiguous*: the server may have processed it, and a
+blind retry is the double-side-effect bug. So by default a mutation retries
+only two failures: `client/offline` (the transport short-circuits before
+sending — the request provably never left the client) and policy
+`retry: "after"` (the server responded and scheduled the retry, so it chose
+not to process the attempt). Everything else — network failure, timeout,
+5xx — surfaces immediately. Idempotent mutations can opt back in with
+`retry:`; idempotency keys are the roadmap item that will make full retry
+the safe default. The `retryable` field on `client/network-failure` means
+"provably never left the client" — and a fetch rejection cannot prove
+that, so it is honest and `false`.
+
 The query runtime owns query retry. A transport retry loop does not silently
 run underneath it. Direct calls can opt into the same policy:
 

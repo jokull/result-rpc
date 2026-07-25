@@ -64,11 +64,20 @@ const streamProcedureResponse = (
   input: unknown,
   context: unknown,
   path: string,
+  callerSignal: AbortSignal,
   onInternalError?: (event: InternalErrorEvent) => void,
 ): Response => {
+  // The generator's lifetime signal: aborts when the request aborts (client
+  // disconnected) or when the response stream is cancelled — so a handler
+  // awaiting slow upstream work stops with the caller instead of running on.
+  const lifetime = new AbortController();
+  const abortLifetime = () => lifetime.abort();
+  if (callerSignal.aborted) abortLifetime();
+  else callerSignal.addEventListener("abort", abortLifetime, { once: true });
   const iterator = executeSubscription(procedure, input, {
     context,
     procedurePath: path,
+    signal: lifetime.signal,
     ...(onInternalError === undefined ? {} : { onInternalError }),
   })[Symbol.asyncIterator]();
   const encoder = new TextEncoder();
@@ -115,6 +124,7 @@ const streamProcedureResponse = (
       }
     },
     async cancel() {
+      abortLifetime();
       await iterator.return?.(undefined as never);
     },
   });
@@ -366,6 +376,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           decodedInput.value,
           context,
           envelope.path,
+          request.signal,
           options.onInternalError,
         );
       }
@@ -395,6 +406,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
       const result = await executeProcedure(procedure, decodedInput.value, {
         context,
         procedurePath: item.path,
+        signal: request.signal,
         onTouch: (key) => void touched.push(key),
         ...(options.onInternalError === undefined
           ? {}

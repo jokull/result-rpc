@@ -29,7 +29,16 @@ export interface ExecutionOptions<TRootContext> {
   readonly onInternalError?: (event: InternalErrorEvent) => void;
   /** Receives `model:id` keys the handler declared via `touch()`. */
   readonly onTouch?: (entityKey: string) => void;
+  /**
+   * Aborts when the caller is gone — the request aborted, the client
+   * disconnected from a stream. Handlers pass it to their own IO so
+   * in-flight work stops with the caller.
+   */
+  readonly signal?: AbortSignal;
 }
+
+/** Fallback for executions with no caller lifetime (tests, jobs). */
+const neverAborted = new AbortController().signal;
 
 declare const middlewareNextResult: unique symbol;
 type MiddlewareNextResult = Result<unknown, AnyTaggedError> & {
@@ -177,6 +186,13 @@ export interface ProcedureHandlerArgs<
    * `model:id` keys (never values) and invalidates by identity client-side.
    */
   readonly touch: (model: AnyModel, id: ModelKeyInput) => void;
+  /**
+   * Aborts when the caller is gone — the HTTP request aborted, or the
+   * client disconnected from a subscription stream. Pass it to fetch/db
+   * calls so abandoned work stops; never aborted in environments that
+   * cannot observe disconnects.
+   */
+  readonly signal: AbortSignal;
 }
 
 /**
@@ -830,6 +846,7 @@ export const executeProcedure = async <
         input: decodedInput.value,
         errors: procedure._def.definitions,
         touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
+        signal: options.signal ?? neverAborted,
       });
     } catch (cause) {
       return internalFailure("handler", cause, options);
@@ -951,14 +968,30 @@ export async function* executeSubscription<
       input: decodedInput.value,
       errors: procedure._def.definitions,
       touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
+        signal: options.signal ?? neverAborted,
     });
   } catch (cause) {
     yield internalFailure("handler", cause, options);
     return;
   }
 
+  // Drive the producer with an explicit iterator so the caller-lifetime
+  // signal can close it DIRECTLY. When the consumer walks away while the
+  // producer is parked at a yield with no next() outstanding, nothing else
+  // would ever resume it — this listener is what runs its `finally`.
+  const inner = iterable[Symbol.asyncIterator]();
+  const closeInner = () => {
+    void Promise.resolve(inner.return?.(undefined as never)).catch(() => undefined);
+  };
+  if (options.signal) {
+    if (options.signal.aborted) closeInner();
+    else options.signal.addEventListener("abort", closeInner, { once: true });
+  }
   try {
-    for await (const result of iterable) {
+    while (true) {
+      const step = await inner.next();
+      if (step.done) return;
+      const result = step.value;
       if (result.ok) {
         const encoded = procedure._def.output.encode(result.value);
         if (!encoded.ok) {
@@ -988,6 +1021,9 @@ export async function* executeSubscription<
     }
   } catch (cause) {
     yield internalFailure("handler", cause, options);
+  } finally {
+    options.signal?.removeEventListener("abort", closeInner);
+    closeInner();
   }
 }
 
