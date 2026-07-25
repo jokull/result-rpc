@@ -55,6 +55,14 @@ reclassification even when the underlying shapes differ, which is exactly
 the escape hatch a deliberately loose client (a canary, a test double, a
 tolerant reader during an expand window) needs.
 
+The whole mid-deploy arc is pinned as a runnable test in
+`examples/07-tracker`: a deliberately *stale-shaped* client — the old
+deploy, no schema preflight — sends a bad request across the real wire, the
+server's input decode rejects it, and `server/bad-request` comes back
+projected onto form fields with `fieldIssues`, asserted at exactly one wire
+call. The failure mode every production app has during a rollout, and the
+one no framework's docs can usually demonstrate.
+
 Deploys then stay boring the same way database migrations do: **expand, then
 contract**. Ship additive changes first (new procedures, new tags — old
 clients never call what they don't know about), and make removals and

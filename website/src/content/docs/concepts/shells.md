@@ -56,7 +56,8 @@ with `boundaryShells({ autoResume: false })`.
 Accurate connectivity is also the anti-thrash lever. While the browser is
 offline, **reads pause** — fetches and retries wait as `fetch: "paused"`
 instead of failing instantly and burning the retry budget, and the engine
-continues them on reconnect. **Writes stay loud** — a mutation attempted
+continues them on reconnect (pinned by test: a query mounted while offline
+makes **zero** wire calls, then exactly one on reconnect). **Writes stay loud** — a mutation attempted
 offline fails once with `client/offline` for its owner to decide; the
 framework never queues a side effect for silent later delivery. Offline
 failures are never retried on a timer while the browser still reports
@@ -109,10 +110,10 @@ Mount them as an onion:
 
 ```tsx
 <ResultRpcProvider runtime={runtime}>
-  <BoundaryProvider>
+  <BoundaryProvider>            {/* transport pauses · defects escalate · stale reloads */}
     <ErrorBoundary fallback={<AppBroken />}>
       <AuthShell.Provider session={session} signOut={signOut}>
-        <Routes />
+        <Routes />              {/* components below see ONLY their domain errors */}
       </AuthShell.Provider>
     </ErrorBoundary>
   </BoundaryProvider>
@@ -135,6 +136,24 @@ export function DocPage({ id }: { id: string }) {
   }
 }
 ```
+
+And when a query's domain union is *empty* — a list that declares no domain
+errors, rendered under a complete onion — the failure branch becomes a
+compile-time certificate that the owners are mounted:
+
+```tsx
+switch (issues.state) {
+  case "pending": return <p>Loading issues…</p>
+  case "success": return <IssueRows issues={issues.value} />
+  case "failure":
+    // transport, defect, stale, and auth are all claimed above; nothing
+    // domain remains. This line compiles ONLY while that is true — remove
+    // a provider from the tree and the build fails, right here.
+    return issues.error satisfies never
+}
+```
+
+No test can make that claim. The type checker makes it on every build.
 
 ## How claiming actually works
 

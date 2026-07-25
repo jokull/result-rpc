@@ -837,7 +837,8 @@ with `boundaryShells({ autoResume: false })`.
 Accurate connectivity is also the anti-thrash lever. While the browser is
 offline, **reads pause** — fetches and retries wait as `fetch: "paused"`
 instead of failing instantly and burning the retry budget, and the engine
-continues them on reconnect. **Writes stay loud** — a mutation attempted
+continues them on reconnect (pinned by test: a query mounted while offline
+makes **zero** wire calls, then exactly one on reconnect). **Writes stay loud** — a mutation attempted
 offline fails once with `client/offline` for its owner to decide; the
 framework never queues a side effect for silent later delivery. Offline
 failures are never retried on a timer while the browser still reports
@@ -890,10 +891,10 @@ Mount them as an onion:
 
 ```tsx
 <ResultRpcProvider runtime={runtime}>
-  <BoundaryProvider>
+  <BoundaryProvider>            {/* transport pauses · defects escalate · stale reloads */}
     <ErrorBoundary fallback={<AppBroken />}>
       <AuthShell.Provider session={session} signOut={signOut}>
-        <Routes />
+        <Routes />              {/* components below see ONLY their domain errors */}
       </AuthShell.Provider>
     </ErrorBoundary>
   </BoundaryProvider>
@@ -916,6 +917,24 @@ export function DocPage({ id }: { id: string }) {
   }
 }
 ```
+
+And when a query's domain union is *empty* — a list that declares no domain
+errors, rendered under a complete onion — the failure branch becomes a
+compile-time certificate that the owners are mounted:
+
+```tsx
+switch (issues.state) {
+  case "pending": return <p>Loading issues…</p>
+  case "success": return <IssueRows issues={issues.value} />
+  case "failure":
+    // transport, defect, stale, and auth are all claimed above; nothing
+    // domain remains. This line compiles ONLY while that is true — remove
+    // a provider from the tree and the build fails, right here.
+    return issues.error satisfies never
+}
+```
+
+No test can make that claim. The type checker makes it on every build.
 
 ### How claiming actually works
 
@@ -1284,6 +1303,14 @@ createClient({ contract, contractVersion: BUILD_SHA, ... })
 Detection is failure-gated, so the coarser stamp is safe: matching successful
 calls are never reclassified.
 
+The whole mid-deploy arc is pinned as a runnable test in
+`examples/07-tracker`: a deliberately *stale-shaped* client — the old
+deploy, no schema preflight — sends a bad request across the real wire, the
+server's input decode rejects it, and `server/bad-request` comes back
+projected onto form fields with `fieldIssues`, asserted at exactly one wire
+call. The failure mode every production app has during a rollout, and the
+one no framework's docs can usually demonstrate.
+
 Deploys then stay boring the same way database migrations do: **expand, then
 contract**. Ship additive changes first (new procedures, new tags — old
 clients never call what they don't know about), and make removals and
@@ -1406,6 +1433,18 @@ const setAvatar = app.procedure()
 The mutation returned a `user` entity; the cache knows every query whose
 result contains `user:u_1`; each one is patched in place. That is the whole
 feature: **automatic invalidation and automatic updates by model + id**.
+
+On the client, the full extent of the wiring is the mutation call itself:
+
+```tsx
+<select onChange={(e) => void assign.mutate({ issueId, assigneeId: e.target.value })}>
+```
+
+The list row, the detail header, and this very select all update in place.
+The flagship test in `examples/07-tracker` asserts it with per-procedure
+request counters, not screenshots: after the mutation settles, the counts
+equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
+world, zero refetches anywhere.
 
 A model is to values what an error definition is to failures — a named,
 shared declaration. `Doc.codec` is the canonical shape; `Doc.pick("id",

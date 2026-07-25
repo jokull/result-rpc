@@ -24,6 +24,18 @@ The mutation returned a `user` entity; the cache knows every query whose
 result contains `user:u_1`; each one is patched in place. That is the whole
 feature: **automatic invalidation and automatic updates by model + id**.
 
+On the client, the full extent of the wiring is the mutation call itself:
+
+```tsx
+<select onChange={(e) => void assign.mutate({ issueId, assigneeId: e.target.value })}>
+```
+
+The list row, the detail header, and this very select all update in place.
+The flagship test in `examples/07-tracker` asserts it with per-procedure
+request counters, not screenshots: after the mutation settles, the counts
+equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
+world, zero refetches anywhere.
+
 A model is to values what an error definition is to failures — a named,
 shared declaration. `Doc.codec` is the canonical shape; `Doc.pick("id",
 "title")` declares a projection (the key field is mandatory — an entity
