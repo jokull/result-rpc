@@ -202,9 +202,7 @@ const AuthShell = defineShell({
 
 declare const useShellQuery: typeof AuthShell.useQuery;
 type ShellState = ReturnType<typeof useShellQuery<typeof client.example.procedure>>;
-type ShellError = ShellState extends { readonly result: infer R }
-  ? R extends { readonly ok: false; readonly error: infer E } ? E : never
-  : never;
+type ShellError = Extract<ShellState, { readonly state: "failure" }>["error"];
 
 // Every framework tag is absorbed by an enclosing layer; only the domain error
 // the procedure declares survives into the component.
@@ -436,3 +434,57 @@ export type _NsDataTyped = Assert<Equal<
 void nsErrors.planExpired()
 // @ts-expect-error the namespaced map is exhaustive for catalogs too
 errorCatalog(nsErrors, { "billing/card-declined": () => "" })
+
+// --- Result composition ------------------------------------------------------
+
+import { toResult as toResultReact } from "../src/react/index.js"
+import { all, gen, tryPromise } from "../src/index.js"
+void toResultReact
+
+const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 })
+
+declare const findResult: Result<string, ReturnType<typeof Missing>>
+declare const parseResult: Result<number, ReturnType<typeof Conflict2>>
+
+// gen accumulates exactly the yielded error union.
+const genOutcome = gen(function* () {
+  const doc = yield* findResult
+  const size = yield* parseResult
+  return `${doc}:${size}`
+})
+export type _GenAccumulatesYieldedUnion = Assert<Equal<
+  typeof genOutcome,
+  Result<string, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>>
+
+// async gen returns a Promise of the same accumulation.
+const genAsyncOutcome = gen(async function* () {
+  const doc = yield* findResult
+  return doc.length
+})
+export type _GenAsyncIsPromise = Assert<Equal<
+  typeof genAsyncOutcome,
+  Promise<Result<number, ReturnType<typeof Missing>>>
+>>
+
+// all() collects tuple values positionally and unions the errors.
+const allOutcome = all([findResult, parseResult] as const)
+type AllValue = Extract<typeof allOutcome, { ok: true }>["value"]
+type AllError = Extract<typeof allOutcome, { ok: false }>["error"]
+export type _AllTupleIsPositional = Assert<Equal<
+  [AllValue[0], AllValue[1], AllValue["length"]],
+  [string, number, 2]
+>>
+export type _AllUnionsErrors = Assert<Equal<
+  AllError,
+  ReturnType<typeof Missing> | ReturnType<typeof Conflict2>
+>>
+
+// tryPromise requires a tagged error from the catch handler.
+const adopted = tryPromise(async () => 1, () => Missing({ id: "x" }))
+export type _TryPromiseTagged = Assert<Equal<
+  typeof adopted,
+  Promise<Result<number, ReturnType<typeof Missing>>>
+>>
+// @ts-expect-error catch must return a tagged error, not an Error subclass
+void tryPromise(async () => 1, (cause) => new Error(String(cause)))

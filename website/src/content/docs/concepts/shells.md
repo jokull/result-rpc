@@ -40,12 +40,52 @@ every app:
 ```tsx
 import { boundaryShells } from "result-rpc/react"
 
-export const { TransportShell, DefectShell, StaleShell, BoundaryProvider } =
+export const { TransportShell, DefectShell, StaleShell, BoundaryProvider, useConnectivity } =
   boundaryShells()
 // TransportShell  claims transportErrors, pauses; useHeld() feeds the banner
 // DefectShell     claims defectErrors, escalates to the React error boundary
 // StaleShell      claims staleErrors; default reaction reloads the page
 ```
+
+`BoundaryProvider` is also the browser bridge. It closes the reconnect arc
+automatically — claim, hold, the browser fires `online` (or the window
+regains focus while failures are held), resume — and the runtime feeds the
+same connectivity source into the query engine's online manager. Opt out
+with `boundaryShells({ autoResume: false })`.
+
+Accurate connectivity is also the anti-thrash lever. While the browser is
+offline, **reads pause** — fetches and retries wait as `fetch: "paused"`
+instead of failing instantly and burning the retry budget, and the engine
+continues them on reconnect. **Writes stay loud** — a mutation attempted
+offline fails once with `client/offline` for its owner to decide; the
+framework never queues a side effect for silent later delivery. Offline
+failures are never retried on a timer while the browser still reports
+offline (recovery is the reconnect, not the clock), and focus-triggered
+resumes are cooled down so alt-tabbing at a downed server never becomes a
+retry storm.
+
+The table-stakes offline banner is `useConnectivity()` — an honest
+two-source signal, exhaustively switchable like everything else here:
+
+```tsx
+function ConnectionBanner() {
+  const net = useConnectivity()
+  switch (net.status) {
+    case "online":   return null
+    case "offline":  return <Banner>You're offline — paused work resumes automatically.</Banner>
+    case "degraded": return <Banner action={net.resume}>Connection trouble — retrying…</Banner>
+  }
+}
+```
+
+`"offline"` is the browser's own claim (`navigator.onLine` + events) — it
+lights up before any request fails. `"degraded"` is the proof side: the
+browser claims online, but the transport shell is holding real failures
+(captive portals, flaky proxies). The two sources are kept distinct because
+adjacency isn't identity — browser connectivity is a cause-side hint,
+transport errors are outcomes. The hint never mints or suppresses an error
+tag and never touches the cache; it only times resumes and informs the
+banner. `net.held`, `net.latest`, and `net.resume` are there for custom UX.
 
 You only ever *write* shells for what the app itself owns:
 
@@ -88,10 +128,10 @@ export function DocPage({ id }: { id: string }) {
 
   switch (doc.state) {
     case "pending": return <DocSkeleton />
-    case "success": return <DocView doc={doc.result.value} viewer={user} />
+    case "success": return <DocView doc={doc.value} viewer={user} />
     case "failure":
       // DocNotFound — and adding a case for anything else is a type error
-      return <DocMissing docId={doc.result.error.data.docId} />
+      return <DocMissing docId={doc.error.data.docId} />
   }
 }
 ```

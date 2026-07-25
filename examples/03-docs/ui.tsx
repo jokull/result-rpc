@@ -45,7 +45,7 @@ export type DocClient = ReturnType<typeof makeDocClient>;
  * The framework-owned outer rings, pre-assembled: transport pauses, defects
  * escalate, a stale deploy reloads. User shells hang off StaleShell.
  */
-export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells({
+export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } = boundaryShells({
   name: "docs",
 });
 
@@ -72,7 +72,7 @@ export function DocsApp({ client, docId }: { client: DocClient; docId: string })
     <ResultRpcProvider client={client}>
       <BoundaryProvider>
         <Boundary>
-          <ConnectivityBanner />
+          <ConnectionBanner />
           <SessionShell.Provider fallback={<p>starting…</p>}>
             <Greeting />
             <ViewerShell.Provider fallback={<p>signing in…</p>}>
@@ -87,9 +87,22 @@ export function DocsApp({ client, docId }: { client: DocClient; docId: string })
   );
 }
 
-function ConnectivityBanner() {
-  const { latest, affected } = TransportShell.useHeld();
-  return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
+/** The table-stakes banner: the browser's claim plus held failures, one exhaustive switch. */
+function ConnectionBanner() {
+  const net = useConnectivity();
+  switch (net.status) {
+    case "online":
+      return null;
+    case "offline":
+      return <div role="alert">You're offline — paused work resumes automatically.</div>;
+    case "degraded":
+      return (
+        <div role="alert">
+          Connection trouble ({net.held} waiting)
+          <button onClick={net.resume}>Retry now</button>
+        </div>
+      );
+  }
 }
 
 /** Public: renders for signed-out visitors too — the session value is nullable here. */
@@ -137,12 +150,12 @@ export function DocPage({ docId }: { docId: string }) {
 
     case "failure":
       // doc/not-found — the page's own domain error; anything else is a type error
-      return <p role="alert">Doc {doc.result.error.data.docId} does not exist.</p>;
+      return <p role="alert">Doc {doc.error.data.docId} does not exist.</p>;
 
     case "success":
       return (
         <article>
-          <h1>{doc.result.value.title}</h1>
+          <h1>{doc.value.title}</h1>
           <p>Planned by {viewer.name}</p>
           <form onSubmit={(event) => {
             event.preventDefault();
@@ -150,9 +163,9 @@ export function DocPage({ docId }: { docId: string }) {
             // claimed/cancelled rejections are control flow, not outcomes
             void rename.mutate({ id: docId, title: field.value }).catch(() => undefined);
           }}>
-            <input name="title" defaultValue={doc.result.value.title} />
+            <input name="title" defaultValue={doc.value.title} />
             {rename.state === "failure" && (
-              <p role="alert">{renameMessages(rename.result.error)}</p>
+              <p role="alert">{renameMessages(rename.error)}</p>
             )}
           </form>
         </article>

@@ -24,7 +24,7 @@ export type TodoClient = ReturnType<typeof makeTodoClient>;
 // -- shells -----------------------------------------------------------------------
 
 /** The framework-owned rings, pre-assembled: pause, escalate, reload. */
-export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells({
+export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } = boundaryShells({
   name: "todo",
 });
 
@@ -34,7 +34,7 @@ export function TodoApp({ client }: { client: TodoClient }) {
   return (
     <ResultRpcProvider client={client}>
       <BoundaryProvider>
-        <ConnectivityBanner />
+        <ConnectionBanner />
         <TodoList client={client} />
         <AddTodo client={client} />
       </BoundaryProvider>
@@ -42,10 +42,22 @@ export function TodoApp({ client }: { client: TodoClient }) {
   );
 }
 
-function ConnectivityBanner() {
-  const { latest, affected } = TransportShell.useHeld();
-  if (!latest) return null;
-  return <div role="alert">Connection trouble ({affected} requests waiting)</div>;
+/** The table-stakes banner: the browser's claim plus held failures, one exhaustive switch. */
+function ConnectionBanner() {
+  const net = useConnectivity();
+  switch (net.status) {
+    case "online":
+      return null;
+    case "offline":
+      return <div role="alert">You're offline — paused work resumes automatically.</div>;
+    case "degraded":
+      return (
+        <div role="alert">
+          Connection trouble ({net.held} waiting)
+          <button onClick={net.resume}>Retry now</button>
+        </div>
+      );
+  }
 }
 
 export function TodoList({ client }: { client: TodoClient }) {
@@ -57,14 +69,14 @@ export function TodoList({ client }: { client: TodoClient }) {
     case "success":
       return (
         <ul>
-          {todos.result.value.map((todo) => (
+          {todos.value.map((todo) => (
             <TodoRow key={todo.id} client={client} id={todo.id} title={todo.title} done={todo.done} />
           ))}
         </ul>
       );
     case "failure":
       // transport + defect tags are claimed above; nothing domain remains on `list`
-      return todos.result.error satisfies never;
+      return todos.error satisfies never;
   }
 }
 
@@ -92,7 +104,7 @@ function TodoRow({ client, id, title, done }: {
       </label>
       {toggle.state === "failure" && (
         <span role="alert">
-          {matchError(toggle.result.error, {
+          {matchError(toggle.error, {
             "todo/not-found": () => "This todo no longer exists",
           })}
         </span>
@@ -118,7 +130,7 @@ export function AddTodo({ client }: { client: TodoClient }) {
       void submit(input.value);
     }}>
       <input name="title" disabled={add.state === "pending"} />
-      {add.state === "failure" && <p role="alert">{catalog(add.result.error)}</p>}
+      {add.state === "failure" && <p role="alert">{catalog(add.error)}</p>}
     </form>
   );
 }

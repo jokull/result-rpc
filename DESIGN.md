@@ -428,23 +428,25 @@ The query engine caches `Doc`, retries tagged transient failures, pauses work,
 counts failures, and supports error boundaries. An initial implementation can map
 this onto private `@tanstack/query-core` primitives.
 
-The public hook removes `data | error` and projects one operation result:
+The public hook projects one operation outcome as a state-discriminated union.
+`value` and `error` exist only under their own state, so the independently-
+nullable `data | error` pair is unrepresentable (`toResult(state)` re-wraps a
+settled state as the imperative client's `Result`):
 
 ```ts
 type ResultQueryState<T, E> =
   | {
       state: "pending"
-      result: undefined
       fetch: "fetching" | "paused"
     }
   | {
       state: "success"
-      result: { ok: true; value: T }
+      value: T
       fetch: "idle" | "fetching" | "paused"
     }
   | {
       state: "failure"
-      result: { ok: false; error: E }
+      error: E
       previous?: T
       fetch: "idle" | "fetching" | "paused"
     }

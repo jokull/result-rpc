@@ -116,8 +116,8 @@ describe("layer factory", () => {
     function Probe() {
       email = AuthShell.use().email;
       const trip = AuthShell.useQuery(client.trip.byId, { id: "trip_9" });
-      if (trip.state === "failure") docTag = trip.result.error._tag;
-      if (trip.state === "success") docValue = trip.result.value;
+      if (trip.state === "failure") docTag = trip.error._tag;
+      if (trip.state === "success") docValue = trip.value;
       return null;
     }
 
@@ -301,7 +301,7 @@ describe("layer factory", () => {
       sessionViewer = SessionShell.use();
       viewer = ViewerShell.use();
       const greet = ViewerShell.useQuery(cookieClient.greet, {});
-      if (greet.state === "success") greeting = greet.result.value;
+      if (greet.state === "success") greeting = greet.value;
       return null;
     }
 
@@ -446,7 +446,7 @@ describe("layer factory", () => {
     function Probe() {
       const query = ViewerShell.useQuery(client2.secret, {}, { retry: false });
       state = query.state;
-      if (query.state === "success") value = query.result.value;
+      if (query.state === "success") value = query.value;
       refetchSecret = query.refetch;
       return null;
     }

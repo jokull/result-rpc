@@ -1,13 +1,56 @@
 import type { AnyTaggedError } from "./error.js";
 
-export type Ok<T> = Readonly<{ ok: true; value: T }>;
-export type Err<E extends AnyTaggedError> = Readonly<{ ok: false; error: E }>;
+/**
+ * Results are plain frozen objects — structural, wire-honest, spreadable.
+ * They additionally carry a non-enumerable `Symbol.iterator` so `yield*`
+ * works directly inside `gen` (the serializer only walks enumerable string
+ * keys, so the wire shape is untouched). The composition surface below ports
+ * the core DX of better-result and neverthrow — with two deliberate
+ * divergences: the error channel requires tagged errors (`_tag` + wire-safe
+ * `data`), and there is no serialization helper because serialization is the
+ * library's own first-class concern.
+ */
+export interface Ok<T> {
+  readonly ok: true;
+  readonly value: T;
+  /** Enables `yield*` in {@link gen}: yields nothing, evaluates to the value. */
+  [Symbol.iterator](): Iterator<never, T>;
+}
+
+export interface Err<E extends AnyTaggedError> {
+  readonly ok: false;
+  readonly error: E;
+  /** Enables `yield*` in {@link gen}: yields the Err once, never resumes. */
+  [Symbol.iterator](): Iterator<Err<E>, never>;
+}
+
 export type Result<T, E extends AnyTaggedError> = Ok<T> | Err<E>;
 
-export const ok = <T>(value: T): Ok<T> => Object.freeze({ ok: true, value });
+function resultIterator(this: Result<unknown, AnyTaggedError>) {
+  let done = false;
+  const self = this;
+  return {
+    next(): IteratorResult<unknown> {
+      if (done) return { done: true, value: undefined };
+      done = true;
+      return self.ok
+        ? { done: true, value: self.value }
+        : { done: false, value: self };
+    },
+  };
+}
+
+const withIterator = <T extends object>(result: T): T =>
+  Object.freeze(Object.defineProperty(result, Symbol.iterator, {
+    value: resultIterator,
+    enumerable: false,
+  }));
+
+export const ok = <T>(value: T): Ok<T> =>
+  withIterator({ ok: true, value }) as Ok<T>;
 
 export const err = <E extends AnyTaggedError>(error: E): Err<E> =>
-  Object.freeze({ ok: false, error });
+  withIterator({ ok: false, error }) as Err<E>;
 
 export const isOk = <T, E extends AnyTaggedError>(
   result: Result<T, E>,
@@ -98,3 +141,139 @@ export const tapBoth = <T, E extends AnyTaggedError>(
   else handlers.error(result.error);
   return result;
 };
+
+/** Recover from a failure with a new Result; a success passes through. */
+export const orElse = <
+  T,
+  T2,
+  E1 extends AnyTaggedError,
+  E2 extends AnyTaggedError,
+>(
+  result: Result<T, E1>,
+  fn: (error: E1) => Result<T2, E2>,
+): Result<T | T2, E2> => result.ok ? result : fn(result.error);
+
+/** Unwrap the value or compute a fallback from the error. */
+export const getOrElse = <T, T2, E extends AnyTaggedError>(
+  result: Result<T, E>,
+  fallback: (error: E) => T2,
+): T | T2 => result.ok ? result.value : fallback(result.error);
+
+/**
+ * Adopt a throwing function into the Result world. The catch handler must
+ * produce a tagged error — that is the price of admission: an upstream's
+ * `Error` subclass never travels past this boundary as itself.
+ */
+export const tryCatch = <T, E extends AnyTaggedError>(
+  fn: () => T,
+  onThrow: (cause: unknown) => E,
+): Result<T, E> => {
+  try {
+    return ok(fn());
+  } catch (cause) {
+    return err(onThrow(cause));
+  }
+};
+
+/** {@link tryCatch} for async work: catches both sync throws and rejections. */
+export const tryPromise = async <T, E extends AnyTaggedError>(
+  fn: () => PromiseLike<T>,
+  onThrow: (cause: unknown) => E,
+): Promise<Result<T, E>> => {
+  try {
+    return ok(await fn());
+  } catch (cause) {
+    return err(onThrow(cause));
+  }
+};
+
+type AllValues<TShape> = { -readonly [K in keyof TShape]:
+  TShape[K] extends Result<infer T, AnyTaggedError> ? T : never };
+type AllErrors<TShape> = (
+  TShape extends readonly unknown[] ? TShape[number] : TShape[keyof TShape]
+) extends infer TMember
+  ? TMember extends Err<infer E> ? E : never
+  : never;
+
+/**
+ * Combine a tuple or record of Results: all successes, or the first failure
+ * encountered (tuple order / key insertion order).
+ */
+export function all<
+  const TResults extends readonly Result<unknown, AnyTaggedError>[],
+>(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;
+export function all<
+  const TResults extends Readonly<Record<string, Result<unknown, AnyTaggedError>>>,
+>(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;
+export function all(
+  results:
+    | readonly Result<unknown, AnyTaggedError>[]
+    | Readonly<Record<string, Result<unknown, AnyTaggedError>>>,
+): Result<unknown, AnyTaggedError> {
+  if (Array.isArray(results)) {
+    const values: unknown[] = [];
+    for (const result of results) {
+      if (!result.ok) return result;
+      values.push(result.value);
+    }
+    return ok(values);
+  }
+  const values: Record<string, unknown> = {};
+  for (const [key, result] of Object.entries(results)) {
+    if (!result.ok) return result;
+    values[key] = result.value;
+  }
+  return ok(values);
+}
+
+type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
+
+/**
+ * Generator composition (the core DX of better-result, ported with credit):
+ * `yield*` a Result to unwrap its value or short-circuit on its first Err.
+ * The failure union accumulates automatically from everything yielded.
+ *
+ * ```ts
+ * const outcome = gen(function* () {
+ *   const doc = yield* findDoc(id)        // Result<Doc, DocNotFound>
+ *   const body = yield* parseBody(doc)    // Result<Body, ParseFailure>
+ *   return render(doc, body)
+ * })
+ * // Result<Rendered, DocNotFound | ParseFailure>
+ * ```
+ *
+ * Pass an async generator to compose awaited Results the same way; the
+ * return type becomes a Promise. `finally` blocks in the generator run even
+ * when an Err short-circuits.
+ */
+export function gen<TYield extends Err<AnyTaggedError>, TReturn>(
+  body: () => Generator<TYield, TReturn>,
+): Result<TReturn, GenErr<TYield>>;
+export function gen<TYield extends Err<AnyTaggedError>, TReturn>(
+  body: () => AsyncGenerator<TYield, TReturn>,
+): Promise<Result<TReturn, GenErr<TYield>>>;
+export function gen(
+  body: () =>
+    | Generator<Err<AnyTaggedError>, unknown>
+    | AsyncGenerator<Err<AnyTaggedError>, unknown>,
+): Result<unknown, AnyTaggedError> | Promise<Result<unknown, AnyTaggedError>> {
+  const iterator = body();
+  if (Symbol.asyncIterator in iterator) {
+    const asyncIterator = iterator as AsyncGenerator<Err<AnyTaggedError>, unknown>;
+    return (async () => {
+      const step = await asyncIterator.next();
+      if (!step.done) {
+        await asyncIterator.return(undefined as never);
+        return step.value;
+      }
+      return ok(step.value);
+    })();
+  }
+  const syncIterator = iterator as Generator<Err<AnyTaggedError>, unknown>;
+  const step = syncIterator.next();
+  if (!step.done) {
+    syncIterator.return(undefined as never);
+    return step.value;
+  }
+  return ok(step.value);
+}

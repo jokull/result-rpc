@@ -75,7 +75,7 @@ describe("React bindings", () => {
       await mutationState!.mutate({ title: "renamed" });
     });
     expect(mutationState?.state).toBe("success");
-    expect(mutationState?.result).toEqual(ok("renamed"));
+    expect(mutationState?.value).toBe("renamed");
     await act(async () => renderer?.unmount());
     runtime.clear();
   });
@@ -126,7 +126,7 @@ describe("React bindings", () => {
     }
     function SuspenseProbe() {
       const state = useResultSuspenseQuery(client.demo.value, { id: "suspense" });
-      return <span>{state.result.ok ? state.result.value : state.result.error._tag}</span>;
+      return <span>{state.state === "success" ? state.value : state.error._tag}</span>;
     }
 
     let renderer: ReactTestRenderer | undefined;

@@ -56,6 +56,10 @@ Adding a definition to the map breaks every catalog missing the new tag. For
 inline one-offs, `matchError(result.error, { ...handlers })` gives the same
 exhaustiveness on a single value.
 
+The full composition surface — `gen` with `yield*`, `tryPromise`, `all`, the
+transform family — is covered in
+[Result composition](/concepts/results/).
+
 ## Cancellation is not an operation error
 
 Query cancellation updates lifecycle state without producing an `Err`,

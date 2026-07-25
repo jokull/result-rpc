@@ -137,7 +137,7 @@ describe("unary client and server", () => {
 
   test("round trips a successful procedure", async () => {
     const result = await client.value.byId({ id: "one" });
-    expect(result).toEqual({ ok: true, value: { id: "one", value: "first" } });
+    expect(result).toEqual(ok({ id: "one", value: "first" }));
   });
 
   test("batches concurrent calls while preserving per-item results", async () => {
@@ -230,7 +230,7 @@ describe("unary client and server", () => {
 
   test("round trips and reconstructs a declared tagged error", async () => {
     const result = await client.value.byId({ id: "missing" });
-    expect(result).toEqual({ ok: false, error: NotFound({ id: "missing" }) });
+    expect(result).toEqual(err(NotFound({ id: "missing" })));
     if (!result.ok) expect(NotFound.is(result.error)).toBe(true);
   });
 
@@ -287,10 +287,7 @@ describe("unary client and server", () => {
       },
     });
     const result = await intermediary.value.byId({ id: "one" });
-    expect(result).toEqual({
-      ok: false,
-      error: { _tag: "client/http-failure", data: { status: 502 } },
-    });
+    expect(result).toEqual(err({ _tag: "client/http-failure", data: { status: 502 } }));
   });
 
   test("rejects unknown tags, malformed known errors, and protocol versions", async () => {
@@ -336,10 +333,7 @@ describe("unary client and server", () => {
     };
     const timed = createClient({ router, transport });
     const result = await timed.value.byId({ id: "one" });
-    expect(result).toEqual({
-      ok: false,
-      error: { _tag: "client/timeout", data: { timeoutMs: 50 } },
-    });
+    expect(result).toEqual(err({ _tag: "client/timeout", data: { timeoutMs: 50 } }));
   });
 
   test("classifies a library-owned fetch timeout", async () => {
@@ -357,10 +351,7 @@ describe("unary client and server", () => {
       }),
     });
     const result = await timed.value.byId({ id: "one" });
-    expect(result).toEqual({
-      ok: false,
-      error: { _tag: "client/timeout", data: { timeoutMs: 1 } },
-    });
+    expect(result).toEqual(err({ _tag: "client/timeout", data: { timeoutMs: 1 } }));
   });
 
   test("direct calls can opt into the tagged retry policy", async () => {

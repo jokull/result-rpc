@@ -56,6 +56,7 @@ export type SubscriptionProcedureClientLike = ((
 
 import { createQueryRuntime } from "../query/runtime.js";
 export { createQueryRuntime };
+export { toResult } from "../query/runtime.js";
 export type {
   CreateQueryRuntimeOptions,
   DehydratedQueryRuntime,
@@ -71,7 +72,12 @@ export type {
 } from "../query/runtime.js";
 export { defineShell, getLayerProcedureResolver, layerShell } from "./shell.js";
 export { boundaryShells } from "./boundary.js";
-export type { BoundaryShells, BoundaryShellsOptions } from "./boundary.js";
+export type {
+  BoundaryShells,
+  BoundaryShellsOptions,
+  Connectivity,
+  ConnectivityStatus,
+} from "./boundary.js";
 
 /** Zero-input procedures may omit the input argument entirely. */
 export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =
@@ -202,7 +208,7 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   refetchRef.current = state.refetch;
   const [retryHeld] = useState(() => () => void refetchRef.current());
   const claim = useAmbientClaim(
-    state.state === "failure" ? state.result.error : undefined,
+    state.state === "failure" ? state.error : undefined,
     notifyClaim,
     retryHeld,
   );
@@ -305,7 +311,7 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
   });
   const notifyClaim = useClaimNotifier(procedure);
   const claim = useAmbientClaim(
-    state.state === "failure" ? (state.result.error as AnyTaggedError) : undefined,
+    state.state === "failure" ? (state.error as AnyTaggedError) : undefined,
     notifyClaim,
   );
   if (!claim) return { ...state, mutate };
@@ -315,7 +321,6 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
     cancel: state.cancel,
     reset: state.reset,
     state: "idle" as const,
-    result: undefined,
   };
 };
 

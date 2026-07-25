@@ -1,4 +1,10 @@
-import { createElement, type ReactNode } from "react";
+import {
+  createElement,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   defectErrors,
   staleErrors,
@@ -6,6 +12,7 @@ import {
   type ClientStale,
 } from "../framework-errors.js";
 import type { ErrorUnion } from "../server/contract.js";
+import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
 import { defineShell, type Shell, type TagsOf } from "./shell.js";
 
 /**
@@ -19,6 +26,11 @@ import { defineShell, type Shell, type TagsOf } from "./shell.js";
  * Assembling these by hand was the same ten lines in every app; user shells
  * hang off the chain with `from: StaleShell` and only ever claim what the
  * app itself owns.
+ *
+ * `BoundaryProvider` is also the browser bridge: it wires reconnect and
+ * focus events so held transport failures resume automatically, and
+ * `useConnectivity()` exposes the honest two-source signal the offline
+ * banner needs.
  */
 export interface BoundaryShellsOptions {
   /** Shell-name prefix for diagnostics and devtools. Defaults to "boundary". */
@@ -31,6 +43,31 @@ export interface BoundaryShellsOptions {
    * "update available" affordance instead.
    */
   readonly onStale?: (error: ClientStale) => void;
+  /**
+   * Retry held transport failures when the browser reports reconnect, and on
+   * window focus while failures are held (the honest probe for the captive
+   * portals `navigator.onLine` lies about). Defaults to true.
+   */
+  readonly autoResume?: boolean;
+}
+
+export type ConnectivityStatus = "online" | "offline" | "degraded";
+
+export interface Connectivity {
+  /**
+   * `"offline"` — the browser says so (cause-side hint, lights up before any
+   * request fails). `"degraded"` — the browser claims online but the
+   * transport shell is holding proven failures. `"online"` — neither.
+   */
+  readonly status: ConnectivityStatus;
+  /** The browser's claim (`navigator.onLine` + events). A hint; it can lie "true". */
+  readonly online: boolean;
+  /** Operations the transport shell is currently holding — the proof side. */
+  readonly held: number;
+  /** Most recently held transport failure, for banner copy. */
+  readonly latest: ErrorUnion<typeof transportErrors> | undefined;
+  /** Retry everything held now — the banner's manual affordance. */
+  readonly resume: () => void;
 }
 
 export interface BoundaryShells {
@@ -39,11 +76,22 @@ export interface BoundaryShells {
   readonly StaleShell: Shell<TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors> | TagsOf<typeof staleErrors>, Record<never, never>, void, ErrorUnion<typeof staleErrors>>;
   /** Mounts all three in order. Place the React error boundary just inside it. */
   readonly BoundaryProvider: (props: { readonly children?: ReactNode }) => ReactNode;
+  /** The offline-banner signal. Must be used under `BoundaryProvider`. */
+  readonly useConnectivity: () => Connectivity;
 }
 
 const reloadPage = () => {
   if (typeof location !== "undefined") location.reload();
 };
+
+const FOCUS_RESUME_COOLDOWN_MS = 5_000;
+
+const subscribeOnline = (onStoreChange: () => void) =>
+  subscribeConnectivity((event) => {
+    if (event !== "focus") onStoreChange();
+  });
+
+const serverOnlineSnapshot = () => true;
 
 export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShells => {
   const name = options.name ?? "boundary";
@@ -64,6 +112,30 @@ export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShe
     claims: staleErrors,
     onError: options.onStale ?? reloadPage,
   });
+
+  /**
+   * The reconnect arc, closed automatically: claim, hold, the browser comes
+   * back, resume. Focus only probes while something is held — and at most
+   * once per cooldown window, so alt-tabbing at a downed server never turns
+   * into a retry storm. Reconnect always resumes.
+   */
+  const AutoResume = ({ children }: { readonly children?: ReactNode }): ReactNode => {
+    const held = TransportShell.useHeld();
+    const heldRef = useRef(held.affected);
+    heldRef.current = held.affected;
+    const resumeRef = useRef(held.resume);
+    resumeRef.current = held.resume;
+    const lastResumeAt = useRef(0);
+    useEffect(() => subscribeConnectivity((event) => {
+      if (event === "offline" || heldRef.current === 0) return;
+      const now = Date.now();
+      if (event === "focus" && now - lastResumeAt.current < FOCUS_RESUME_COOLDOWN_MS) return;
+      lastResumeAt.current = now;
+      resumeRef.current();
+    }), []);
+    return children;
+  };
+
   const BoundaryProvider = ({ children }: { readonly children?: ReactNode }): ReactNode =>
     createElement(
       TransportShell.Provider,
@@ -71,8 +143,37 @@ export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShe
       createElement(
         DefectShell.Provider,
         undefined,
-        createElement(StaleShell.Provider, undefined, children),
+        createElement(
+          StaleShell.Provider,
+          undefined,
+          options.autoResume === false
+            ? children
+            : createElement(AutoResume, undefined, children),
+        ),
       ),
     );
-  return { TransportShell, DefectShell, StaleShell, BoundaryProvider } as BoundaryShells;
+
+  const useConnectivity = (): Connectivity => {
+    const online = useSyncExternalStore(
+      subscribeOnline,
+      getOnlineSnapshot,
+      serverOnlineSnapshot,
+    );
+    const held = TransportShell.useHeld();
+    return {
+      status: !online ? "offline" : held.affected > 0 ? "degraded" : "online",
+      online,
+      held: held.affected,
+      latest: held.latest,
+      resume: held.resume,
+    };
+  };
+
+  return {
+    TransportShell,
+    DefectShell,
+    StaleShell,
+    BoundaryProvider,
+    useConnectivity,
+  } as BoundaryShells;
 };

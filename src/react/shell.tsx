@@ -521,9 +521,9 @@ export const layerShell = <
 
   const Provider = ({ children, fallback }: LayerShellProviderProps): ReactNode => {
     const load = useLoad();
-    const value = load.state === "success" ? load.result.value : undefined;
+    const value = load.state === "success" ? load.value : undefined;
     valueHolder.current = value;
-    const failure = load.state === "failure" ? load.result.error : undefined;
+    const failure = load.state === "failure" ? load.error : undefined;
     const onError = options.onError as
       | ((error: AnyTaggedError, value: TValue | undefined) => void)
       | undefined;
@@ -536,7 +536,7 @@ export const layerShell = <
         readonly value: TValue;
         readonly children?: ReactNode;
       }) => ReactNode,
-      { value: load.result.value },
+      { value: load.value },
       createElement(AutoResume, { stamp: load.updatedAt }, children),
     );
   };

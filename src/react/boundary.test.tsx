@@ -3,7 +3,7 @@ import { Component, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire } from "../index.js";
 import { createClient } from "../client/client.js";
-import { fetchTransport } from "../client/transport.js";
+import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { boundaryShells } from "./boundary.js";
@@ -127,6 +127,114 @@ describe("boundaryShells", () => {
       await settle();
     });
     expect(held.latest?._tag).toBe("client/stale");
+    await act(async () => renderer!.unmount());
+    runtime.clear();
+  });
+
+  test("reconnect resumes held transport failures automatically", async () => {
+    const app = rpc.context<{}>();
+    const router = app.router({
+      ping: app.procedure().input(wire.object({})).output(wire.string)
+        .query(() => ok("pong")),
+    });
+    const handler = createFetchHandler({ router, createContext: () => ({}) });
+    const local = fetchTransport({
+      url: "https://example.test/rpc",
+      fetch: ((input: string | URL | Request, init?: RequestInit) =>
+        handler(new Request(input, init))) as typeof globalThis.fetch,
+    });
+    let offline = true;
+    const transport: ClientTransport = {
+      request: async (...args) => offline
+        ? { ok: false, reason: "offline" }
+        : local.request(...args),
+    };
+    const client = createClient({ router, transport });
+    const { TransportShell, BoundaryProvider, useConnectivity } =
+      boundaryShells({ name: "test-c" });
+
+    let status: string | undefined;
+    function Probe() {
+      const state = TransportShell.useQuery(client.ping, {}, { retry: false });
+      status = useConnectivity().status;
+      return <p>state:{state.state}</p>;
+    }
+
+    const runtime = createQueryRuntime({ client });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <BoundaryProvider>
+            <Probe />
+          </BoundaryProvider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    // claimed and held: the browser still claims online, so this is "degraded"
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("failure");
+    expect(status).toBe("degraded");
+
+    offline = false;
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("online"));
+      await settle();
+    });
+    expect(JSON.stringify(renderer!.toJSON())).toContain("success");
+    expect(status).toBe("online");
+    await act(async () => renderer!.unmount());
+    runtime.clear();
+  });
+
+  test("useConnectivity tracks the browser's own offline claim", async () => {
+    const app = rpc.context<{}>();
+    const router = app.router({
+      ping: app.procedure().input(wire.object({})).output(wire.string)
+        .query(() => ok("pong")),
+    });
+    const handler = createFetchHandler({ router, createContext: () => ({}) });
+    const client = createClient({
+      router,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const { BoundaryProvider, useConnectivity } = boundaryShells({ name: "test-d" });
+
+    let net: { status: string; online: boolean } | undefined;
+    function Probe() {
+      net = useConnectivity();
+      return null;
+    }
+
+    const runtime = createQueryRuntime({ client });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <BoundaryProvider>
+            <Probe />
+          </BoundaryProvider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(net!.status).toBe("online");
+    expect(net!.online).toBe(true);
+
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("offline"));
+    });
+    expect(net!.status).toBe("offline");
+    expect(net!.online).toBe(false);
+
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("online"));
+    });
+    expect(net!.status).toBe("online");
     await act(async () => renderer!.unmount());
     runtime.clear();
   });

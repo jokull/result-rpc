@@ -131,9 +131,9 @@ export function ChargeForm({ client, shell }: { client: BillingClient; shell: Bi
       void charge.mutate({ card: field.value }).catch(() => undefined);
     }}>
       <input name="card" />
-      {charge.state === "success" && <p>{charge.result.value}</p>}
+      {charge.state === "success" && <p>{charge.value}</p>}
       {charge.state === "failure" && (
-        <p role="alert">{declinedMessage(charge.result.error)}</p>
+        <p role="alert">{declinedMessage(charge.error)}</p>
       )}
     </form>
   );

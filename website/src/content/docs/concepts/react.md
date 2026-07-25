@@ -35,7 +35,7 @@ export function DocPage({ id }: { id: string }) {
     case "success":
       return (
         <DocView
-          doc={doc.result.value}
+          doc={doc.value}
           refreshing={doc.fetch === "fetching"}
         />
       )
@@ -43,7 +43,7 @@ export function DocPage({ id }: { id: string }) {
     case "failure":
       return (
         <DocFailure
-          error={doc.result.error}
+          error={doc.error}
           previous={doc.previous}
           retry={doc.refetch}
         />
@@ -52,12 +52,17 @@ export function DocPage({ id }: { id: string }) {
 }
 ```
 
-There is no top-level `data | error` pair:
+`value` and `error` are not an independently-nullable pair — each exists only
+under its own state, so the impossible combinations are unrepresentable:
 
 ```ts
-doc.result
-// Ok<Doc> | Err<GetDocError> | undefined
+doc.value  // Doc      — only when doc.state === "success"
+doc.error  // GetDocError — only when doc.state === "failure"
 ```
+
+When Result-typed code needs the settled outcome as the same `Result` the
+direct client returns, `toResult(doc)` re-wraps it (`undefined` while
+pending).
 
 The query engine still caches successful values, retries transient failures,
 tracks failure counts, pauses offline work, and supports invalidation. It uses
@@ -83,7 +88,7 @@ if (doc.state === "failure" && doc.previous) {
   return (
     <>
       <DocView doc={doc.previous} stale />
-      <RefreshFailure error={doc.result.error} />
+      <RefreshFailure error={doc.error} />
     </>
   )
 }

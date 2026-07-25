@@ -41,6 +41,12 @@ events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed
 events.result     // Ok<DocEvent> | Err<GetDocEventsError> | undefined
 ```
 
+Subscriptions are the one hook that keeps a `result` envelope. Queries and
+mutations flatten to `value`/`error` because `state` discriminates them;
+`connection` is deliberately orthogonal to the latest outcome, so here
+`Result | undefined` is the honest shape — flat `value`/`error` fields would
+be exactly the independently-nullable pair this library exists to avoid.
+
 `AuthShell.useSubscription` narrows the same way: a claimed terminal failure
 leaves `connection` at `"paused"` with no `result`, and the owning shell
 reacts. A retryable disconnect moves through `reconnecting` and does not

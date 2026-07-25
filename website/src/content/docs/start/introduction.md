@@ -31,7 +31,7 @@ const query = useResultQuery(client.doc.byId, { id: "doc_123" })
 if (query.state === "failure") {
   // DocNotFound | Unauthorized | ServerInternal | Offline | NetworkFailure |
   // Timeout | HttpFailure | ProtocolViolation | DecodeFailure | Stale
-  query.result.error
+  query.error
 }
 ```
 
@@ -47,7 +47,7 @@ const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" })
 
 if (query.state === "failure") {
   // DocNotFound
-  query.result.error
+  query.error
 }
 ```
 
@@ -158,7 +158,7 @@ section, and it is the reason the rest of the machinery exists.
 
 | Concern | result-rpc contract |
 | --- | --- |
-| Result composition | Plain Result values, union-preserving combinators, exhaustive matching |
+| Result composition | Plain Result values, `gen`/`yield*`, `tryPromise`, union-preserving combinators, exhaustive matching |
 | Error definitions | Namespaced tags, wire codecs, HTTP/retry/visibility policy |
 | RPC | Procedures, middleware, routers, server execution, protocol, clients |
 | Transport failures | Tagged additions to each procedure's inferred error union |

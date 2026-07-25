@@ -106,7 +106,7 @@ describe("shells", () => {
     let tag: string | undefined;
     function Probe() {
       const query = AuthShell.useQuery(client.trip, { id: "missing" });
-      if (query.state === "failure") tag = query.result.error._tag;
+      if (query.state === "failure") tag = query.error._tag;
       return null;
     }
 
@@ -315,7 +315,7 @@ describe("ambient claiming", () => {
     let tag: string | undefined;
     function Probe() {
       const query = useResultQuery(client.trip, { id: "expired" });
-      if (query.state === "failure") tag = query.result.error._tag;
+      if (query.state === "failure") tag = query.error._tag;
       return null;
     }
     let renderer: ReactTestRenderer | undefined;
@@ -441,7 +441,7 @@ describe("resume lifecycle", () => {
       const query = useResultQuery(client2.guarded, { id: "a" }, { retry: false });
       const active = AuthShell.useHeld();
       state = query.state;
-      if (query.state === "success") value = query.result.value;
+      if (query.state === "success") value = query.value;
       resume = active.resume;
       affected = active.affected;
       return null;

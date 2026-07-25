@@ -13,6 +13,7 @@ import {
   type ClientBoundaryError,
 } from "../framework-errors.js";
 import { contractDigest } from "../contract-digest.js";
+import { getOnlineSnapshot } from "../connectivity.js";
 import {
   decodeStreamFrame,
   decodeResponseEnvelope,
@@ -369,6 +370,9 @@ const retryDelayFor = (
   const definition = Object.values(definitions).find(
     (candidate) => candidate.tag === failure._tag,
   );
+  // Never spin on offline while the browser still reports offline — the
+  // recovery path is reconnect, not a retry timer.
+  if (failure._tag === "client/offline" && !getOnlineSnapshot()) return undefined;
   if (!definition || definition.policy.retry === "never" || attempt >= 3) return undefined;
   if (definition.policy.retry === "after") {
     const retryAfterMs = failure.data !== null

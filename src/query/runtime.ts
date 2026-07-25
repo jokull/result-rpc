@@ -3,12 +3,35 @@ import {
   dehydrate as dehydrateQueryClient,
   hydrate as hydrateQueryClient,
   MutationObserver,
+  onlineManager,
   QueryClient,
   QueryObserver,
   type QueryObserverResult,
   type MutationObserverResult,
 } from "@tanstack/query-core";
 import type { AnyTaggedError, AnyErrorDefinition } from "../error.js";
+import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
+
+/**
+ * Make the shared connectivity source the single event source for
+ * query-core's online manager, and seed its initial state (the manager boots
+ * assuming online and its default setup listens on `window`, which React
+ * Native and test runtimes lack). Accurate state is the anti-thrash lever:
+ * with the default `networkMode: "online"`, fetches and retries *pause*
+ * while offline instead of failing instantly and burning the retry budget.
+ */
+let onlineManagerWired = false;
+const wireOnlineManager = () => {
+  if (onlineManagerWired) return;
+  onlineManagerWired = true;
+  onlineManager.setEventListener((setOnline) => {
+    setOnline(getOnlineSnapshot());
+    return subscribeConnectivity((event) => {
+      if (event === "online") setOnline(true);
+      if (event === "offline") setOnline(false);
+    });
+  });
+};
 import { frameworkErrorDefinitions } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
 import {
@@ -92,15 +115,18 @@ interface QueryControls<T, E extends AnyTaggedError> {
 export type QueryState<T, E extends AnyTaggedError> =
   | (QueryControls<T, E> & Readonly<{
       state: "pending";
-      result: undefined;
+      value?: undefined;
+      error?: undefined;
     }>)
   | (QueryControls<T, E> & Readonly<{
       state: "success";
-      result: Readonly<{ ok: true; value: T }>;
+      value: T;
+      error?: undefined;
     }>)
   | (QueryControls<T, E> & Readonly<{
       state: "failure";
-      result: Readonly<{ ok: false; error: E }>;
+      error: E;
+      value?: undefined;
       previous?: T;
     }>);
 
@@ -129,21 +155,25 @@ interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
 export type MutationState<TInput, TOutput, TError extends AnyTaggedError> =
   | (MutationControls<TInput, TOutput, TError> & Readonly<{
       state: "idle";
-      result: undefined;
+      value?: undefined;
+      error?: undefined;
     }>)
   | (MutationControls<TInput, TOutput, TError> & Readonly<{
       state: "pending";
-      result: undefined;
+      value?: undefined;
+      error?: undefined;
       variables: TInput;
     }>)
   | (MutationControls<TInput, TOutput, TError> & Readonly<{
       state: "success";
-      result: Readonly<{ ok: true; value: TOutput }>;
+      value: TOutput;
+      error?: undefined;
       variables: TInput;
     }>)
   | (MutationControls<TInput, TOutput, TError> & Readonly<{
       state: "failure";
-      result: Readonly<{ ok: false; error: TError }>;
+      error: TError;
+      value?: undefined;
       variables: TInput;
     }>);
 
@@ -274,6 +304,9 @@ const defaultShouldRetry = (
   failure: unknown,
 ): boolean => {
   if (!isTaggedError(failure)) return false;
+  // Retrying an offline failure while the browser still reports offline is
+  // needless churn — the recovery path is the reconnect resume, not a timer.
+  if (failure._tag === "client/offline" && !getOnlineSnapshot()) return false;
   const retry = definitionFor(definitions, failure)?.policy.retry;
   return (retry === "transient" || retry === "after") && failureCount < 3;
 };
@@ -307,10 +340,10 @@ const project = <T, E extends AnyTaggedError>(
     refetch,
   };
   if (observed.status === "pending") {
-    return { ...controls, state: "pending", result: undefined };
+    return { ...controls, state: "pending" };
   }
   if (observed.status === "success") {
-    return { ...controls, state: "success", result: ok(observed.data) };
+    return { ...controls, state: "success", value: observed.data };
   }
   if (!isTaggedError(observed.error)) {
     throw new TypeError("Query engine received an untagged failure");
@@ -318,10 +351,29 @@ const project = <T, E extends AnyTaggedError>(
   return {
     ...controls,
     state: "failure",
-    result: err(observed.error as E),
+    error: observed.error as E,
     ...(observed.data === undefined ? {} : { previous: observed.data }),
   };
 };
+
+/**
+ * Re-wraps a settled query or mutation state as the same `Result` the
+ * imperative client returns — for handing a hook outcome to Result-typed
+ * code. `undefined` while the state is still pending or idle.
+ */
+export function toResult<T, E extends AnyTaggedError>(
+  state: QueryState<T, E>,
+): Result<T, E> | undefined;
+export function toResult<TInput, TOutput, TError extends AnyTaggedError>(
+  state: MutationState<TInput, TOutput, TError>,
+): Result<TOutput, TError> | undefined;
+export function toResult(
+  state: Readonly<{ state: string; value?: unknown; error?: AnyTaggedError | undefined }>,
+): Result<unknown, AnyTaggedError> | undefined {
+  if (state.state === "success") return ok(state.value);
+  if (state.state === "failure") return err(state.error as AnyTaggedError);
+  return undefined;
+}
 
 export interface CreateQueryRuntimeOptions<TClient> {
   readonly client: TClient;
@@ -385,7 +437,24 @@ export const createQueryRuntime = <TClient>(
   ) throw new TypeError("Expected a result-rpc client");
   const clientIdentity = getClientIdentity(options.client);
   if (!clientIdentity) throw new TypeError("Expected a result-rpc client");
-  const queryClient = new QueryClient();
+  // Mounted so query-core's online manager continues paused retries and
+  // resumes paused mutations on reconnect. Stale refetching on focus and
+  // reconnect stays off: browser events time failure *resumes* here — cache
+  // freshness policy is a separate concern and a separate knob.
+  //
+  // Reads pause while offline (networkMode "online" default): no thrash, no
+  // retry-budget burn, the engine continues them on reconnect. Writes stay
+  // loud (networkMode "always"): a mutation attempted offline fails with
+  // `client/offline` for its owner to decide — the framework never queues a
+  // side effect for silent later delivery.
+  wireOnlineManager();
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { refetchOnWindowFocus: false, refetchOnReconnect: false },
+      mutations: { networkMode: "always" },
+    },
+  });
+  queryClient.mount();
 
   const metadataFor = (procedure: Function) => {
     const metadata = getProcedureClientMetadata(procedure);
@@ -662,7 +731,9 @@ export const createQueryRuntime = <TClient>(
         if (state.state === "pending") {
           throw new TypeError("Prefetch did not settle");
         }
-        return state.result as ProcedureClientResult<typeof procedure>;
+        return (
+          state.state === "success" ? ok(state.value) : err(state.error)
+        ) as ProcedureClientResult<typeof procedure>;
       } finally {
         observer.destroy();
       }
@@ -795,22 +866,21 @@ export const createQueryRuntime = <TClient>(
           reset,
         };
         switch (observed.status) {
-          case "idle": return { ...controls, state: "idle", result: undefined };
+          case "idle": return { ...controls, state: "idle" };
           case "pending": return {
             ...controls,
             state: "pending",
-            result: undefined,
             variables: observed.variables,
           };
           case "success": return {
             ...controls,
             state: "success",
-            result: ok(observed.data),
+            value: observed.data,
             variables: observed.variables,
           };
           case "error": {
             if (isCancelled(observed.error)) {
-              return { ...controls, state: "idle", result: undefined };
+              return { ...controls, state: "idle" };
             }
             if (!isTaggedError(observed.error)) {
               throw new TypeError("Mutation engine received an untagged failure");
@@ -818,7 +888,7 @@ export const createQueryRuntime = <TClient>(
             return {
               ...controls,
               state: "failure",
-              result: err(observed.error as TError),
+              error: observed.error as TError,
               variables: observed.variables,
             };
           }
@@ -889,18 +959,13 @@ export const createQueryRuntime = <TClient>(
                 if (result.error._tag === "client/offline") {
                   state = { ...state, connection: "paused" };
                   notify();
-                  const target = globalThis as typeof globalThis & {
-                    addEventListener?: (type: string, listener: () => void, options?: { once?: boolean }) => void;
-                    removeEventListener?: (type: string, listener: () => void) => void;
-                  };
-                  if (target.addEventListener) {
-                    const resume = () => {
-                      removeOnlineListener = undefined;
-                      connect(false, failureCount);
-                    };
-                    target.addEventListener("online", resume, { once: true });
-                    removeOnlineListener = () => target.removeEventListener?.("online", resume);
-                  }
+                  const unsubscribe = subscribeConnectivity((event) => {
+                    if (event !== "online") return;
+                    unsubscribe();
+                    removeOnlineListener = undefined;
+                    connect(false, failureCount);
+                  });
+                  removeOnlineListener = unsubscribe;
                   return;
                 }
                 const configured = subscriptionOptions.retry;
@@ -978,6 +1043,7 @@ export const createQueryRuntime = <TClient>(
       hydrateQueryClient(queryClient, decoded.value as never);
     },
     clear: () => {
+      queryClient.unmount();
       queryClient.clear();
       entityToQueries.clear();
       queryToEntities.clear();

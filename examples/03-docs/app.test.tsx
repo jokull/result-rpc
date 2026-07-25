@@ -126,13 +126,13 @@ declare const probeClient: DocClient;
 // doc.byId resolves a dozen possible failures; the page sees one.
 const probeDoc = () => ViewerShell.useQuery(probeClient.doc.byId, { id: "x" });
 type DocQueryState = ReturnType<typeof probeDoc>;
-type DocQueryError = Extract<DocQueryState, { state: "failure" }>["result"]["error"];
+type DocQueryError = Extract<DocQueryState, { state: "failure" }>["error"];
 export type _DocQueryIsOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>;
 
 // doc.rename resolves fourteen possible failures; the form sees its three domain outcomes.
 const probeRename = () => ViewerShell.useMutation(probeClient.doc.rename);
 type RenameState = ReturnType<typeof probeRename>;
-type RenameError = Extract<RenameState, { state: "failure" }>["result"]["error"];
+type RenameError = Extract<RenameState, { state: "failure" }>["error"];
 export type _RenameIsExactlyDomain = Assert<
   Equal<RenameError["_tag"], "doc/not-found" | "doc/locked" | "doc/forbidden">
 >;

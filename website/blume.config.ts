@@ -32,6 +32,7 @@ export default defineConfig({
         label: "The contract",
         items: [
           "/concepts/errors",
+          "/concepts/results",
           "/concepts/contract",
           "/concepts/context",
           "/concepts/wire",

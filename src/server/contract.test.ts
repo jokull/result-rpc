@@ -73,7 +73,7 @@ describe("procedure execution", () => {
     const result = await executeProcedure(implementation, { id: "one" }, {
       context: { authenticated: true, values: new Map() },
     });
-    expect(result).toEqual({ ok: true, value: { id: "one", ownerId: "user_1" } });
+    expect(result).toEqual(ok({ id: "one", ownerId: "user_1" }));
   });
 
   test("rejects middleware errors absent from a shared contract", () => {
@@ -94,24 +94,21 @@ describe("procedure execution", () => {
         values: new Map([["one", "value"]]),
       },
     });
-    expect(result).toEqual({
-      ok: true,
-      value: { id: "one", value: "value", ownerId: "user_1" },
-    });
+    expect(result).toEqual(ok({ id: "one", value: "value", ownerId: "user_1" }));
   });
 
   test("returns a declared middleware error", async () => {
     const result = await executeProcedure(byId, { id: "one" }, {
       context: { authenticated: false, values: new Map() },
     });
-    expect(result).toEqual({ ok: false, error: Unauthorized({}) });
+    expect(result).toEqual(err(Unauthorized({})));
   });
 
   test("returns a declared procedure error", async () => {
     const result = await executeProcedure(byId, { id: "missing" }, {
       context: { authenticated: true, values: new Map() },
     });
-    expect(result).toEqual({ ok: false, error: NotFound({ id: "missing" }) });
+    expect(result).toEqual(err(NotFound({ id: "missing" })));
   });
 
   test("sanitizes thrown defects", async () => {

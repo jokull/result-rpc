@@ -664,17 +664,16 @@ it back into the same tagged Result union.
 type QueryState<T, E extends TaggedError> =
   | {
       state: "pending"
-      result: undefined
       fetch: "fetching" | "paused"
     }
   | {
       state: "success"
-      result: Result<T, never> & { ok: true }
+      value: T
       fetch: "idle" | "fetching" | "paused"
     }
   | {
       state: "failure"
-      result: Result<never, E> & { ok: false }
+      error: E
       previous?: T
       fetch: "idle" | "fetching" | "paused"
     }
@@ -760,6 +759,32 @@ stale), so it ships their owners pre-assembled: `boundaryShells()` returns
 `TransportShell` (pause), `DefectShell` (escalate), and `StaleShell` (default
 reaction: reload), plus a `BoundaryProvider` composing all three. User shells
 hang off `StaleShell`.
+
+`BoundaryProvider` doubles as the browser bridge. A single shared
+connectivity source (`src/connectivity.ts`: `online`/`offline`/`focus` +
+`visibilitychange`, lazily attached, SSR-safe) serves three consumers: the
+provider resumes `TransportShell`'s held failures on reconnect (and on focus
+while failures are held — the probe for `navigator.onLine` lying "true");
+the query runtime mounts its `QueryClient` so query-core's online manager
+continues paused retries and paused mutations (stale refetch on focus and
+reconnect stays disabled — browser events time failure resumes, not cache
+freshness); and paused subscriptions reconnect off the same source.
+`useConnectivity()` projects the two-source banner signal
+(`online | offline | degraded`). Connectivity is a cause-side hint and never
+mints, suppresses, or reclassifies an error tag.
+
+The same source is the anti-thrash lever. The runtime installs it as the
+online manager's event source via `setEventListener` and seeds the initial
+state (the manager boots assuming online; its default setup listens on
+`window`, absent in React Native and test runtimes). With accurate state and
+the default `networkMode: "online"`, reads pause while offline instead of
+instantly failing through their retry budget. Mutations are pinned to
+`networkMode: "always"`: writes fail loud with `client/offline` rather than
+being queued for silent delivery on reconnect. Two guards complete it:
+`client/offline` is never retried on a timer while the browser still reports
+offline (runtime retry default and the direct client's
+`retry: "from-error-policy"` path), and focus-triggered shell resumes have a
+5s cooldown so repeated alt-tabbing at a downed server cannot storm it.
 
 ### Declared invalidation
 

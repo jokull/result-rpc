@@ -849,7 +849,7 @@ export const executeProcedure = async <
       if (!encoded.ok) return internalFailure("output", encoded.issues, options);
       const decoded = procedure._def.output.decode(encoded.value);
       if (!decoded.ok) return internalFailure("output", decoded.issues, options);
-      return { ok: true, value: decoded.value };
+      return ok(decoded.value);
     } catch (cause) {
       return internalFailure("output", cause, options);
     }
@@ -910,7 +910,7 @@ export async function* executeSubscription<
     context: unknown,
   ): Promise<Result<unknown, AnyTaggedError>> => {
     const middleware = procedure._def.middlewares[index];
-    if (!middleware) return { ok: true, value: context };
+    if (!middleware) return ok(context);
     try {
       return await middleware.handler({
         context,

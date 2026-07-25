@@ -1,6 +1,9 @@
 export {
+  all,
   andThen,
   err,
+  gen,
+  getOrElse,
   tap,
   tapBoth,
   tapError,
@@ -11,6 +14,9 @@ export {
   match,
   matchError,
   ok,
+  orElse,
+  tryCatch,
+  tryPromise,
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
 

@@ -5,7 +5,7 @@ import { cancelled, fetchTransport, type ClientTransport } from "../client/trans
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { AnyTaggedError } from "../error.js";
-import { createQueryRuntime, type QueryState, type ResultQueryObserver } from "./runtime.js";
+import { createQueryRuntime, toResult, type QueryState, type ResultQueryObserver } from "./runtime.js";
 import { defineModel } from "../model.js";
 
 const Missing = error({
@@ -111,7 +111,7 @@ describe("reactive query runtime", () => {
     const observer = runtime.observe(client.value.byId, { id: "one" });
     expect(observer.getCurrentState().state).toBe("pending");
     const state = await waitFor(observer, (current) => current.state === "success");
-    expect(state.result).toEqual({ ok: true, value: { id: "one", value: "first" } });
+    expect(toResult(state)).toEqual(ok({ id: "one", value: "first" }));
     observer.destroy();
     runtime.clear();
   });
@@ -124,7 +124,7 @@ describe("reactive query runtime", () => {
     const runtime = createQueryRuntime({ client });
     const observer = runtime.observe(client.value.byId, { id: "missing" });
     const state = await waitFor(observer, (current) => current.state === "failure");
-    expect(state.result).toEqual({ ok: false, error: Missing({ id: "missing" }) });
+    expect(toResult(state)).toEqual(err(Missing({ id: "missing" })));
     expect(state.failureCount).toBe(1);
     observer.destroy();
     runtime.clear();
@@ -143,7 +143,7 @@ describe("reactive query runtime", () => {
     input.self = input;
     const observer = runtime.observe(client.value.graph, input);
     const state = await waitFor(observer, (current) => current.state === "success");
-    expect(state.result).toEqual(ok("8:north"));
+    expect(toResult(state)).toEqual(ok("8:north"));
     expect(typeof observer.key[1]).toBe("string");
     observer.destroy();
     runtime.clear();
@@ -164,7 +164,7 @@ describe("reactive query runtime", () => {
     const observer = runtime.observe(client.value.byId, { id: "one" });
     const state = await waitFor(observer, (current) => current.state === "success");
     expect(state.state).toBe("success");
-    if (state.state === "success") expect(state.result.value.value).toBe("first");
+    if (state.state === "success") expect(state.value.value).toBe("first");
     expect(attempts).toBe(3);
     observer.destroy();
     runtime.clear();
@@ -186,7 +186,7 @@ describe("reactive query runtime", () => {
     const state = await observer.refetch();
     expect(state.state).toBe("failure");
     if (state.state === "failure") {
-      expect(state.result.error._tag).toBe("client/network-failure");
+      expect(state.error._tag).toBe("client/network-failure");
       expect(state.previous).toEqual({ id: "one", value: "first" });
     }
     observer.destroy();
@@ -203,11 +203,11 @@ describe("reactive query runtime", () => {
     const unsubscribe = mutation.subscribe(() => undefined);
 
     const success = await mutation.mutate({ value: "available" });
-    expect(success).toEqual({ ok: true, value: { value: "available" } });
+    expect(success).toEqual(ok({ value: "available" }));
     expect(mutation.getCurrentState().state).toBe("success");
 
     const failure = await mutation.mutate({ value: "taken" });
-    expect(failure).toEqual({ ok: false, error: Conflict({ value: "taken" }) });
+    expect(failure).toEqual(err(Conflict({ value: "taken" })));
     expect(mutation.getCurrentState().state).toBe("failure");
 
     unsubscribe();
@@ -299,7 +299,7 @@ describe("reactive query runtime", () => {
     const state = browserObserver.getCurrentState();
     expect(state).toMatchObject({
       state: "success",
-      result: { ok: true, value: { id: "one", value: "first" } },
+      value: { id: "one", value: "first" },
     });
 
     serverObserver.destroy();
@@ -459,7 +459,7 @@ describe("declared invalidation", () => {
     await waitFor(observer, (current) => current.state === "success");
     const before = observer.getCurrentState();
     if (before.state !== "success") throw new Error("unreachable");
-    expect(before.result.value.revision).toBe(1);
+    expect(before.value.revision).toBe(1);
 
     // No onSettled anywhere: the contract's .affects() drives the refetch.
     const mutation = runtime.mutation(client.doc.bump);
@@ -467,10 +467,10 @@ describe("declared invalidation", () => {
     expect(result.ok).toBe(true);
 
     await waitFor(observer, (current) =>
-      current.state === "success" && current.result.value.revision === 2);
+      current.state === "success" && current.value.revision === 2);
     const after = observer.getCurrentState();
     if (after.state !== "success") throw new Error("unreachable");
-    expect(after.result.value.title).toBe("renamed");
+    expect(after.value.title).toBe("renamed");
 
     unsubscribe();
     observer.destroy();
@@ -575,10 +575,10 @@ describe("entity identities", () => {
     // the flagship: header AND every doc byline updated, one request total
     const headerState = header.getCurrentState();
     if (headerState.state !== "success") throw new Error("unreachable");
-    expect(headerState.result.value.avatarUrl).toBe("v2.png");
+    expect(headerState.value.avatarUrl).toBe("v2.png");
     const docsState = docs.getCurrentState();
     if (docsState.state !== "success") throw new Error("unreachable");
-    expect(docsState.result.value.map((doc) => doc.author.avatarUrl))
+    expect(docsState.value.map((doc) => doc.author.avatarUrl))
       .toEqual(["v2.png", "v2.png"]);
     expect(requestCount()).toBe(before + 1); // the mutation itself, nothing else
 
@@ -597,7 +597,7 @@ describe("entity identities", () => {
     const mutation = runtime.mutation(client.archive);
     await mutation.getCurrentState().mutate({ id: "d1" });
     await waitFor(docs, (state) =>
-      state.state === "success" && state.result.value[0]!.archived === true);
+      state.state === "success" && state.value[0]!.archived === true);
     expect(docs.getCurrentState().state).toBe("success");
 
     stop(); docs.destroy(); mutation.destroy();
@@ -641,7 +641,7 @@ describe("entity identities", () => {
     const result = await mutation.getCurrentState().mutate({ id: "d1" });
     expect(result.ok).toBe(true);
     await waitFor(docs, (state) =>
-      state.state === "success" && state.result.value.length === 0);
+      state.state === "success" && state.value.length === 0);
 
     stop(); docs.destroy(); mutation.destroy();
     runtime.clear();
@@ -670,7 +670,7 @@ describe("entity identities", () => {
     const remounted = runtime.observe(client.list, {});
     const stopRemounted = remounted.subscribe(() => undefined);
     await waitFor(remounted, (state) =>
-      state.state === "success" && state.result.value[0]!.archived === true);
+      state.state === "success" && state.value[0]!.archived === true);
     stopRemounted(); remounted.destroy(); mutation.destroy();
     runtime.clear();
   });
@@ -691,17 +691,76 @@ describe("entity identities", () => {
     }));
     const optimistic = docs.getCurrentState();
     if (optimistic.state !== "success") throw new Error("unreachable");
-    expect(optimistic.result.value[0]!.author.name).toBe("Optimistic");
+    expect(optimistic.value[0]!.author.name).toBe("Optimistic");
 
     rollback();
     const restored = docs.getCurrentState();
     if (restored.state !== "success") throw new Error("unreachable");
-    expect(restored.result.value[0]!.author.name).toBe("J");
+    expect(restored.value[0]!.author.name).toBe("J");
 
     stopHeader(); stopDocs();
     header.destroy(); docs.destroy();
     runtime.clear();
     // after clear the index is empty: patches are no-ops, not errors
     expect(() => runtime.cache.updateEntity(User, "u1", (user) => user)).not.toThrow();
+  });
+});
+
+describe("offline anti-thrash", () => {
+  test("browser offline pauses fetches instead of burning the retry budget", async () => {
+    let attempts = 0;
+    const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
+    const transport: ClientTransport = {
+      request: (...args) => {
+        attempts += 1;
+        return local.request(...args);
+      },
+    };
+    const client = createClient({ router, transport });
+    const runtime = createQueryRuntime({ client });
+    try {
+      globalThis.dispatchEvent(new Event("offline"));
+      const observer = runtime.observe(client.value.byId, { id: "one" });
+      const unsubscribe = observer.subscribe(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const paused = observer.getCurrentState();
+      expect(paused.state).toBe("pending");
+      expect(paused.fetch).toBe("paused");
+      expect(attempts).toBe(0);
+
+      globalThis.dispatchEvent(new Event("online"));
+      const settled = await waitFor(observer, (current) => current.state === "success");
+      expect(settled.state === "success" && settled.value).toEqual({ id: "one", value: "first" });
+      expect(attempts).toBe(1);
+      unsubscribe();
+      observer.destroy();
+    } finally {
+      globalThis.dispatchEvent(new Event("online"));
+      runtime.clear();
+    }
+  });
+
+  test("a mutation attempted offline fails loud with client/offline, exactly once", async () => {
+    let attempts = 0;
+    const transport: ClientTransport = {
+      request: async () => {
+        attempts += 1;
+        return { ok: false, reason: "offline" };
+      },
+    };
+    const client = createClient({ router, transport });
+    const runtime = createQueryRuntime({ client });
+    try {
+      globalThis.dispatchEvent(new Event("offline"));
+      const mutation = runtime.mutation(client.value.rename);
+      const result = await mutation.mutate({ value: "available" });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error._tag).toBe("client/offline");
+      expect(attempts).toBe(1);
+      mutation.destroy();
+    } finally {
+      globalThis.dispatchEvent(new Event("online"));
+      runtime.clear();
+    }
   });
 });

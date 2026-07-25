@@ -36,7 +36,7 @@ import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: module level, no client instance needed --------------------------------
 
-export const { TransportShell, StaleShell, BoundaryProvider } = boundaryShells();
+export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } = boundaryShells();
 
 export const SessionShell = layerShell(SessionLayer, {
   from: StaleShell,
@@ -66,7 +66,7 @@ interface RouterContext {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <BoundaryProvider>
-        <ConnectivityBanner />
+        <ConnectionBanner />
         <Outlet />
     </BoundaryProvider>
   ),
@@ -165,9 +165,22 @@ declare module "@tanstack/react-router" {
 
 // -- components -------------------------------------------------------------------------
 
-function ConnectivityBanner() {
-  const { latest, affected } = TransportShell.useHeld();
-  return latest ? <div role="alert">Reconnecting… ({affected})</div> : null;
+/** The table-stakes banner: the browser's claim plus held failures, one exhaustive switch. */
+function ConnectionBanner() {
+  const net = useConnectivity();
+  switch (net.status) {
+    case "online":
+      return null;
+    case "offline":
+      return <div role="alert">You're offline — paused work resumes automatically.</div>;
+    case "degraded":
+      return (
+        <div role="alert">
+          Connection trouble ({net.held} waiting)
+          <button onClick={net.resume}>Retry now</button>
+        </div>
+      );
+  }
 }
 
 function Header() {
@@ -194,13 +207,13 @@ function DocDetail({ docId }: { docId: string }) {
   if (doc.state !== "success") return <p>Loading…</p>;
   return (
     <article>
-      <h1>{doc.result.value.title}</h1>
+      <h1>{doc.value.title}</h1>
       <p>Viewer: {viewer.name}</p>
       <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>
         Rename
       </button>
       {rename.state === "failure" && (
-        <p role="alert">{renameMessages(rename.result.error)}</p>
+        <p role="alert">{renameMessages(rename.error)}</p>
       )}
     </article>
   );

@@ -80,11 +80,11 @@ function Greeting({ name }: { name: string }) {
     case "pending":
       return <p>…</p>
     case "success":
-      return <p>{greeting.result.value}</p>
+      return <p>{greeting.value}</p>
     case "failure":
-      switch (greeting.result.error._tag) {
+      switch (greeting.error._tag) {
         case "greeting/not-found":
-          return <p>No greeting for {greeting.result.error.data.name}</p>
+          return <p>No greeting for {greeting.error.data.name}</p>
         default:
           return <p>Something went wrong</p>
       }

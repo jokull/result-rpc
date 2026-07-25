@@ -15,7 +15,6 @@
  */
 import { createContext, useContext, useEffect, useId } from "react";
 import type { AnyTaggedError } from "../error.js";
-import { ok } from "../result.js";
 import type { QueryState } from "../query/runtime.js";
 
 export interface ClaimEntry {
@@ -101,6 +100,6 @@ export const pauseQueryProjection = <T, E extends AnyTaggedError>(
   };
   const previous = state.state === "failure" ? state.previous : undefined;
   return previous === undefined
-    ? { ...controls, state: "pending", result: undefined }
-    : { ...controls, state: "success", result: ok(previous) };
+    ? { ...controls, state: "pending" }
+    : { ...controls, state: "success", value: previous };
 };

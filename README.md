@@ -28,7 +28,7 @@ const query = useResultQuery(client.doc.byId, { id: "doc_123" })
 if (query.state === "failure") {
   // DocNotFound | Unauthorized | ServerInternal | Offline | NetworkFailure |
   // Timeout | HttpFailure | ProtocolViolation | DecodeFailure | Stale
-  query.result.error
+  query.error
 }
 ```
 
@@ -44,7 +44,7 @@ const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" })
 
 if (query.state === "failure") {
   // DocNotFound
-  query.result.error
+  query.error
 }
 ```
 
@@ -593,6 +593,45 @@ Adding a definition to the map breaks every catalog missing the new tag. For
 inline one-offs, `matchError(result.error, { ...handlers })` gives the same
 exhaustiveness on a single value.
 
+## Compose Results
+
+The Result algebra of better-result and neverthrow is built in — `gen`,
+`tryCatch`/`tryPromise`, `all`, `map`/`andThen`/`mapError`/`orElse`, the
+match and tap families — with one stricter rule: the error channel only
+admits tagged errors. That rule is what makes the contract stronger than the
+standalone libraries can offer, because every error here is presumed to
+eventually cross a wire, and `_tag` + wire-safe `data` is the shape that
+survives the trip.
+
+`yield*` works directly on any Result — unwrap the value or short-circuit on
+the first failure, with the error union accumulating automatically:
+
+```ts
+import { gen, tryPromise } from "result-rpc"
+
+const outcome = await gen(async function* () {
+  const doc = yield* await findDoc(id)       // Result<Doc, DocNotFound>
+  const parsed = yield* parseBody(doc)       // Result<Body, ParseFailure>
+  return render(doc, parsed)
+})
+// Result<Rendered, DocNotFound | ParseFailure>
+```
+
+`tryPromise` is the border checkpoint for throwing upstreams — the catch
+handler must produce a tagged error, so an upstream `Error` subclass never
+travels past the boundary as itself. The full worked example — an upstream
+`safeJsonFetch` service composed into a procedure, its granular internal
+errors collapsed to one declared domain tag, all the way to the query hook —
+is in the [Result composition docs](https://result-rpc.solberg.is/concepts/results/).
+
+Credit where due: this surface deliberately ports the core DX of
+[better-result](https://github.com/kitlangton/better-result) and
+[neverthrow](https://github.com/supermacro/neverthrow). What it deliberately
+does not port: their serialization helpers (wire safety is this library's own
+first-class concern, handled by codecs), `ResultAsync` wrapper classes (a
+`Promise<Result>` stays a plain promise), and `getOrThrow` (re-throwing is
+the pattern the rest of the library exists to retire).
+
 ## Use it from React
 
 Hand the provider your client; it owns a query runtime for its lifetime:
@@ -627,7 +666,7 @@ export function DocPage({ id }: { id: string }) {
     case "success":
       return (
         <DocView
-          doc={doc.result.value}
+          doc={doc.value}
           refreshing={doc.fetch === "fetching"}
         />
       )
@@ -635,7 +674,7 @@ export function DocPage({ id }: { id: string }) {
     case "failure":
       return (
         <DocFailure
-          error={doc.result.error}
+          error={doc.error}
           previous={doc.previous}
           retry={doc.refetch}
         />
@@ -644,12 +683,17 @@ export function DocPage({ id }: { id: string }) {
 }
 ```
 
-There is no top-level `data | error` pair:
+`value` and `error` are not an independently-nullable pair — each exists only
+under its own state, so the impossible combinations are unrepresentable:
 
 ```ts
-doc.result
-// Ok<Doc> | Err<GetDocError> | undefined
+doc.value  // Doc      — only when doc.state === "success"
+doc.error  // GetDocError — only when doc.state === "failure"
 ```
+
+When Result-typed code needs the settled outcome as the same `Result` the
+direct client returns, `toResult(doc)` re-wraps it (`undefined` while
+pending).
 
 The query engine still caches successful values, retries transient failures,
 tracks failure counts, pauses offline work, and supports invalidation. It uses
@@ -675,7 +719,7 @@ if (doc.state === "failure" && doc.previous) {
   return (
     <>
       <DocView doc={doc.previous} stale />
-      <RefreshFailure error={doc.result.error} />
+      <RefreshFailure error={doc.error} />
     </>
   )
 }
@@ -735,12 +779,52 @@ every app:
 ```tsx
 import { boundaryShells } from "result-rpc/react"
 
-export const { TransportShell, DefectShell, StaleShell, BoundaryProvider } =
+export const { TransportShell, DefectShell, StaleShell, BoundaryProvider, useConnectivity } =
   boundaryShells()
 // TransportShell  claims transportErrors, pauses; useHeld() feeds the banner
 // DefectShell     claims defectErrors, escalates to the React error boundary
 // StaleShell      claims staleErrors; default reaction reloads the page
 ```
+
+`BoundaryProvider` is also the browser bridge. It closes the reconnect arc
+automatically — claim, hold, the browser fires `online` (or the window
+regains focus while failures are held), resume — and the runtime feeds the
+same connectivity source into the query engine's online manager. Opt out
+with `boundaryShells({ autoResume: false })`.
+
+Accurate connectivity is also the anti-thrash lever. While the browser is
+offline, **reads pause** — fetches and retries wait as `fetch: "paused"`
+instead of failing instantly and burning the retry budget, and the engine
+continues them on reconnect. **Writes stay loud** — a mutation attempted
+offline fails once with `client/offline` for its owner to decide; the
+framework never queues a side effect for silent later delivery. Offline
+failures are never retried on a timer while the browser still reports
+offline (recovery is the reconnect, not the clock), and focus-triggered
+resumes are cooled down so alt-tabbing at a downed server never becomes a
+retry storm.
+
+The table-stakes offline banner is `useConnectivity()` — an honest
+two-source signal, exhaustively switchable like everything else here:
+
+```tsx
+function ConnectionBanner() {
+  const net = useConnectivity()
+  switch (net.status) {
+    case "online":   return null
+    case "offline":  return <Banner>You're offline — paused work resumes automatically.</Banner>
+    case "degraded": return <Banner action={net.resume}>Connection trouble — retrying…</Banner>
+  }
+}
+```
+
+`"offline"` is the browser's own claim (`navigator.onLine` + events) — it
+lights up before any request fails. `"degraded"` is the proof side: the
+browser claims online, but the transport shell is holding real failures
+(captive portals, flaky proxies). The two sources are kept distinct because
+adjacency isn't identity — browser connectivity is a cause-side hint,
+transport errors are outcomes. The hint never mints or suppresses an error
+tag and never touches the cache; it only times resumes and informs the
+banner. `net.held`, `net.latest`, and `net.resume` are there for custom UX.
 
 You only ever *write* shells for what the app itself owns:
 
@@ -783,10 +867,10 @@ export function DocPage({ id }: { id: string }) {
 
   switch (doc.state) {
     case "pending": return <DocSkeleton />
-    case "success": return <DocView doc={doc.result.value} viewer={user} />
+    case "success": return <DocView doc={doc.value} viewer={user} />
     case "failure":
       // DocNotFound — and adding a case for anything else is a type error
-      return <DocMissing docId={doc.result.error.data.docId} />
+      return <DocMissing docId={doc.error.data.docId} />
   }
 }
 ```
@@ -1449,6 +1533,12 @@ events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed
 events.result     // Ok<DocEvent> | Err<GetDocEventsError> | undefined
 ```
 
+Subscriptions are the one hook that keeps a `result` envelope. Queries and
+mutations flatten to `value`/`error` because `state` discriminates them;
+`connection` is deliberately orthogonal to the latest outcome, so here
+`Result | undefined` is the honest shape — flat `value`/`error` fields would
+be exactly the independently-nullable pair this library exists to avoid.
+
 `AuthShell.useSubscription` narrows the same way: a claimed terminal failure
 leaves `connection` at `"paused"` with no `result`, and the owning shell
 reacts. A retryable disconnect moves through `reconnecting` and does not
@@ -1751,7 +1841,7 @@ tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
 
 | Concern | result-rpc contract |
 | --- | --- |
-| Result composition | Plain Result values, union-preserving combinators, exhaustive matching |
+| Result composition | Plain Result values, `gen`/`yield*`, `tryPromise`, union-preserving combinators, exhaustive matching |
 | Error definitions | Namespaced tags, wire codecs, HTTP/retry/visibility policy |
 | RPC | Procedures, middleware, routers, server execution, protocol, clients |
 | Transport failures | Tagged additions to each procedure's inferred error union |
