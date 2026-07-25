@@ -1595,6 +1595,25 @@ over-modeling is bounded by the context-free rule. Relationships are never
 declared — they live in each query's output shape, discovered per result by
 walking, so there is no relation schema to keep in sync.
 
+And when the database is Drizzle, the dual-model tax disappears entirely:
+
+```ts
+import { modelFromDrizzle } from "result-rpc/drizzle"
+
+export const Hotel = modelFromDrizzle("hotel", hotels, {
+  columns: ["id", "name", "phone", "city"],   // mandatory allowlist
+})
+export const TourContent = modelFromDrizzle("tour-content", tourContent, {
+  columns: ["id", "locale", "title"],
+  key: ["id", "locale"],                       // composite PKs named explicitly
+})
+```
+
+Shape, types, and key derive from the same schema your migrations already
+maintain — the model cannot drift from the database, and `pick()` is
+Drizzle's `columns:` subset with an identity attached. (`drizzle-orm` >= 1.0,
+optional peer, imported only by the `result-rpc/drizzle` subpath.)
+
 `examples/08-bookings/NOTES.md` is this doctrine applied to real-world
 shapes — a four-level relational tree, locale-variant content under a
 composite key, query-relative aggregates, derived summaries — with a table
@@ -2175,8 +2194,13 @@ with its own tests:
    composite `["id","locale"]` key, `min()` aggregates that stay
    query-relative while the entity inside them patches, derived summaries
    on `.affects`, and record-key `touch` deletes — every claim pinned by
-   per-procedure request counters. Its `NOTES.md` is the
-   model-vs-pick-vs-one-off decision table applied to every output shape.
+   per-procedure request counters. Models are DERIVED from the tables via
+   `result-rpc/drizzle` (`modelFromDrizzle` — 13 lines for four models);
+   `tryDb` turns constraint violations into domain errors (the insert IS the
+   uniqueness check); one `users.rename` request patches four surfaces
+   across two paginated feeds. Its `NOTES.md` carries the
+   model-vs-pick-vs-one-off decision table and the cost ledger against
+   tRPC + React Query.
 
 ## Design and verification
 

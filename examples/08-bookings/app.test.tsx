@@ -10,7 +10,8 @@ import { err, ok } from "../../src/index.js";
 import { makeClient, type AppClient } from "./client.js";
 import { seedDb, TODAY } from "./world.js";
 import { makeHandler, type AppContext } from "./server.js";
-import { App, StaleShell } from "./app.tsx";
+import { ResultRpcProvider } from "../../src/react/index.js";
+import { App, BoundaryProvider, Dashboard, ReviewsPanel, StaleShell } from "./app.tsx";
 
 // -- world ----------------------------------------------------------------------
 
@@ -21,6 +22,11 @@ const PATHS = [
   "orders.reschedule",
   "hotels.byId",
   "hotels.updatePhone",
+  "hotels.reviews",
+  "hotels.reviewStats",
+  "users.byId",
+  "users.rename",
+  "reviews.add",
   "tours.byId",
   "tours.featured",
   "tours.editTitle",
@@ -37,6 +43,7 @@ async function createWorld(options: WorldOptions = {}) {
   const context: AppContext = {
     db: await seedDb(),
     today: TODAY,
+    currentUserId: "u-sara",
     ...(options.gate ? { gate: options.gate } : {}),
   };
   const handler = makeHandler(context);
@@ -126,6 +133,12 @@ async function typeInto(
   });
 }
 
+async function chooseRating(renderer: ReactTestRenderer, value: string): Promise<void> {
+  await act(async () => {
+    renderer.root.findByType("select").props.onChange({ target: { value } });
+  });
+}
+
 async function submitForm(renderer: ReactTestRenderer, buttonLabel: string): Promise<void> {
   const button = renderer.root
     .findAllByType("button")
@@ -146,8 +159,12 @@ async function renderSettledApp(client: AppClient): Promise<ReactTestRenderer> {
   await waitForText(
     renderer,
     (text) =>
-      text.includes("Order ord-1 · aiko@example.com") &&
+      text.includes("Order ord-1 · aiko@example.com — booked by Kenji Mori") &&
       text.includes("Front desk: Hotel Okura") &&
+      text.includes("Guest rating 4.2 · 5 reviews") &&
+      text.includes("“Quiet floors, would return” — Noah Brandt (4/5)") &&
+      text.includes("“Concierge went above and beyond” — Mei Ito (5/5)") &&
+      text.includes("Top reviewer: Kenji Mori") &&
       text.includes("[en] Mount Fuji Day Trip") &&
       text.includes("[ja] 富士山日帰りツアー") &&
       text.includes("★ Mount Fuji Day Trip") &&
@@ -170,6 +187,7 @@ test("direct client round-trips the deep tree with column subsets at every level
     ok([
       {
         order: { id: "ord-1", email: "aiko@example.com", note: "Honeymoon trip" },
+        bookedBy: { id: "u-kenji", name: "Kenji Mori" },
         lineItems: [
           {
             id: "li-1",
@@ -212,6 +230,7 @@ test("direct client round-trips the deep tree with column subsets at every level
       },
       {
         order: { id: "ord-2", email: "clara@example.com", note: "Anniversary" },
+        bookedBy: { id: "u-sara", name: "Sara Lind" },
         lineItems: [
           {
             id: "li-2",
@@ -436,7 +455,161 @@ test("retire deletes both locales and touch(TourContent, {id, locale}) refetches
   });
 });
 
-// -- 7. compile-time probes: what each call site can be asked to render ----------------------
+// -- 7. the cross-page pagination proof: identity freshness ignores page boundaries ----------
+
+test("users.rename patches the author across cached review pages, the profile card, and the tree — zero refetches", async () => {
+  const { client, counts } = await createWorld();
+
+  // One review per (hotel, author) — the round-three UNIQUE constraint —
+  // means one author can never hold two rows in one hotel's feed. So the
+  // cross-page world is two paginated feeds: the dashboard's Okura panel
+  // (Kenji on page 2) plus a Granvia panel (Kenji on page 1).
+  const renderer = await render(
+    <ResultRpcProvider client={client}>
+      <BoundaryProvider>
+        <Dashboard />
+        <ReviewsPanel hotelId="h-granvia" />
+      </BoundaryProvider>
+    </ResultRpcProvider>,
+  );
+  await waitForText(
+    renderer,
+    (text) =>
+      text.includes("Top reviewer: Kenji Mori") &&
+      text.includes("Order ord-1 · aiko@example.com — booked by Kenji Mori") &&
+      text.includes("“Perfect Kyoto base” — Kenji Mori (4/5)"),
+    "dashboard and the Granvia feed settled",
+  );
+
+  // Mount Okura page 2 alongside page 1 ("load more": both stay live queries).
+  await clickButton(renderer, "Show older reviews");
+  await waitForText(
+    renderer,
+    (text) =>
+      text.includes("“Best onsen in Tokyo” — Kenji Mori (5/5)") &&
+      text.includes("“Great breakfast spread” — Liv Sørensen (4/5)"),
+    "Okura page 2 mounted (Kenji's Okura row visible)",
+  );
+  await act(settle);
+  const baseline = { ...counts };
+
+  await clickButton(renderer, "Shorten Kenji's name");
+
+  // Four surfaces, one entity: a row on Okura page 2, a row on Granvia
+  // page 1, the top-reviewer card, and the orders tree's booked-by line.
+  // Pages — of either feed — are just more cached queries containing the
+  // same entity.
+  await waitForText(
+    renderer,
+    (text) => occurrences(text, "Kenji M.") === 4 && !text.includes("Kenji Mori"),
+    "renamed author on both paginated feeds, the card, and the tree",
+  );
+  await act(settle);
+
+  expect(counts).toEqual({ ...baseline, "users.rename": 1 });
+});
+
+// -- 8. mixed mutation: identity patching + declared membership/aggregate blast radius --------
+
+test("reviews.add refetches the ACTIVE page and the stats aggregate — exactly the declared blast radius", async () => {
+  const { client, counts } = await createWorld();
+  const renderer = await renderSettledApp(client);
+
+  // Cache page 2, then collapse it: it stays cached but INACTIVE.
+  await clickButton(renderer, "Show older reviews");
+  await waitForText(
+    renderer,
+    (text) => text.includes("“Best onsen in Tokyo” — Kenji Mori (5/5)"),
+    "page 2 cached",
+  );
+  await clickButton(renderer, "Collapse older reviews");
+  await waitForText(
+    renderer,
+    (text) => !text.includes("“Best onsen in Tokyo” — Kenji Mori (5/5)"),
+    "page 2 unmounted",
+  );
+  await act(settle);
+  const baseline = { ...counts };
+
+  await chooseRating(renderer, "2");
+  await typeInto(renderer, "Share your stay", "Room was noisy");
+  await submitForm(renderer, "Post review");
+
+  // The new review lands at the top of page 1 (newest-first), pushing rv-3
+  // off the page, and the aggregate recomputes: 23/6 = 3.8.
+  await waitForText(
+    renderer,
+    (text) =>
+      text.includes("“Room was noisy” — Sara Lind (2/5)") &&
+      text.includes("Guest rating 3.8 · 6 reviews") &&
+      !text.includes("“Rooms are small but spotless” — Tomas Keller (3/5)"),
+    "new review on page 1, membership shifted, stats recomputed",
+  );
+  await act(settle);
+
+  // Exactly the declared blast radius: the mutation, ONE refetch of the
+  // active page 1, ONE refetch of the stats aggregate. The cached-but-
+  // collapsed page 2 was invalidated without being fetched.
+  expect(counts).toEqual({
+    ...baseline,
+    "reviews.add": 1,
+    "hotels.reviews": (baseline["hotels.reviews"] ?? 0) + 1,
+    "hotels.reviewStats": (baseline["hotels.reviewStats"] ?? 0) + 1,
+  });
+
+  // Re-expanding fetches page 2 fresh membership exactly once: rv-3 slid
+  // onto it.
+  await clickButton(renderer, "Show older reviews");
+  await waitForText(
+    renderer,
+    (text) =>
+      text.includes("“Rooms are small but spotless” — Tomas Keller (3/5)") &&
+      text.includes("“Best onsen in Tokyo” — Kenji Mori (5/5)"),
+    "page 2 remounted with shifted membership",
+  );
+  await act(settle);
+  expect(counts["hotels.reviews"]).toBe((baseline["hotels.reviews"] ?? 0) + 2);
+
+  // -- the duplicate attempt: the INSERT is the uniqueness check ------------------
+  //
+  // Sara already reviewed this hotel (she just did, above). Posting again
+  // hits the UNIQUE(hotel_id, author_id) constraint; the handler collapses
+  // db/unique-violation to the declared reviews/already-reviewed — with no
+  // pre-check SELECT round trip anywhere, and correct under concurrency
+  // where a SELECT-first check would race.
+  const afterFirst = { ...counts };
+
+  await chooseRating(renderer, "4");
+  await typeInto(renderer, "Share your stay", "Trying again");
+  await submitForm(renderer, "Post review");
+
+  await waitForText(
+    renderer,
+    (text) => text.includes("You've already reviewed this hotel."),
+    "already-reviewed message from the collapsed constraint outcome",
+  );
+  await act(settle);
+
+  // Exactly ONE request for the failed attempt — the mutation itself — and
+  // NO invalidation side effects: .affects only fires on success, so the
+  // page and the stats aggregate were not refetched.
+  expect(counts).toEqual({
+    ...afterFirst,
+    "reviews.add": (afterFirst["reviews.add"] ?? 0) + 1,
+  });
+  // The failed attempt changed nothing: the feed still shows Sara's first
+  // review once, and the stats still count six.
+  expect(occurrences(textOf(renderer), "— Sara Lind")).toBe(1);
+  expect(textOf(renderer)).toContain("Guest rating 3.8 · 6 reviews");
+
+  // And the FK constraint covers the other client-supplied reference the
+  // same way: a dangling hotel id collapses to the declared not-found.
+  expect(await client.reviews.add({ hotelId: "h-nope", rating: 5, body: "ghost" })).toEqual(
+    err({ _tag: "hotel/not-found", data: { hotelId: "h-nope" } }),
+  );
+});
+
+// -- 9. compile-time probes: what each call site can be asked to render ----------------------
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;

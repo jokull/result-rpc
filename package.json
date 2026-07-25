@@ -24,6 +24,10 @@
       "types": "./dist/client/index.d.ts",
       "import": "./dist/client/index.js"
     },
+    "./drizzle": {
+      "types": "./dist/drizzle.d.ts",
+      "import": "./dist/drizzle.js"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"
@@ -56,7 +60,7 @@
     "node": ">=20"
   },
   "license": "MIT",
-  "author": "Jökull Sólberg <jokull@solberg.is>",
+  "author": "J\u00f6kull S\u00f3lberg <jokull@solberg.is>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jokull/result-rpc.git"
@@ -79,6 +83,12 @@
     "devalue": "5.8.2"
   },
   "peerDependencies": {
-    "react": ">=18.3"
+    "react": ">=18.3",
+    "drizzle-orm": ">=1.0.0-rc"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    }
   }
 }

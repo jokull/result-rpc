@@ -45,5 +45,10 @@ with its own tests:
    composite `["id","locale"]` key, `min()` aggregates that stay
    query-relative while the entity inside them patches, derived summaries
    on `.affects`, and record-key `touch` deletes — every claim pinned by
-   per-procedure request counters. Its `NOTES.md` is the
-   model-vs-pick-vs-one-off decision table applied to every output shape.
+   per-procedure request counters. Models are DERIVED from the tables via
+   `result-rpc/drizzle` (`modelFromDrizzle` — 13 lines for four models);
+   `tryDb` turns constraint violations into domain errors (the insert IS the
+   uniqueness check); one `users.rename` request patches four surfaces
+   across two paginated feeds. Its `NOTES.md` carries the
+   model-vs-pick-vs-one-off decision table and the cost ledger against
+   tRPC + React Query.

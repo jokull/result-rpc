@@ -18,6 +18,14 @@ export const bookingErrors = defineErrors("booking", {
   },
 });
 
+export const reviewErrors = defineErrors("reviews", {
+  alreadyReviewed: { data: wire.object({ hotelId: wire.string }), httpStatus: 409 },
+});
+
+export const userErrors = defineErrors("user", {
+  notFound: { data: wire.object({ userId: wire.string }), httpStatus: 404 },
+});
+
 export const tourErrors = defineErrors("tours", {
   notFound: {
     data: wire.object({ tourId: wire.string, locale: wire.string }),

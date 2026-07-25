@@ -3,7 +3,14 @@
  * type-only from the server half; no handler code lives here.
  */
 import { rpc, wire } from "../../src/index.js";
-import { bookingErrors, hotelErrors, orderErrors, tourErrors } from "./errors.js";
+import {
+  bookingErrors,
+  hotelErrors,
+  orderErrors,
+  reviewErrors,
+  tourErrors,
+  userErrors,
+} from "./errors.js";
 import {
   AvailabilityRow,
   Hotel,
@@ -11,7 +18,11 @@ import {
   NextDepartureCodec,
   Order,
   OrderTreeRow,
+  ReviewRowView,
+  ReviewsPageCodec,
+  ReviewStatsCodec,
   TourContent,
+  User,
 } from "./models.js";
 import type { AppContext } from "./server.js";
 
@@ -46,6 +57,64 @@ export const updatePhoneContract = app
   .input(wire.object({ id: wire.string, phone: wire.string }))
   .output(Hotel.codec)
   .errors({ ...hotelErrors })
+  .mutation();
+
+/**
+ * Offset pagination, the shape real APIs actually ship: a 1-based page
+ * number in, `limit + 1` fetched, `hasMore` sentinel out. Each page is its
+ * own cached query — which is exactly why entity freshness crosses pages.
+ */
+export const hotelReviewsContract = app
+  .procedure()
+  .input(wire.object({ hotelId: wire.string, page: wire.integer({ min: 1 }) }))
+  .output(ReviewsPageCodec)
+  .query();
+
+/** Aggregate over the reviews table — query-relative, so never on a model. */
+export const reviewStatsContract = app
+  .procedure()
+  .input(wire.object({ hotelId: wire.string }))
+  .output(ReviewStatsCodec)
+  .query();
+
+// -- users ----------------------------------------------------------------------------
+
+export const userByIdContract = app
+  .procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(User.codec)
+  .errors({ ...userErrors })
+  .query();
+
+export const renameUserContract = app
+  .procedure()
+  .input(wire.object({ id: wire.string, name: wire.string }))
+  .output(User.codec)
+  .errors({ ...userErrors })
+  .mutation();
+
+// -- reviews ----------------------------------------------------------------------------
+
+/**
+ * The mixed mutation: the output carries a User entity (identity patching),
+ * while membership and the aggregate go through `.affects`. Map-less on the
+ * paginated list on purpose — page inputs make a mapped target awkward, and
+ * invalidating every cached page is the honest blast radius (only ACTIVE
+ * pages refetch; collapsed pages refetch on their next mount).
+ */
+export const addReviewContract = app
+  .procedure()
+  .input(
+    wire.object({
+      hotelId: wire.string,
+      rating: wire.integer({ min: 1, max: 5 }),
+      body: wire.string,
+    }),
+  )
+  .output(ReviewRowView)
+  .errors({ ...hotelErrors, ...reviewErrors })
+  .affects(hotelReviewsContract)
+  .affects(reviewStatsContract)
   .mutation();
 
 // -- tours: composite-key content -----------------------------------------------------
@@ -118,6 +187,15 @@ export const appContract = app.contract({
   hotels: {
     byId: hotelByIdContract,
     updatePhone: updatePhoneContract,
+    reviews: hotelReviewsContract,
+    reviewStats: reviewStatsContract,
+  },
+  users: {
+    byId: userByIdContract,
+    rename: renameUserContract,
+  },
+  reviews: {
+    add: addReviewContract,
   },
   tours: {
     byId: tourByIdContract,

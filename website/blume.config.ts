@@ -60,6 +60,7 @@ export default defineConfig({
         label: "Guides",
         items: [
           "/guides/forms",
+          "/guides/drizzle",
           "/guides/routing",
           "/guides/testing",
           "/guides/observability",

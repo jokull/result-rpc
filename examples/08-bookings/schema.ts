@@ -5,14 +5,40 @@
  * an in-memory bun:sqlite database and run these statements directly.
  */
 import { defineRelations } from "drizzle-orm";
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 
 export const orders = sqliteTable("orders", {
   id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
   email: text("email").notNull(),
   note: text("note").notNull(),
   chargedAt: integer("charged_at", { mode: "timestamp" }).notNull(),
 });
+
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** Nullable on purpose: the derived model maps it to `string | null`. */
+  avatarUrl: text("avatar_url"),
+});
+
+/**
+ * One review per user per hotel — enforced by the DATABASE, not by a
+ * SELECT-first pre-check. The handler attempts the insert and branches on
+ * the constraint outcome via `tryDb`; the FK references let a dangling
+ * hotel id surface the same way.
+ */
+export const reviews = sqliteTable(
+  "reviews",
+  {
+    id: text("id").primaryKey(),
+    hotelId: text("hotel_id").notNull(),
+    authorId: text("author_id").notNull(),
+    rating: integer("rating").notNull(),
+    body: text("body").notNull(),
+  },
+  (table) => [unique().on(table.hotelId, table.authorId)],
+);
 
 export const lineItems = sqliteTable("line_items", {
   id: text("id").primaryKey(),
@@ -55,7 +81,8 @@ export const tourContent = sqliteTable(
   "tour_content",
   {
     id: text("id").notNull(),
-    locale: text("locale").notNull(),
+    /** Enum column: the derived model turns this into a literal union. */
+    locale: text("locale", { enum: ["en", "ja"] }).notNull(),
     title: text("title").notNull(),
     summary: text("summary").notNull(),
   },
@@ -78,10 +105,25 @@ export const tourAvailability = sqliteTable(
  * the FK is guaranteed (otherwise `.hotel` types as `Hotel | null`).
  */
 export const relations = defineRelations(
-  { orders, lineItems, destinations, hotels, rooms, occupants, tourContent, tourAvailability },
+  {
+    orders,
+    users,
+    reviews,
+    lineItems,
+    destinations,
+    hotels,
+    rooms,
+    occupants,
+    tourContent,
+    tourAvailability,
+  },
   (r) => ({
     orders: {
+      user: r.one.users({ from: r.orders.userId, to: r.users.id, optional: false }),
       lineItems: r.many.lineItems({ from: r.orders.id, to: r.lineItems.orderId }),
+    },
+    reviews: {
+      author: r.one.users({ from: r.reviews.authorId, to: r.users.id, optional: false }),
     },
     lineItems: {
       destinations: r.many.destinations({
@@ -105,7 +147,9 @@ export const relations = defineRelations(
 
 /** Executed one statement at a time against bun:sqlite at seed time. */
 export const DDL: readonly string[] = [
-  `CREATE TABLE orders (id TEXT PRIMARY KEY, email TEXT NOT NULL, note TEXT NOT NULL, charged_at INTEGER NOT NULL)`,
+  `CREATE TABLE orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, email TEXT NOT NULL, note TEXT NOT NULL, charged_at INTEGER NOT NULL)`,
+  `CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT NOT NULL, avatar_url TEXT)`,
+  `CREATE TABLE reviews (id TEXT PRIMARY KEY, hotel_id TEXT NOT NULL REFERENCES hotels(id), author_id TEXT NOT NULL REFERENCES users(id), rating INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (hotel_id, author_id))`,
   `CREATE TABLE line_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, date TEXT NOT NULL, nights INTEGER NOT NULL)`,
   `CREATE TABLE destinations (id TEXT PRIMARY KEY, line_item_id TEXT NOT NULL, hotel_id TEXT NOT NULL, nights INTEGER NOT NULL, idx INTEGER NOT NULL)`,
   `CREATE TABLE hotels (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL, city TEXT NOT NULL)`,

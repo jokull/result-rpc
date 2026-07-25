@@ -73,7 +73,7 @@ export function OrdersTree() {
           {list.value.map((row) => (
             <article key={row.order.id}>
               <h3>
-                Order {row.order.id} · {row.order.email}
+                Order {row.order.id} · {row.order.email} — booked by {row.bookedBy.name}
               </h3>
               <p>Note: {row.order.note}</p>
               <ul>
@@ -162,6 +162,171 @@ export function HotelDesk({ hotelId }: { hotelId: string }) {
         </p>
       );
   }
+}
+
+// -- hotel reviews: offset pagination as a stack of mounted page queries ---------------------
+
+function ReviewsPage({
+  hotelId,
+  page,
+  isLast,
+  onMore,
+}: {
+  hotelId: string;
+  page: number;
+  isLast: boolean;
+  onMore: () => void;
+}) {
+  const client = useResultClient<AppClient>();
+  const pageQuery = StaleShell.useQuery(client.hotels.reviews, { hotelId, page });
+
+  switch (pageQuery.state) {
+    case "pending":
+      return <p>Loading reviews…</p>;
+    case "success":
+      return (
+        <div>
+          <ul>
+            {pageQuery.value.rows.map((row) => (
+              <li key={row.review.id}>
+                “{row.review.body}” — {row.author.name} ({row.review.rating}/5)
+              </li>
+            ))}
+          </ul>
+          {isLast && pageQuery.value.hasMore ? (
+            <button onClick={onMore}>Show older reviews</button>
+          ) : null}
+        </div>
+      );
+    case "failure":
+      return pageQuery.error satisfies never;
+  }
+}
+
+export function ReviewsPanel({ hotelId }: { hotelId: string }) {
+  // "Load more" pagination: every revealed page stays a MOUNTED query, so
+  // the cache holds pages 1..n at once — which is the whole point of the
+  // cross-page proof. Collapsing unmounts the older pages but leaves them
+  // cached.
+  const [pageCount, setPageCount] = useState(1);
+  return (
+    <section>
+      <h3>Guest reviews</h3>
+      {Array.from({ length: pageCount }, (_, index) => (
+        <ReviewsPage
+          key={index + 1}
+          hotelId={hotelId}
+          page={index + 1}
+          isLast={index + 1 === pageCount}
+          onMore={() => setPageCount((current) => current + 1)}
+        />
+      ))}
+      {pageCount > 1 ? (
+        <button onClick={() => setPageCount(1)}>Collapse older reviews</button>
+      ) : null}
+    </section>
+  );
+}
+
+export function ReviewStats({ hotelId }: { hotelId: string }) {
+  const client = useResultClient<AppClient>();
+  const stats = StaleShell.useQuery(client.hotels.reviewStats, { hotelId });
+
+  switch (stats.state) {
+    case "pending":
+      return <p>Crunching ratings…</p>;
+    case "success":
+      return stats.value.count === 0 ? (
+        <p>No reviews yet.</p>
+      ) : (
+        <p>
+          Guest rating {stats.value.averageRating} · {stats.value.count} reviews
+        </p>
+      );
+    case "failure":
+      return stats.error satisfies never;
+  }
+}
+
+export function TopReviewerCard({ userId }: { userId: string }) {
+  const client = useResultClient<AppClient>();
+  const user = StaleShell.useQuery(client.users.byId, { id: userId });
+  const rename = StaleShell.useMutation(client.users.rename);
+
+  switch (user.state) {
+    case "pending":
+      return <p>Loading reviewer…</p>;
+    case "success":
+      return (
+        <section>
+          <p>Top reviewer: {user.value.name}</p>
+          <button
+            onClick={() =>
+              void rename.mutate({ id: userId, name: "Kenji M." }).catch(() => undefined)
+            }
+          >
+            Shorten Kenji's name
+          </button>
+        </section>
+      );
+    case "failure":
+      return (
+        <p role="alert">
+          {matchError(user.error, {
+            "user/not-found": () => "This reviewer has left the platform.",
+          })}
+        </p>
+      );
+  }
+}
+
+export function AddReviewForm({ hotelId }: { hotelId: string }) {
+  const client = useResultClient<AppClient>();
+  const [body, setBody] = useState("");
+  const [rating, setRating] = useState("5");
+  const addReview = StaleShell.useMutation(client.reviews.add);
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void addReview
+          .mutate({ hotelId, rating: Number(rating), body })
+          .then((result) => {
+            if (result.ok) setBody("");
+          })
+          .catch(() => undefined);
+      }}
+    >
+      <label>
+        Your review
+        <input
+          placeholder="Share your stay"
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+        />
+      </label>
+      <label>
+        Rating
+        <select value={rating} onChange={(event) => setRating(event.target.value)}>
+          {["1", "2", "3", "4", "5"].map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit">Post review</button>
+      {addReview.state === "failure" && (
+        <p role="alert">
+          {matchError(addReview.error, {
+            "hotel/not-found": () => "This hotel is no longer listed.",
+            "reviews/already-reviewed": () => "You've already reviewed this hotel.",
+          })}
+        </p>
+      )}
+    </form>
+  );
 }
 
 // -- tour content (composite key: id + locale) ---------------------------------------------
@@ -352,6 +517,10 @@ export function Dashboard() {
       <OrdersTree />
       <NoteEditor orderId="ord-1" />
       <HotelDesk hotelId="h-okura" />
+      <ReviewStats hotelId="h-okura" />
+      <ReviewsPanel hotelId="h-okura" />
+      <AddReviewForm hotelId="h-okura" />
+      <TopReviewerCard userId="u-kenji" />
       <TourDetail id="t-fuji" locale="en" />
       <TourDetail id="t-fuji" locale="ja" />
       <RenameTourForm id="t-fuji" locale="en" />
