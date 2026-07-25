@@ -786,6 +786,28 @@ offline (runtime retry default and the direct client's
 `retry: "from-error-policy"` path), and focus-triggered shell resumes have a
 5s cooldown so repeated alt-tabbing at a downed server cannot storm it.
 
+### Schema-first derivation (a pillar, not an adapter)
+
+Committed direction: when the app owns its schema through Drizzle, the
+schema is the single source of truth and result-rpc derives downstream —
+Django's `models.py` move at the wire boundary. `result-rpc/drizzle` ships
+`modelFromDrizzle` (models from tables; mandatory column allowlist;
+explicit composite keys) and `tryDb` (the Result-typed query door: driver
+constraint codes as private `db/*` composition currency, collapsed to
+declared domain tags at the boundary).
+
+Derivations deliberately NOT taken, evaluated against doctrine:
+- **Form validators from models** — forms validate humans, wires validate
+  applications; deriving form rules from column metadata is the 1:1
+  forms-bridge mistake with a schema accent.
+- **CRUD procedure scaffolding** (`crudFor(Model)`) — the contract is the
+  reviewed artifact; generating procedures hides the error unions and
+  blast-radius declarations that reviewers must see. Revisit only if a real
+  codebase demonstrates the boilerplate.
+- **Output codecs from RQB query configs** — couples the shared contract to
+  server resolver internals; the alignment is already enforced by the type
+  checker (handler returns must satisfy output codecs).
+
 ### Entity hardening (stress-test round)
 
 The entity system was adversarially stress-tested (urql Graphcache autopsy →

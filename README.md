@@ -1611,7 +1611,11 @@ export const TourContent = modelFromDrizzle("tour-content", tourContent, {
 
 Shape, types, and key derive from the same schema your migrations already
 maintain — the model cannot drift from the database, and `pick()` is
-Drizzle's `columns:` subset with an identity attached. (`drizzle-orm` >= 1.0,
+Drizzle's `columns:` subset with an identity attached. This is Django's
+single-source-of-truth move — `models.py` deriving forms, serializers, and
+admin — reborn at the wire: table → model → `pick()` → output codec →
+client cache identity, one schema walking the whole chain through the type
+checker. (`drizzle-orm` >= 1.0,
 optional peer, imported only by the `result-rpc/drizzle` subpath.)
 
 `examples/08-bookings/NOTES.md` is this doctrine applied to real-world

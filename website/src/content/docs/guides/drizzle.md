@@ -24,6 +24,14 @@ export const TourContent = modelFromDrizzle("tour-content", tourContent, {
 })
 ```
 
+This is Django's oldest, best move — `models.py` as the single source of
+truth, with forms, serializers, and admin all *derived* — reborn at the wire
+boundary. The schema owns the facts; everything downstream is a projection
+of it: table → model → `pick()` → output codec → client cache identity. One
+`ALTER TABLE`-shaped change in one file, and the type checker walks it
+through the contract, the handlers, and every component that renders the
+field.
+
 That is the entire entity contract. The wire model cannot drift from the
 database, because it is derived from the same schema your migrations
 maintain — "maintaining entity contracts" reduces to the migration you were
