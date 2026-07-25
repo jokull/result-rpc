@@ -159,7 +159,10 @@ export const collectEntities = (root: unknown): readonly CollectedEntity[] => {
       return;
     }
     if (value instanceof Map) {
-      for (const item of value.values()) visit(item);
+      for (const [key, item] of value.entries()) {
+        visit(key);
+        visit(item);
+      }
       return;
     }
     if (value instanceof Set) {
@@ -219,12 +222,15 @@ export const patchEntity = (
     if (cached !== undefined) return cached;
     const brand = entityBrands.get(value);
     if (brand === model && entityIdOf(value, brand) === id) {
-      const next = produce(value as Record<string, unknown>);
-      if (next !== value) {
-        entityBrands.set(next, brand);
-        changed = true;
-      }
+      // Walk INTO the produced replacement: a nested occurrence of the same
+      // entity (including a self-reference cycle) must be patched too, and
+      // cycles must rebind to the clone, not dangle on the original.
+      const produced = produce(value as Record<string, unknown>);
+      const next: Record<string, unknown> = {};
       clones.set(value, next);
+      entityBrands.set(next, brand);
+      if (produced !== value) changed = true;
+      for (const [key, item] of Object.entries(produced)) next[key] = walk(item);
       return next;
     }
     if (Array.isArray(value)) {
@@ -236,7 +242,7 @@ export const patchEntity = (
     if (value instanceof Map) {
       const next = new Map<unknown, unknown>();
       clones.set(value, next);
-      for (const [key, item] of value.entries()) next.set(key, walk(item));
+      for (const [key, item] of value.entries()) next.set(walk(key), walk(item));
       return next;
     }
     if (value instanceof Set) {
@@ -258,4 +264,99 @@ export const patchEntity = (
   };
   const value = walk(root);
   return changed ? { value, changed } : { value: root, changed };
+};
+
+// --- Structural sharing --------------------------------------------------------
+
+/**
+ * Brand-preserving structural sharing — installed as the query cache's
+ * `structuralSharing` so it runs on EVERY write path into cached data.
+ *
+ * Same reference-reuse semantics as query-core's `replaceEqualDeep` (equal
+ * subtrees keep their old identity; changed plain containers become mixed
+ * copies), with one addition that the whole entity system depends on: brands
+ * live in a WeakMap keyed on object identity, and the default merge
+ * manufactures identity-fresh copies that silently fall out of the entity
+ * index. This variant transfers brands onto whatever object survives:
+ *
+ * - the incoming side is branded → the result (retained old object, mixed
+ *   copy, or the new object itself) carries that brand. Branding the RETAINED
+ *   old object is what makes SSR hydration work — the observe-time re-decode
+ *   deep-equals the hydrated value, the old object is kept, and it inherits
+ *   the decode pass's brand.
+ * - only the OLD side is branded (an app updater spread an entity) → the
+ *   brand carries over iff the model's key field still matches, so a spread
+ *   in an `optimistic:` block no longer silently disables entity patching.
+ */
+export const shareStructural = (previous: unknown, next: unknown): unknown => {
+  const visiting = new Set<object>();
+  const share = (a: unknown, b: unknown): unknown => {
+    if (Object.is(a, b)) return a;
+    if (b === null || typeof b !== "object") return b;
+    const bBrand = entityBrands.get(b);
+    const finish = (result: unknown): unknown => {
+      if (result !== null && typeof result === "object") {
+        if (bBrand) {
+          entityBrands.set(result, bBrand);
+        } else if (!Object.is(result, a) && a !== null && typeof a === "object") {
+          const aBrand = entityBrands.get(a);
+          if (aBrand) {
+            const previousId = entityIdOf(a, aBrand);
+            const resultId = entityIdOf(result as object, aBrand);
+            if (previousId !== undefined && previousId === resultId) {
+              entityBrands.set(result, aBrand);
+            }
+          }
+        }
+      }
+      return result;
+    };
+    const aIsArray = Array.isArray(a);
+    const bIsArray = Array.isArray(b);
+    if (aIsArray && bIsArray) {
+      if (visiting.has(b)) return b;
+      visiting.add(b);
+      const aArray = a as readonly unknown[];
+      const bArray = b as readonly unknown[];
+      const copy: unknown[] = new Array(bArray.length);
+      let equal = 0;
+      for (let index = 0; index < bArray.length; index += 1) {
+        copy[index] = share(aArray[index], bArray[index]);
+        if (index < aArray.length && Object.is(copy[index], aArray[index])) equal += 1;
+      }
+      visiting.delete(b);
+      return finish(
+        aArray.length === bArray.length && equal === bArray.length ? a : copy,
+      );
+    }
+    if (
+      !aIsArray && !bIsArray
+      && a !== null && typeof a === "object"
+      && Object.getPrototypeOf(a) === Object.prototype
+      && Object.getPrototypeOf(b) === Object.prototype
+    ) {
+      if (visiting.has(b)) return b;
+      visiting.add(b);
+      const aObject = a as Record<string, unknown>;
+      const bObject = b as Record<string, unknown>;
+      const bKeys = Object.keys(bObject);
+      const copy: Record<string, unknown> = {};
+      let equal = 0;
+      for (const key of bKeys) {
+        copy[key] = share(aObject[key], bObject[key]);
+        if (key in aObject && Object.is(copy[key], aObject[key])) equal += 1;
+      }
+      visiting.delete(b);
+      return finish(
+        Object.keys(aObject).length === bKeys.length && equal === bKeys.length
+          ? a
+          : copy,
+      );
+    }
+    // Rich values (Date, Map, Set, URL, ...), type mismatches, and fresh
+    // subtrees take the new side wholesale — its interior is already branded
+    // by the decode or patch that produced it.
+    return finish(b);
+  };
+  return share(previous, next);
 };

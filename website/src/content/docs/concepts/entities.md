@@ -90,6 +90,38 @@ natural idempotency key. Add
 order becomes a field too: a drag-reorder is one `sortKey` patch and every
 cached list re-sorts locally — no list invalidation for reorders, ever.
 
+## Stress-tested: what the coherence oracle pins
+
+The entity system is proven by an adversarial suite (26 attack probes,
+`tests/entity/`) and a **coherence oracle**: seeded-random interleavings of
+mounts, unmounts, mutations, and invalidations against a reference database,
+asserting after every settle that active observers match the oracle exactly
+(three seeds × 120 operations, ~25k assertions per run). The properties it
+pins, several of them fixed by building it:
+
+- **Brands survive every write path.** Entity identity rides a
+  brand-preserving structural-sharing pass, so patching twice, refetching,
+  hydrating from SSR, and even spreading an entity inside an `optimistic:`
+  updater (`{ ...doc, title }` — the brand recovers when the key field
+  matches) all keep the entity in the index. `structuredClone`d values held
+  outside the cache stay inert — the WeakMap doesn't travel.
+- **Patches never launder staleness.** A patch is entity-partial: it leaves
+  the freshness clock and any pending invalidation exactly as they were, so
+  a list created-into while unmounted still refetches its membership on
+  remount, patch or no patch.
+- **Rollback is entity-scoped.** Rolling back one entity's optimistic patch
+  never erases a later confirmed write to a different entity in the same
+  query — no whole-query snapshots.
+- **In-flight responses can't regress a patch.** A refetch racing a patch is
+  cancelled and the query reconciled — the stale response never lands on top
+  of fresher entity state.
+- **Subscription events patch caches.** A live event's decoded entities
+  drive the same write-through as a mutation output: the header updates when
+  the stream says so.
+- **Racing mutation responses apply in arrival order** (no versions exist on
+  the wire). For contended entities, `touch` or `invalidateEntity` reconciles
+  — a refetch always converges. Documented semantics, pinned by test.
+
 ## What this deliberately is not
 
 There is no normalized store. Per-query results stay the source of truth —

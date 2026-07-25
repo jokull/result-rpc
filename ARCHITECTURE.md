@@ -786,6 +786,47 @@ offline (runtime retry default and the direct client's
 `retry: "from-error-policy"` path), and focus-triggered shell resumes have a
 5s cooldown so repeated alt-tabbing at a downed server cannot storm it.
 
+### Entity hardening (stress-test round)
+
+The entity system was adversarially stress-tested (urql Graphcache autopsy →
+attack-vector mapping; 26 empirical probes in `tests/entity/`; a seeded
+coherence oracle asserting active observers against a reference database).
+The round produced these load-bearing mechanisms:
+
+- **`shareStructural`** (model.ts) replaces query-core's `replaceEqualDeep`
+  as the per-query `structuralSharing`: same fine-grained identity reuse,
+  plus brand transfer onto every surviving object — retained old objects
+  inherit the incoming side's brand (this is what makes SSR hydration
+  entity-aware), and unbranded app-made copies recover the old side's brand
+  when the model key matches. Without it, the first patch (or any refetch)
+  evicted entities from the index — the one-shot-patch bug.
+- **Hydrate-time normalization**: `hydrate()` re-decodes every hydrated
+  query through its output codec immediately, so brands and the index exist
+  before any observe.
+- **Staleness preservation**: every framework write into the cache (patches,
+  observe/hydrate normalization) preserves `dataUpdatedAt` and re-marks
+  `isInvalidated` — a patch is entity-partial and must never satisfy a
+  pending invalidation or reset the staleTime clock.
+- **Entity-scoped rollback**: `updateEntity`'s rollback re-patches the
+  captured entity value instead of restoring whole-query snapshots.
+- **In-flight reconciliation**: patching a query with a fetch in flight
+  cancels the fetch, re-applies the patch after the revert, and invalidates
+  — the stale response never regresses fresher entity state, and whatever
+  else it carried (membership) arrives via the follow-up fetch.
+- **Reindex hygiene**: only data-bearing (`success`) cache events reindex;
+  patch-driven writes suppress reindexing entirely (a merge cannot change
+  membership).
+- **Subscriptions write through**: a live event's decoded entities run
+  `applyEntityWrites` like a mutation output.
+
+Documented semantics pinned by test rather than fixed: racing mutation
+responses apply in arrival order (reconcile contended entities with `touch`);
+correlated fields not carried by a projection output stay stale until a
+refetch; `structuredClone` strips brands (WeakMap identity); entity patches
+do not reach a subscription's own latest result. Known cost: the hot-entity
+extreme (one entity in 200 × 1k-row cached queries) patches in ~640ms —
+path-precise patching (clone only ancestors of matches) is the roadmap lever.
+
 ### Declared invalidation
 
 A mutation's `.affects(target, map?)` records `AffectsEntry` values in its

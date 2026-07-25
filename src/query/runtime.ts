@@ -52,6 +52,7 @@ import {
   entityKey,
   mergeByExistingKeys,
   patchEntity,
+  shareStructural,
   type AnyModel,
   type ModelValue,
 } from "../model.js";
@@ -450,7 +451,17 @@ export const createQueryRuntime = <TClient>(
   wireOnlineManager();
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { refetchOnWindowFocus: false, refetchOnReconnect: false },
+      queries: {
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        // Brand-preserving structural sharing: the default replaceEqualDeep
+        // manufactures identity-fresh copies on every merge, and entity
+        // brands live on object identity — without this, the first patch
+        // (or any refetch, or hydration) silently evicts entities from the
+        // index. See shareStructural in model.ts.
+        structuralSharing: (oldData: unknown, newData: unknown) =>
+          shareStructural(oldData, newData),
+      },
       mutations: { networkMode: "always" },
     },
   });
@@ -520,9 +531,21 @@ export const createQueryRuntime = <TClient>(
     }
   };
 
+  // Patch-driven writes cannot change entity MEMBERSHIP (a merge only
+  // rewrites field values of entities already present), so reindexing after
+  // them is pure waste — and at scale (one hot entity in hundreds of cached
+  // queries) it was the dominant cost of a patch.
+  let suppressReindex = 0;
+
   queryClient.getQueryCache().subscribe((event) => {
-    if (event.type === "added" || event.type === "updated") reindexQuery(event.query);
-    else if (event.type === "removed") dropQueryFromIndex(event.query.queryHash);
+    if (event.type === "added") reindexQuery(event.query);
+    else if (event.type === "updated") {
+      if (suppressReindex > 0) return;
+      // Only data-bearing updates can change entity membership; fetchStatus
+      // flips, invalidation marks, and errors would re-walk unchanged data.
+      const action = (event as { readonly action?: { readonly type?: string } }).action;
+      if (action?.type === "success") reindexQuery(event.query);
+    } else if (event.type === "removed") dropQueryFromIndex(event.query.queryHash);
   });
 
   const queriesContaining = (model: AnyModel, id: string): readonly string[] =>
@@ -533,6 +556,38 @@ export const createQueryRuntime = <TClient>(
    * rule. Falls back to nothing when the merge changes nothing — a patch that
    * cannot apply is simply not a patch.
    */
+  const patchOneQuery = (
+    queryKey: readonly unknown[],
+    model: AnyModel,
+    id: string,
+    produce: (current: Record<string, unknown>) => Record<string, unknown>,
+  ): boolean => {
+    const previous = queryClient.getQueryData(queryKey);
+    if (previous === undefined) return false;
+    const { value, changed } = patchEntity(previous, model, id, produce);
+    if (!changed) return false;
+    // A patch must not launder staleness: setQueryData normally counts as a
+    // fresh fetch (clearing isInvalidated and bumping dataUpdatedAt), but a
+    // patch is entity-partial — it cannot satisfy a pending invalidation
+    // (membership changes, other entities) and it must not reset the
+    // staleTime clock. Preserve both.
+    const query = queryClient.getQueryCache().find({ queryKey, exact: true });
+    const updatedAt = query?.state.dataUpdatedAt;
+    const wasInvalidated = query?.state.isInvalidated ?? false;
+    suppressReindex += 1;
+    try {
+      queryClient.setQueryData(
+        queryKey,
+        value,
+        updatedAt === undefined ? undefined : { updatedAt },
+      );
+    } finally {
+      suppressReindex -= 1;
+    }
+    if (wasInvalidated) query?.invalidate();
+    return true;
+  };
+
   const patchQueriesWith = (
     model: AnyModel,
     id: string,
@@ -544,10 +599,33 @@ export const createQueryRuntime = <TClient>(
       if (!queryKey) continue;
       const previous = queryClient.getQueryData(queryKey);
       if (previous === undefined) continue;
-      const { value, changed } = patchEntity(previous, model, id, produce);
-      if (!changed) continue;
-      queryClient.setQueryData(queryKey, value);
-      restores.push(() => queryClient.setQueryData(queryKey, previous));
+      // Rollback is ENTITY-scoped, not a whole-query snapshot: restoring a
+      // snapshot would erase every later independent write to other entities
+      // in the same query. Capture this entity's projection-shaped value and
+      // roll back by re-patching it.
+      const captured = collectEntities(previous)
+        .find((entity) => entity.model === model && entity.id === id)?.value;
+      const query = queryClient.getQueryCache().get(hash);
+      const wasFetching = query?.state.fetchStatus === "fetching";
+      const applied = patchOneQuery(queryKey, model, id, produce);
+      if (wasFetching) {
+        // A response already in flight predates this patch and may carry
+        // older entity state; letting it land would regress the screen.
+        // Cancel it (query-core reverts to the pre-fetch snapshot, async),
+        // re-apply the patch on top of whatever the revert restored, then
+        // invalidate: the cancelled response may have carried data the patch
+        // does not cover (membership, other entities), and a fresh fetch —
+        // started after the mutation — converges on all of it.
+        void queryClient.cancelQueries({ queryKey, exact: true }).then(() => {
+          patchOneQuery(queryKey, model, id, produce);
+          return queryClient.invalidateQueries({ queryKey, exact: true });
+        });
+      }
+      if (!applied || !captured) continue;
+      restores.push(() => {
+        patchOneQuery(queryKey, model, id, (current) =>
+          mergeByExistingKeys(current, captured));
+      });
     }
     return restores;
   };
@@ -655,10 +733,16 @@ export const createQueryRuntime = <TClient>(
         if (!decoded.ok) {
           queryClient.removeQueries({ queryKey: key, exact: true });
         } else {
-          // Normalize/copy rich values through the declared output codec before trust.
+          // Normalize/copy rich values through the declared output codec
+          // before trust — WITHOUT laundering staleness: preserve both the
+          // freshness clock and any pending invalidation, or a remount would
+          // trust stale data as fresh and skip its refetch.
           queryClient.setQueryData(key, decoded.value, {
             updatedAt: hydratedState.dataUpdatedAt,
           });
+          if (hydratedState.isInvalidated) {
+            queryClient.getQueryCache().find({ queryKey: key, exact: true })?.invalidate();
+          }
         }
       }
       // Read retry lazily on every attempt — see the mutation counterpart.
@@ -794,11 +878,17 @@ export const createQueryRuntime = <TClient>(
         onSuccess: (value: TOutput, input: TInput) => {
           // Entities the mutation returned patch every containing query in
           // place — field freshness by identity, zero refetches.
+          const written = new Set(
+            collectEntities(value).map((entity) => entityKey(entity.model.name, entity.id)),
+          );
           applyEntityWrites(value);
           // Server-declared writes (handler `touch`): identity invalidation
-          // for cascades and deletes the output cannot mention.
+          // for cascades and deletes the output cannot mention. Entities the
+          // output DID carry were just patched everywhere — refetching those
+          // same queries again would be redundant.
           if (lastTouched && lastTouched.length > 0) {
-            void invalidateEntityKeys(lastTouched);
+            const cascades = lastTouched.filter((key) => !written.has(key));
+            if (cascades.length > 0) void invalidateEntityKeys(cascades);
           }
           // .writes(): identity invalidation for mutations whose output
           // doesn't carry the entity.
@@ -1001,6 +1091,11 @@ export const createQueryRuntime = <TClient>(
                   return;
                 }
               }
+              // A live event carries decoded (branded) entities exactly like
+              // a mutation output does — patch every cached query holding
+              // the same identities, so the header updates when the stream
+              // says so, not when something refetches.
+              if (result.ok) applyEntityWrites(result.value);
               state = {
                 ...state,
                 connection: result.ok ? "open" : "closed",
@@ -1055,6 +1150,32 @@ export const createQueryRuntime = <TClient>(
         throw new TypeError("Invalid result-rpc query cache payload");
       }
       hydrateQueryClient(queryClient, decoded.value as never);
+      // Normalize every hydrated query through its output codec NOW, not at
+      // observe time: decode re-brands the entities, the share pass carries
+      // the brands onto the retained objects, and the success event indexes
+      // them — so patches and touch-invalidation reach hydrated queries that
+      // no component has observed yet.
+      const router = getClientRouter(clientIdentity);
+      if (router) {
+        for (const query of queryClient.getQueryCache().getAll()) {
+          if (query.state.status !== "success" || query.state.data === undefined) continue;
+          const path = query.queryKey[0];
+          const procedure = typeof path === "string"
+            ? router.procedures.get(path)
+            : undefined;
+          if (!procedure || procedure._def.kind !== "query") continue;
+          const normalized = procedure._def.output.decode(query.state.data);
+          if (!normalized.ok) {
+            queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+          } else {
+            const wasInvalidated = query.state.isInvalidated;
+            queryClient.setQueryData(query.queryKey, normalized.value, {
+              updatedAt: query.state.dataUpdatedAt,
+            });
+            if (wasInvalidated) query.invalidate();
+          }
+        }
+      }
     },
     clear: () => {
       queryClient.unmount();
