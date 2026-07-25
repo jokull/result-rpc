@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   collectEntities,
   defineModel,
+  entityIdFor,
   mergeByExistingKeys,
   patchEntity,
 } from "./model.js";
@@ -152,5 +153,46 @@ describe("patchEntity", () => {
     const patched = value as { left: { node: Node }; right: { node: Node } };
     expect(patched.left.node.title).toBe("B");
     expect(patched.left.node).toBe(patched.right.node); // sharing preserved
+  });
+});
+
+describe("composite keys", () => {
+  const Content = defineModel("content", {
+    key: ["id", "locale"],
+    shape: { id: wire.string, locale: wire.string, title: wire.string },
+  });
+
+  test("each key combination is its own entity", () => {
+    const en = Content.codec.decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const ja = Content.codec.decode({ id: "t1", locale: "ja", title: "東京" });
+    if (!en.ok || !ja.ok) throw new Error("decode failed");
+    const found = collectEntities([en.value, ja.value]);
+    expect(found.map((entity) => entity.id).sort()).toEqual(["t1:en", "t1:ja"]);
+  });
+
+  test("patching one locale never touches the other", () => {
+    const en = Content.codec.decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const ja = Content.codec.decode({ id: "t1", locale: "ja", title: "東京" });
+    if (!en.ok || !ja.ok) throw new Error("decode failed");
+    const root = { rows: [en.value, ja.value] };
+    const { value, changed } = patchEntity(root, Content, "t1:en", (current) => ({
+      ...current,
+      title: "Tokyo!",
+    }));
+    expect(changed).toBe(true);
+    const rows = (value as { rows: Array<{ title: string }> }).rows;
+    expect(rows[0]!.title).toBe("Tokyo!");
+    expect(rows[1]!.title).toBe("東京");
+  });
+
+  test("pick must include every key field", () => {
+    expect(() => Content.pick("id", "title")).toThrow(/key "locale"/);
+    expect(() => Content.pick("id", "locale", "title")).not.toThrow();
+  });
+
+  test("entityIdFor resolves records and pre-joined strings", () => {
+    expect(entityIdFor(Content, { id: "t1", locale: "en" })).toBe("t1:en");
+    expect(entityIdFor(Content, "t1:en")).toBe("t1:en");
+    expect(entityIdFor(Content, { id: "t1" } as never)).toBeUndefined();
   });
 });

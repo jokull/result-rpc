@@ -49,11 +49,13 @@ import {
 import type { AffectsEntry, WritesEntry } from "../server/contract.js";
 import {
   collectEntities,
+  entityIdFor,
   entityKey,
   mergeByExistingKeys,
   patchEntity,
   shareStructural,
   type AnyModel,
+  type ModelKeyInput,
   type ModelValue,
 } from "../model.js";
 import type { ResultSubscription } from "../client/client.js";
@@ -233,7 +235,7 @@ export interface QueryCache {
     procedure: TProcedureClient,
   ): Promise<void>;
   /** Invalidates every cached query whose result contains the entity. */
-  invalidateEntity(model: AnyModel, id: string): Promise<void>;
+  invalidateEntity(model: AnyModel, id: ModelKeyInput): Promise<void>;
   /**
    * Patches the entity in place everywhere it appears — one call updates the
    * detail view, every list row, the header. The updater receives the cached
@@ -243,7 +245,7 @@ export interface QueryCache {
    */
   updateEntity<TModel extends AnyModel>(
     model: TModel,
-    id: string,
+    id: ModelKeyInput,
     updater: (current: ModelValue<TModel>) => ModelValue<TModel>,
   ): () => void;
 }
@@ -718,9 +720,19 @@ export const createQueryRuntime = <TClient>(
       const metadata = metadataFor(procedure);
       await queryClient.invalidateQueries({ queryKey: [metadata.path] });
     },
-    invalidateEntity: (model, id) => invalidateEntityKeys([entityKey(model.name, id)]),
+    invalidateEntity: (model, id) => {
+      const resolved = entityIdFor(model, id);
+      if (resolved === undefined) {
+        throw new TypeError(`Entity key for ${model.name} is missing key fields`);
+      }
+      return invalidateEntityKeys([entityKey(model.name, resolved)]);
+    },
     updateEntity: (model, id, updater) => {
-      const restores = patchQueriesWith(model, id, (current) =>
+      const resolved = entityIdFor(model, id);
+      if (resolved === undefined) {
+        throw new TypeError(`Entity key for ${model.name} is missing key fields`);
+      }
+      const restores = patchQueriesWith(model, resolved, (current) =>
         mergeByExistingKeys(
           current,
           updater(current as ModelValue<typeof model>) as Record<string, unknown>,
@@ -919,7 +931,7 @@ export const createQueryRuntime = <TClient>(
           // .writes(): identity invalidation for mutations whose output
           // doesn't carry the entity.
           for (const entry of declaredWrites) {
-            void cache.invalidateEntity(entry.model, String((entry.map as (input: TInput) => string | number)(input)));
+            void cache.invalidateEntity(entry.model, (entry.map as (input: TInput) => ModelKeyInput)(input));
           }
           // .affects(): declared membership/blast-radius invalidation.
           for (const entry of declaredAffects) {

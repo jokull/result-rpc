@@ -39,3 +39,11 @@ with its own tests:
    subscription feed, and `wire.standard` + `fieldIssues` — including the
    loose-client test that demonstrates the stale-window field-projection
    flow.
+8. **08-bookings** — the ground-truth proof on a real database (Drizzle
+   ORM 1.0 over bun:sqlite): a four-level relational tree with column
+   subsets and models only at the keyed nodes, the locale trap closed by a
+   composite `["id","locale"]` key, `min()` aggregates that stay
+   query-relative while the entity inside them patches, derived summaries
+   on `.affects`, and record-key `touch` deletes — every claim pinned by
+   per-procedure request counters. Its `NOTES.md` is the
+   model-vs-pick-vs-one-off decision table applied to every output shape.

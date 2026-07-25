@@ -13,6 +13,7 @@ An escalation ladder. Each rung is a self-contained app with runtime tests
 | `05-router-glue` | docs on app-owned glue | `router-glue.tsx` (~60 lines): `routeShell` fragments, auto-derived layer loaders — proof no router package is needed |
 | `06-sentry` | billing form + Sentry stub | all four observability taps into one sink: wire breadcrumbs, claim trail with owner, severity-routed server capture, incident-id correlation across the wire |
 | `07-tracker` | team issue tracker | the whole surface as one app, built blind from the docs (see its `FRICTION.md`): session layer, entity patch + `touch` cascade, `.affects`, optimistic create with client-minted ids, connection banner + offline resume, `gen`/`tryPromise` collapse, subscription feed, `wire.standard` + `fieldIssues` loose-client flow |
+| `08-bookings` | travel bookings on Drizzle 1.0 | the ground-truth proof: real SQL, four-level tree with models only at keyed nodes, composite-key locale content, query-relative aggregates that never smear, derived summaries via `.affects`, record-key `touch` — every claim counter-pinned; `NOTES.md` is the shape-decision table |
 
 Rung 4 reuses rung 3's server and proves the router mapping: pathless layout
 routes mount the session and viewer shells, the doc route claims

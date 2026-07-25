@@ -27,8 +27,10 @@ export interface ModelDefinition<
 > {
   readonly $model: true;
   readonly name: TName;
-  /** The identity field; present in the canonical shape and every pick. */
-  readonly key: string;
+  /** The identity field(s) as declared; present in the canonical shape and every pick. */
+  readonly key: string | readonly string[];
+  /** The identity fields, normalized. Composite keys join values in this order. */
+  readonly keyFields: readonly string[];
   /** The canonical codec: the full shape, identity-collecting on decode. */
   readonly codec: WireCodec<ShapeInput<TShape>, WireValue>;
   /**
@@ -47,10 +49,18 @@ export type ModelValue<TModel> = TModel extends ModelDefinition<string, infer TS
   : never;
 
 export interface DefineModelOptions<TShape extends CodecShape> {
-  /** The field carrying the identity (a string or number value). */
-  readonly key: keyof TShape & string;
+  /**
+   * The field(s) carrying the identity (string or number values). A composite
+   * key — e.g. `["id", "locale"]` for content that varies per locale under
+   * one id — makes each combination its OWN entity: patching the `en`
+   * variant never touches the `ja` variant.
+   */
+  readonly key: (keyof TShape & string) | readonly (keyof TShape & string)[];
   readonly shape: TShape;
 }
+
+/** How callers address an entity: a plain id, a pre-joined composite id, or the key fields. */
+export type ModelKeyInput = string | number | Readonly<Record<string, string | number>>;
 
 /** Decoded-entity brands: object identity → its model. Global and inert. */
 const entityBrands = new WeakMap<object, AnyModel>();
@@ -65,8 +75,26 @@ export const brandEntity = (value: object, model: AnyModel): void => {
 };
 
 const entityIdOf = (value: object, model: AnyModel): string | undefined => {
-  const raw = (value as Record<string, unknown>)[model.key];
-  return typeof raw === "string" || typeof raw === "number" ? String(raw) : undefined;
+  const parts: string[] = [];
+  for (const field of model.keyFields) {
+    const raw = (value as Record<string, unknown>)[field];
+    if (typeof raw !== "string" && typeof raw !== "number") return undefined;
+    parts.push(String(raw));
+  }
+  return parts.join(":");
+};
+
+/**
+ * Resolves a caller-supplied key to the entity's id string. Records must
+ * carry every key field; a bare string/number addresses single-field keys
+ * (or is taken as a pre-joined composite id).
+ */
+export const entityIdFor = (
+  model: AnyModel,
+  id: ModelKeyInput,
+): string | undefined => {
+  if (typeof id === "string" || typeof id === "number") return String(id);
+  return entityIdOf(id as object, model);
 };
 
 export const entityKey = (model: string, id: string): string => `${model}:${id}`;
@@ -94,24 +122,35 @@ export const defineModel = <
   name: TName,
   options: DefineModelOptions<TShape>,
 ): ModelDefinition<TName, TShape> => {
-  if (!(options.key in options.shape)) {
-    throw new TypeError(`Model ${name} declares key "${options.key}" but the shape has no such field`);
+  const keyFields: readonly string[] = typeof options.key === "string"
+    ? [options.key]
+    : options.key;
+  if (keyFields.length === 0) {
+    throw new TypeError(`Model ${name} declares an empty key`);
+  }
+  for (const field of keyFields) {
+    if (!(field in options.shape)) {
+      throw new TypeError(`Model ${name} declares key "${field}" but the shape has no such field`);
+    }
   }
   let self: ModelDefinition<TName, TShape>;
   const definition: ModelDefinition<TName, TShape> = {
     $model: true,
     name,
     key: options.key,
+    keyFields,
     codec: brandingCodec(
       wire.object(options.shape) as WireCodec<ShapeInput<TShape>, WireValue>,
       `model(${name})`,
       () => self as AnyModel,
     ),
     pick: (...keys) => {
-      if (!keys.includes(options.key as (typeof keys)[number])) {
-        throw new TypeError(
-          `Model ${name} projection must include its key "${options.key}" — an entity without its identity is just data`,
-        );
+      for (const field of keyFields) {
+        if (!keys.includes(field as (typeof keys)[number])) {
+          throw new TypeError(
+            `Model ${name} projection must include its key "${field}" — an entity without its identity is just data`,
+          );
+        }
       }
       const subset: Record<string, WireCodec<unknown, WireValue>> = {};
       for (const key of keys) subset[key] = options.shape[key]!;

@@ -4,7 +4,7 @@ import type {
   ErrorOf,
 } from "../error.js";
 import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
-import type { AnyModel } from "../model.js";
+import { entityIdFor, type AnyModel, type ModelKeyInput } from "../model.js";
 import { err, ok, type Result } from "../result.js";
 import { wire } from "../wire.js";
 import type { WireCodec, WireValue } from "../wire.js";
@@ -176,7 +176,7 @@ export interface ProcedureHandlerArgs<
    * cascades, side-effect writes, deletes. Rides the response envelope as
    * `model:id` keys (never values) and invalidates by identity client-side.
    */
-  readonly touch: (model: AnyModel, id: string | number) => void;
+  readonly touch: (model: AnyModel, id: ModelKeyInput) => void;
 }
 
 /**
@@ -829,7 +829,7 @@ export const executeProcedure = async <
         context,
         input: decodedInput.value,
         errors: procedure._def.definitions,
-        touch: (model, id) => options.onTouch?.(`${model.name}:${id}`),
+        touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
       });
     } catch (cause) {
       return internalFailure("handler", cause, options);
@@ -950,7 +950,7 @@ export async function* executeSubscription<
       context: prepared.value,
       input: decodedInput.value,
       errors: procedure._def.definitions,
-      touch: (model, id) => options.onTouch?.(`${model.name}:${id}`),
+      touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
     });
   } catch (cause) {
     yield internalFailure("handler", cause, options);

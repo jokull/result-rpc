@@ -1573,6 +1573,34 @@ pins, several of them fixed by building it:
   the wire). For contended entities, `touch` or `invalidateEntity` reconciles
   — a refetch always converges. Documented semantics, pinned by test.
 
+### When to mint a model (and when never to)
+
+The system is opt-in **per node, not per query** — there is no gate where a
+shape must be classified. Every new query starts life as one-off
+`wire.object`s, exactly like the tRPC output you'd have written anyway. Mint
+a model when you notice recurrence, and apply one rule: **will a mutation
+somewhere else ever need to update this field on this screen without a
+refetch?** No → one-off, forever, no guilt. Yes → model the keyed core, and
+only its *context-free* fields — values that are true about the entity in
+every query (`name`, `phone`), never values relative to the query's input (a
+`minAvailable` computed over the requested date range lives in the
+surrounding one-off shape, where it is immune to patching by construction).
+
+There is no demotion event. Aggregates never enter models, so a new
+aggregate can never break one — compose (`{ order: Order.pick("id"),
+rank }`) or skip the model for that query; both are correct. The asymmetry
+is the point: **under-modeling costs nothing** (an unmodeled node degrades
+to exactly the invalidate-and-refetch world you already live in), and
+over-modeling is bounded by the context-free rule. Relationships are never
+declared — they live in each query's output shape, discovered per result by
+walking, so there is no relation schema to keep in sync.
+
+`examples/08-bookings/NOTES.md` is this doctrine applied to real-world
+shapes — a four-level relational tree, locale-variant content under a
+composite key, query-relative aggregates, derived summaries — with a table
+justifying every single node as model, pick, or one-off, and request
+counters proving each choice.
+
 ### What this deliberately is not
 
 There is no normalized store. Per-query results stay the source of truth —
@@ -2141,6 +2169,14 @@ with its own tests:
    subscription feed, and `wire.standard` + `fieldIssues` — including the
    loose-client test that demonstrates the stale-window field-projection
    flow.
+8. **08-bookings** — the ground-truth proof on a real database (Drizzle
+   ORM 1.0 over bun:sqlite): a four-level relational tree with column
+   subsets and models only at the keyed nodes, the locale trap closed by a
+   composite `["id","locale"]` key, `min()` aggregates that stay
+   query-relative while the entity inside them patches, derived summaries
+   on `.affects`, and record-key `touch` deletes — every claim pinned by
+   per-procedure request counters. Its `NOTES.md` is the
+   model-vs-pick-vs-one-off decision table applied to every output shape.
 
 ## Design and verification
 
