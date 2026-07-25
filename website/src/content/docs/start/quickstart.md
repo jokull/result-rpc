@@ -6,6 +6,12 @@ description: "One query, one domain error, a provider, and a hook \u2014 the sma
 The smallest possible app: one procedure, one domain error, no shells. This is
 `examples/01-hello` in the repository, verbatim.
 
+Coming from tRPC, watch for two differences. The handler *returns* its
+failure — `err(...)` against a declared union — instead of throwing it. And
+the component switches over one channel that includes the transport: there is
+no `query.error` on the side, and no `Result` buried inside `query.data`
+either.
+
 ## Declare the error and the procedure
 
 ```ts
