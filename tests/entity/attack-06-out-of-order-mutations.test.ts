@@ -64,15 +64,10 @@ describe("attack-06 out-of-order mutation responses", () => {
     await sleep(30);
 
     expect(db.user.name).toBe("B"); // server final state
-    const state = header.getCurrentState();
-    if (state.state !== "success") throw new Error("unreachable");
-    // DOCUMENTED SEMANTICS: mutation responses patch in client-ARRIVAL order
-    // (no versioning exists on the wire), so a slow older response wins the
-    // cache until something reconciles. For contended entities the remedy is
-    // identity invalidation (handler `touch` or invalidateEntity): a refetch
-    // always converges to the server.
-    expect(state.value.name).toBe("A");
-    await runtime.cache.invalidateEntity(User, "u1");
+    // The per-entity write-sequence guard: A's slow response arrived after
+    // B's was applied, so it is NOT patched backwards — the entity is
+    // invalidated instead, and the reconciling refetch converges on the
+    // server's final state with no manual step.
     await waitFor(header, (s) => s.state === "success" && s.value.name === "B");
 
     stop(); header.destroy(); mutA.destroy(); mutB.destroy(); runtime.clear();

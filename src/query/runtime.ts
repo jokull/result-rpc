@@ -640,9 +640,31 @@ export const createQueryRuntime = <TClient>(
           : Promise.resolve();
       }))).then(() => undefined);
 
+  /**
+   * Per-entity write ordering. Responses carry no versions, so arrival order
+   * is the only order the network gives us — and a slow response from an
+   * older write must not patch stale fields over a newer confirmed write
+   * (two optimistic mutations on one entity is the classic shape). Each
+   * authoritative write records a start-ordered sequence per entity; a
+   * response arriving out of order does NOT patch backwards — it invalidates
+   * the entity instead, and the refetch converges on the server.
+   */
+  let writeSeq = 0;
+  const nextWriteSeq = () => ++writeSeq;
+  const entityWriteSeq = new Map<string, number>();
+
   /** Mutation output entities drive write-through patches by identity. */
-  const applyEntityWrites = (output: unknown): void => {
+  const applyEntityWrites = (output: unknown, seq?: number): void => {
     for (const entity of collectEntities(output)) {
+      const key = entityKey(entity.model.name, entity.id);
+      if (seq !== undefined) {
+        const last = entityWriteSeq.get(key);
+        if (last !== undefined && last > seq) {
+          void invalidateEntityKeys([key]);
+          continue;
+        }
+        entityWriteSeq.set(key, seq);
+      }
       patchQueriesWith(entity.model, entity.id, (current) =>
         mergeByExistingKeys(current, entity.value));
     }
@@ -861,9 +883,13 @@ export const createQueryRuntime = <TClient>(
       };
 
       let lastTouched: readonly string[] | undefined;
+      let lastStartSeq = 0;
       const observer = new MutationObserver<TOutput, TError, TInput, TContext>(queryClient, {
         mutationKey: [metadata.path],
         mutationFn: async (input) => {
+          // Request-start order is the write order the guard in
+          // applyEntityWrites enforces against out-of-order responses.
+          lastStartSeq = nextWriteSeq();
           const result = await procedure(input, { signal: activeController!.signal });
           lastTouched = getTouchedEntities(result);
           if (!result.ok) throw result.error;
@@ -881,7 +907,7 @@ export const createQueryRuntime = <TClient>(
           const written = new Set(
             collectEntities(value).map((entity) => entityKey(entity.model.name, entity.id)),
           );
-          applyEntityWrites(value);
+          applyEntityWrites(value, lastStartSeq);
           // Server-declared writes (handler `touch`): identity invalidation
           // for cascades and deletes the output cannot mention. Entities the
           // output DID carry were just patched everywhere — refetching those
@@ -1094,8 +1120,10 @@ export const createQueryRuntime = <TClient>(
               // A live event carries decoded (branded) entities exactly like
               // a mutation output does — patch every cached query holding
               // the same identities, so the header updates when the stream
-              // says so, not when something refetches.
-              if (result.ok) applyEntityWrites(result.value);
+              // says so, not when something refetches. Events take a fresh
+              // sequence at arrival: stream order is respected, and a slower
+              // mutation response from before the event cannot regress it.
+              if (result.ok) applyEntityWrites(result.value, nextWriteSeq());
               state = {
                 ...state,
                 connection: result.ok ? "open" : "closed",
@@ -1183,6 +1211,7 @@ export const createQueryRuntime = <TClient>(
       entityToQueries.clear();
       queryToEntities.clear();
       queryKeyByHash.clear();
+      entityWriteSeq.clear();
     },
   };
   return runtime;

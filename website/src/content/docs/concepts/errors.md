@@ -74,6 +74,34 @@ The tag is the identity. HTTP status and retry behavior are projections of
 that identity for the relevant runtime. There is no `.serialize()` — values
 cross a boundary only through their definition's actual encoder and decoder.
 
+## Result is total — partial availability is a value
+
+`Result<T, E>` cannot say "the doc loaded, but its author panel is
+unavailable." That is deliberate. GraphQL spent a decade with nullable
+fields as ambient partial failure and is now retrofitting field-level error
+semantics (Relay's `@catch`/`@throwOnFieldError`) — a directive on the
+*query*, deciding per call site how much failure to tolerate.
+
+Here the same fact is modeled where every other fact lives: in the output
+type. If a field can be independently unavailable, say so in the schema —
+
+```ts
+.output(wire.object({
+  doc: Doc.codec,
+  author: wire.union([
+    User.pick("id", "name", "avatarUrl"),
+    wire.object({ unavailable: wire.literal(true) }),
+  ] as const),
+}))
+```
+
+— and the component branches on a value, exhaustively, like everything
+else. The operation still resolves one Result: the *call* succeeded, and
+"the author service was down" is part of what it successfully learned. No
+directive vocabulary, no per-call-site tolerance policy, no nullable-means-
+maybe-failed ambiguity: a partial outcome is a declared shape on the wire,
+visible in the contract diff like any other API decision.
+
 ## The router is the error registry
 
 One tag maps to exactly one definition across the whole application. Two
