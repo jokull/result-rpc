@@ -1,7 +1,6 @@
 {
   "name": "result-rpc",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "One Result and one wire-safe error union from server to screen",
   "type": "module",
   "sideEffects": false,
@@ -42,7 +41,9 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
-    "verify": "pnpm check && pnpm test:types && pnpm test && pnpm build"
+    "verify": "pnpm check && pnpm test:types && pnpm test && pnpm build",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run verify"
   },
   "devDependencies": {
     "@tanstack/react-router": "^1.170.18",

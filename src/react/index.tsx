@@ -27,6 +27,11 @@ import {
 import type { ResultSubscription } from "../client/client.js";
 import { serialize } from "../serializer.js";
 import type {
+  PaginatedClientCursor,
+  PaginatedClientItem,
+  PaginatedClientListInput,
+  PaginatedProcedureClientLike,
+  PaginatedState,
   ProcedureClientError,
   ProcedureClientInput,
   ProcedureClientOutput,
@@ -63,6 +68,11 @@ export type {
   FetchState,
   MutationOptions,
   MutationState,
+  PaginatedClientCursor,
+  PaginatedClientItem,
+  PaginatedClientListInput,
+  PaginatedProcedureClientLike,
+  PaginatedState,
   QueryCache,
   QueryOptions,
   QueryRuntime,
@@ -239,6 +249,93 @@ export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike
   ProcedureClientOutput<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => useResultQueryWithClaim(procedure, ...rest)[0];
+
+/**
+ * A claim-paused paginated projection: an enclosing shell owns the failure,
+ * so this hook shows the previous rows (or pending) while the shell decides.
+ * Same doctrine as `pauseQueryProjection` for unary queries.
+ */
+const pausePaginatedProjection = <TItem, TCursor, E extends AnyTaggedError>(
+  state: PaginatedState<TItem, TCursor, E>,
+): PaginatedState<TItem, TCursor, never> => {
+  const controls = {
+    fetch: "paused" as const,
+    failureCount: state.failureCount,
+    isStale: state.isStale,
+    updatedAt: state.updatedAt,
+    pageCount: state.pageCount,
+    hasNext: state.hasNext,
+    fetchingNext: state.fetchingNext,
+    refetch: state.refetch as unknown as () => Promise<PaginatedState<TItem, TCursor, never>>,
+    fetchNext: state.fetchNext as unknown as () => Promise<PaginatedState<TItem, TCursor, never>>,
+  };
+  const previous = state.state === "failure" ? state.previous : undefined;
+  return previous === undefined
+    ? { ...controls, state: "pending" }
+    : { ...controls, state: "success", rows: previous };
+};
+
+/**
+ * Observes a `.paginate()` procedure: one cache entry per list input, every
+ * loaded page flattened into `rows` (deduplicated by entity identity),
+ * `fetchNext()` to extend, `refetch()` to sequentially converge the whole
+ * loaded window. Failures narrow and claim exactly like `useResultQuery`.
+ */
+export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProcedureClientLike>(
+  procedure: TProcedureClient,
+  input: PaginatedClientListInput<TProcedureClient>,
+  options: QueryOptions<ProcedureClientError<TProcedureClient>> = {},
+): PaginatedState<
+  PaginatedClientItem<TProcedureClient>,
+  PaginatedClientCursor<TProcedureClient>,
+  ProcedureClientError<TProcedureClient>
+> => {
+  const runtime = useRuntime();
+  const inputKey = runtime.cache.key(
+    procedure as unknown as QueryProcedureClientLike,
+    input as never,
+  )[1];
+  const queryOptionsRef = useRef(options);
+  queryOptionsRef.current = options;
+  const observer = useMemo(
+    () => runtime.observePaginated(procedure, input, {
+      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+      ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
+      ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
+      get retry() { return queryOptionsRef.current.retry; },
+    } as QueryOptions<ProcedureClientError<TProcedureClient>>),
+    [
+      runtime,
+      procedure,
+      inputKey,
+      options.enabled,
+      options.staleTime,
+      options.gcTime,
+    ],
+  );
+  useEffect(() => () => observer.destroy(), [observer]);
+  const state = useSyncExternalStore(
+    observer.subscribe,
+    observer.getCurrentState,
+    observer.getCurrentState,
+  );
+  const notifyClaim = useClaimNotifier(procedure);
+  const refetchRef = useRef(state.refetch);
+  refetchRef.current = state.refetch;
+  const [retryHeld] = useState(() => () => void refetchRef.current());
+  const claim = useAmbientClaim(
+    state.state === "failure" ? state.error : undefined,
+    notifyClaim,
+    retryHeld,
+  );
+  return claim
+    ? (pausePaginatedProjection(state) as PaginatedState<
+        PaginatedClientItem<TProcedureClient>,
+        PaginatedClientCursor<TProcedureClient>,
+        ProcedureClientError<TProcedureClient>
+      >)
+    : state;
+};
 
 export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
   QueryState<T, E>,

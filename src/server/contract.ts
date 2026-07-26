@@ -196,6 +196,34 @@ export interface ProcedureHandlerArgs<
 }
 
 /**
+ * One page of a paginated query: the rows plus the cursor that fetches the
+ * next page — `null` when this page is the last. Handlers return this shape;
+ * the client engine accumulates pages under ONE cache entry per list input.
+ */
+export interface Page<TItem, TCursor> {
+  readonly items: readonly TItem[];
+  readonly nextCursor: TCursor | null;
+}
+
+/**
+ * The wire input of a paginated query: the list identity (everything that
+ * names WHICH list — filters, parent ids) and the cursor naming WHERE in it.
+ * The split is what lets the cache key exclude the cursor, so every page of
+ * one list lives in one entry — invalidation, `.affects()`, and entity
+ * patches reach all pages at once.
+ */
+export interface PageRequest<TListInput, TCursor> {
+  readonly list: TListInput;
+  readonly cursor: TCursor | null;
+}
+
+/** Marks a query procedure as paginated; carries the codecs the split needs. */
+export interface PaginationManifest {
+  readonly cursor: WireCodec<unknown, WireValue>;
+  readonly item: WireCodec<unknown, WireValue>;
+}
+
+/**
  * A mutation's declared blast radius: which query it invalidates on success,
  * and how the mutation's input maps to the query's. Declared once at the
  * contract, executed automatically by the client cache — no `onSettled`
@@ -231,6 +259,7 @@ export interface ProcedureManifest<
   readonly definitions: TDefinitions;
   readonly affects?: readonly AffectsEntry[];
   readonly writes?: readonly WritesEntry[];
+  readonly pagination?: PaginationManifest;
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
     args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
@@ -251,6 +280,7 @@ export interface ProcedureContractManifest<
   readonly definitions: TDefinitions;
   readonly affects?: readonly AffectsEntry[];
   readonly writes?: readonly WritesEntry[];
+  readonly pagination?: PaginationManifest;
   readonly _rootContext?: TRootContext;
 }
 
@@ -480,6 +510,86 @@ export class ProcedureBuilder<
 
   subscription(): ProcedureContract<TRootContext, TInput, TOutput, TDefinitions, "subscription"> {
     return this.finishContract("subscription");
+  }
+
+  /**
+   * Finishes a paginated query. `.output()` declares the ROW codec; this
+   * builds the page envelope (`{ items, nextCursor }`) and splits the wire
+   * input into `{ list, cursor }` — list identity vs position — so the
+   * client engine keys ONE cache entry per list and threads cursors itself.
+   * Still a query on the wire: batching, digests, `.affects()` targeting,
+   * and entity patches all apply unchanged.
+   */
+  paginate<TCursor>(options: {
+    readonly cursor: WireCodec<TCursor, WireValue>;
+  }): ProcedureContract<
+    TRootContext,
+    PageRequest<TInput, TCursor>,
+    Page<TOutput, TCursor>,
+    TDefinitions,
+    "query"
+  >;
+  paginate<TCursor>(
+    options: { readonly cursor: WireCodec<TCursor, WireValue> },
+    handler: (
+      args: ProcedureHandlerArgs<TContext, PageRequest<TInput, TCursor>, TDefinitions>,
+    ) => MaybePromise<Result<Page<TOutput, TCursor>, ErrorUnion<TDefinitions>>>,
+  ): Procedure<
+    TRootContext,
+    PageRequest<TInput, TCursor>,
+    Page<TOutput, TCursor>,
+    TDefinitions,
+    "query"
+  >;
+  paginate<TCursor>(
+    options: { readonly cursor: WireCodec<TCursor, WireValue> },
+    handler?: (
+      args: ProcedureHandlerArgs<TContext, PageRequest<TInput, TCursor>, TDefinitions>,
+    ) => MaybePromise<Result<Page<TOutput, TCursor>, ErrorUnion<TDefinitions>>>,
+  ):
+    | ProcedureContract<TRootContext, PageRequest<TInput, TCursor>, Page<TOutput, TCursor>, TDefinitions, "query">
+    | Procedure<TRootContext, PageRequest<TInput, TCursor>, Page<TOutput, TCursor>, TDefinitions, "query"> {
+    if (!this.outputCodec) {
+      throw new TypeError("paginate() requires an output codec declaring the row shape");
+    }
+    this.assertAffectsAllowed("query");
+    const item = this.outputCodec as WireCodec<unknown, WireValue>;
+    const cursorOrNull = wire.union([options.cursor, wire.null]);
+    const input = wire.object({
+      list: (this.inputCodec ?? wire.object({})) as WireCodec<unknown, WireValue>,
+      cursor: cursorOrNull as WireCodec<unknown, WireValue>,
+    }) as unknown as WireCodec<PageRequest<TInput, TCursor>, WireValue>;
+    const output = wire.object({
+      items: wire.array(item),
+      nextCursor: cursorOrNull as WireCodec<unknown, WireValue>,
+    }) as unknown as WireCodec<Page<TOutput, TCursor>, WireValue>;
+    const pagination: PaginationManifest = Object.freeze({ cursor: options.cursor, item });
+    const base = {
+      kind: "query" as const,
+      input,
+      output,
+      definitions: this.definitions,
+      pagination,
+    };
+    if (handler === undefined) {
+      return Object.freeze({
+        _kind: "procedure-contract" as const,
+        _def: Object.freeze(base),
+      });
+    }
+    return Object.freeze({
+      _kind: "procedure" as const,
+      _def: Object.freeze({
+        ...base,
+        middlewares: this.middlewares,
+        handler: handler as ProcedureManifest<
+          TRootContext,
+          PageRequest<TInput, TCursor>,
+          Page<TOutput, TCursor>,
+          TDefinitions
+        >["handler"],
+      }),
+    });
   }
 
   private finishContract<TKind extends "query" | "mutation" | "subscription">(

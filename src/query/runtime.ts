@@ -2,10 +2,13 @@ import {
   CancelledError,
   dehydrate as dehydrateQueryClient,
   hydrate as hydrateQueryClient,
+  InfiniteQueryObserver,
   MutationObserver,
   onlineManager,
   QueryClient,
   QueryObserver,
+  type InfiniteData,
+  type InfiniteQueryObserverResult,
   type QueryObserverResult,
   type MutationObserverResult,
 } from "@tanstack/query-core";
@@ -46,9 +49,16 @@ import {
   getProcedureClientMetadata,
   getTouchedEntities,
 } from "../client/client.js";
-import type { AffectsEntry, WritesEntry } from "../server/contract.js";
+import type {
+  AffectsEntry,
+  Page,
+  PageRequest,
+  PaginationManifest,
+  WritesEntry,
+} from "../server/contract.js";
 import {
   collectEntities,
+  entityBrandOf,
   entityIdFor,
   entityKey,
   mergeByExistingKeys,
@@ -68,7 +78,7 @@ type ProcedureClientLike = (
   options?: { readonly signal?: AbortSignal },
 ) => Promise<Result<any, AnyTaggedError>>;
 type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
-type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
+export type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
 type SubscriptionProcedureClientLike = ((
   input: any,
   options?: { readonly signal?: AbortSignal },
@@ -103,6 +113,33 @@ export type ProcedureClientOutput<TProcedureClient> =
 export type ProcedureClientError<TProcedureClient> =
   ProcedureClientResult<TProcedureClient> extends Result<unknown, infer TError>
     ? TError
+    : never;
+
+/** A client function minted for a `.paginate()` procedure. */
+export type PaginatedProcedureClientLike = ((
+  input: PageRequest<any, any>,
+  options?: { readonly signal?: AbortSignal },
+) => Promise<Result<Page<any, any>, AnyTaggedError>>) & { readonly $kind: "query" };
+
+export type PaginatedClientListInput<TProcedureClient> =
+  TProcedureClient extends (
+    input: PageRequest<infer TListInput, any>,
+    ...rest: any[]
+  ) => unknown
+    ? TListInput
+    : never;
+export type PaginatedClientCursor<TProcedureClient> =
+  TProcedureClient extends (
+    input: PageRequest<any, infer TCursor>,
+    ...rest: any[]
+  ) => unknown
+    ? TCursor
+    : never;
+export type PaginatedClientItem<TProcedureClient> =
+  TProcedureClient extends (
+    ...args: any[]
+  ) => Promise<Result<Page<infer TItem, any>, any>>
+    ? TItem
     : never;
 
 export type FetchState = "idle" | "fetching" | "paused";
@@ -145,6 +182,54 @@ export interface ResultQueryObserver<T, E extends AnyTaggedError> {
   getCurrentState(): QueryState<T, E>;
   subscribe(listener: () => void): () => void;
   refetch(): Promise<QueryState<T, E>>;
+  destroy(): void;
+}
+
+interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
+  readonly fetch: FetchState;
+  readonly failureCount: number;
+  readonly isStale: boolean;
+  readonly updatedAt: number;
+  readonly pageCount: number;
+  /** Whether the last loaded page carried a non-null `nextCursor`. */
+  readonly hasNext: boolean;
+  readonly fetchingNext: boolean;
+  /** Sequentially refetches EVERY loaded page — the whole list converges. */
+  refetch(): Promise<PaginatedState<TItem, TCursor, E>>;
+  /** Loads the next page; a no-op while already fetching or exhausted. */
+  fetchNext(): Promise<PaginatedState<TItem, TCursor, E>>;
+}
+
+/**
+ * The state of a paginated query: every loaded page flattened into `rows`,
+ * deduplicated by entity identity (a row that drifted across a page boundary
+ * between fetches appears once — its fields stay fresh via entity patches
+ * regardless of which page carried it).
+ */
+export type PaginatedState<TItem, TCursor, E extends AnyTaggedError> =
+  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
+      state: "pending";
+      rows?: undefined;
+      error?: undefined;
+    }>)
+  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
+      state: "success";
+      rows: readonly TItem[];
+      error?: undefined;
+    }>)
+  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
+      state: "failure";
+      error: E;
+      rows?: undefined;
+      previous?: readonly TItem[];
+    }>);
+
+export interface ResultPaginatedObserver<TItem, TCursor, E extends AnyTaggedError> {
+  readonly key: ResultQueryKey;
+  getCurrentState(): PaginatedState<TItem, TCursor, E>;
+  subscribe(listener: () => void): () => void;
+  refetch(): Promise<PaginatedState<TItem, TCursor, E>>;
+  fetchNext(): Promise<PaginatedState<TItem, TCursor, E>>;
   destroy(): void;
 }
 
@@ -383,6 +468,41 @@ const project = <T, E extends AnyTaggedError>(
 };
 
 /**
+ * Flattens `InfiniteData<Page>` into one row list, deduplicating by entity
+ * identity. Duplicates are cursor drift — an insert/delete slid a row across
+ * a page boundary between fetches. First occurrence wins positionally;
+ * field freshness is identity-driven (patches reach the retained row), so
+ * dropping the later copy loses nothing.
+ */
+const flattenPages = (data: unknown): readonly unknown[] | undefined => {
+  if (data === null || typeof data !== "object" || !("pages" in data)) return undefined;
+  const pages = (data as { readonly pages: unknown }).pages;
+  if (!Array.isArray(pages)) return undefined;
+  const rows: unknown[] = [];
+  const seen = new Set<string>();
+  for (const page of pages as readonly unknown[]) {
+    if (page === null || typeof page !== "object" || !("items" in page)) continue;
+    const items = (page as { readonly items: unknown }).items;
+    if (!Array.isArray(items)) continue;
+    for (const item of items as readonly unknown[]) {
+      if (item !== null && typeof item === "object") {
+        const model = entityBrandOf(item);
+        if (model) {
+          const id = entityIdFor(model, item as Readonly<Record<string, string | number>>);
+          if (id !== undefined) {
+            const key = entityKey(model.name, id);
+            if (seen.has(key)) continue;
+            seen.add(key);
+          }
+        }
+      }
+      rows.push(item);
+    }
+  }
+  return rows;
+};
+
+/**
  * Re-wraps a settled query or mutation state as the same `Result` the
  * imperative client returns — for handing a hook outcome to Result-typed
  * code. `undefined` while the state is still pending or idle.
@@ -428,6 +548,24 @@ export interface QueryRuntime {
     input: ProcedureClientInput<TProcedureClient>,
     options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
   ): Promise<ProcedureClientResult<TProcedureClient>>;
+  observePaginated<TProcedureClient extends PaginatedProcedureClientLike>(
+    procedure: TProcedureClient,
+    input: PaginatedClientListInput<TProcedureClient>,
+    options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+  ): ResultPaginatedObserver<
+    PaginatedClientItem<TProcedureClient>,
+    PaginatedClientCursor<TProcedureClient>,
+    ProcedureClientError<TProcedureClient>
+  >;
+  /** Warms the first page; loaders and SSR use this. */
+  prefetchPaginated<TProcedureClient extends PaginatedProcedureClientLike>(
+    procedure: TProcedureClient,
+    input: PaginatedClientListInput<TProcedureClient>,
+    options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+  ): Promise<Result<
+    readonly PaginatedClientItem<TProcedureClient>[],
+    ProcedureClientError<TProcedureClient>
+  >>;
   mutation<TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(
     procedure: TProcedureClient,
     options?: MutationOptions<
@@ -500,6 +638,9 @@ export const createQueryRuntime = <TClient>(
     return metadata;
   };
 
+  const paginationOf = (metadata: ReturnType<typeof metadataFor>): PaginationManifest | undefined =>
+    (metadata.procedure._def as { readonly pagination?: PaginationManifest }).pagination;
+
   const queryKey = <TProcedureClient extends ProcedureClientLike>(
     procedure: TProcedureClient,
     input: ProcedureClientInput<TProcedureClient>,
@@ -507,6 +648,19 @@ export const createQueryRuntime = <TClient>(
     const metadata = metadataFor(procedure);
     if (metadata.procedure._def.kind !== "query") {
       throw new TypeError(`${metadata.path} is not a query procedure`);
+    }
+    // Paginated queries key on the LIST identity alone — every page of one
+    // list shares one cache entry, so `input` here means the list input and
+    // the cursor never fragments the key. Invalidation and `.affects()`
+    // targeting therefore reach all pages with the list-shaped input the
+    // caller already has.
+    if (paginationOf(metadata)) {
+      const encoded = metadata.procedure._def.input.encode({ list: input ?? {}, cursor: null });
+      if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
+      const listPart = (encoded.value as { readonly list?: unknown }).list;
+      const serialized = serialize(listPart, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
+      if (!serialized.ok) throw new TypeError(`Query input for ${metadata.path} is not serializable`);
+      return [metadata.path, serialized.value] as const;
     }
     const encoded = metadata.procedure._def.input.encode(input ?? {});
     if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
@@ -778,6 +932,11 @@ export const createQueryRuntime = <TClient>(
       if (metadata.procedure._def.kind !== "query") {
         throw new TypeError(`${metadata.path} is not a query procedure`);
       }
+      if (paginationOf(metadata)) {
+        throw new TypeError(
+          `${metadata.path} is paginated; observe it with observePaginated (useResultPaginatedQuery)`,
+        );
+      }
 
       const encodedInput = metadata.procedure._def.input.encode(input ?? {});
       if (!encodedInput.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
@@ -877,6 +1036,174 @@ export const createQueryRuntime = <TClient>(
         return (
           state.state === "success" ? ok(state.value) : err(state.error)
         ) as ProcedureClientResult<typeof procedure>;
+      } finally {
+        observer.destroy();
+      }
+    },
+    observePaginated: <TProcedureClient extends PaginatedProcedureClientLike>(
+      procedure: TProcedureClient,
+      input: PaginatedClientListInput<TProcedureClient>,
+      queryOptions: QueryOptions<ProcedureClientError<TProcedureClient>> = {},
+    ) => {
+      type TItem = PaginatedClientItem<TProcedureClient>;
+      type TCursor = PaginatedClientCursor<TProcedureClient>;
+      type TError = ProcedureClientError<TProcedureClient>;
+      type TPage = Page<TItem, TCursor>;
+
+      const metadata = metadataFor(procedure);
+      const pagination = paginationOf(metadata);
+      if (metadata.procedure._def.kind !== "query" || !pagination) {
+        throw new TypeError(`${metadata.path} is not a paginated query procedure`);
+      }
+      const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
+      const key = queryKey(procedure as ProcedureClientLike, input);
+
+      // Hydrated pages are normalized through the page codec before trust —
+      // per page, because the cached shape is InfiniteData, not one page.
+      // Staleness is preserved exactly as for unary queries.
+      const hydratedState = queryClient.getQueryState(key);
+      if (hydratedState?.status === "success") {
+        const raw = hydratedState.data as
+          | { readonly pages?: unknown; readonly pageParams?: unknown }
+          | undefined;
+        const pages = Array.isArray(raw?.pages) ? (raw.pages as readonly unknown[]) : undefined;
+        const decodedPages: unknown[] = [];
+        let decodable = pages !== undefined;
+        for (const page of pages ?? []) {
+          const decoded = metadata.procedure._def.output.decode(page);
+          if (!decoded.ok) { decodable = false; break; }
+          decodedPages.push(decoded.value);
+        }
+        if (!decodable) {
+          queryClient.removeQueries({ queryKey: key, exact: true });
+        } else {
+          queryClient.setQueryData(
+            key,
+            {
+              pages: decodedPages,
+              pageParams: Array.isArray(raw?.pageParams) ? raw.pageParams : [],
+            },
+            { updatedAt: hydratedState.dataUpdatedAt },
+          );
+          if (hydratedState.isInvalidated) {
+            queryClient.getQueryCache().find({ queryKey: key, exact: true })?.invalidate();
+          }
+        }
+      }
+
+      const retry = (failureCount: number, failure: unknown) => {
+        const configured = queryOptions.retry;
+        if (configured === undefined) {
+          return defaultShouldRetry(definitions, failureCount, failure);
+        }
+        if (typeof configured === "function") {
+          return isTaggedError(failure) && configured(failure as TError, failureCount);
+        }
+        return configured !== false && failureCount < configured;
+      };
+
+      const observer = new InfiniteQueryObserver<TPage, TError, InfiniteData<TPage>, ResultQueryKey, TCursor | null>(
+        queryClient,
+        {
+          queryKey: key,
+          queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam?: unknown }) => {
+            try {
+              const result = await procedure(
+                { list: input ?? {}, cursor: (pageParam ?? null) as TCursor | null } as PageRequest<unknown, TCursor>,
+                { signal },
+              );
+              if (!result.ok) throw result.error;
+              return result.value as TPage;
+            } catch (failure) {
+              if (isCancelled(failure)) throw new CancelledError({ revert: true });
+              throw failure;
+            }
+          },
+          initialPageParam: null,
+          // `nextCursor: null` means exhausted — query-core reads null as
+          // "no next page", so hasNext falls out of the declared shape.
+          getNextPageParam: (lastPage: TPage) => lastPage.nextCursor,
+          ...(queryOptions.enabled === undefined ? {} : { enabled: queryOptions.enabled }),
+          ...(queryOptions.staleTime === undefined ? {} : { staleTime: queryOptions.staleTime }),
+          ...(queryOptions.gcTime === undefined ? {} : { gcTime: queryOptions.gcTime }),
+          retry,
+          retryDelay: (failureCount: number, failure: unknown) =>
+            defaultRetryDelay(definitions, failureCount, failure),
+        },
+      );
+
+      let cached: PaginatedState<TItem, TCursor, TError>;
+
+      const refetch = async (): Promise<PaginatedState<TItem, TCursor, TError>> => {
+        // InfiniteQueryObserver.refetch replays every loaded page
+        // SEQUENTIALLY (each page's cursor comes from the previous page's
+        // fresh response) — the whole loaded window converges, not just
+        // page one.
+        const observed = await observer.refetch();
+        cached = projectPaginated(observed as InfiniteQueryObserverResult<InfiniteData<TPage>, TError>);
+        return cached;
+      };
+      const fetchNext = async (): Promise<PaginatedState<TItem, TCursor, TError>> => {
+        const current = observer.getCurrentResult();
+        if (!current.hasNextPage || current.isFetchingNextPage) return cached;
+        const observed = await observer.fetchNextPage();
+        cached = projectPaginated(observed);
+        return cached;
+      };
+
+      const projectPaginated = (
+        observed: InfiniteQueryObserverResult<InfiniteData<TPage>, TError>,
+      ): PaginatedState<TItem, TCursor, TError> => {
+        const rows = flattenPages(observed.data) as readonly TItem[] | undefined;
+        const controls: PaginatedControls<TItem, TCursor, TError> = {
+          fetch: observed.fetchStatus,
+          failureCount: observed.failureCount,
+          isStale: observed.isStale,
+          updatedAt: observed.dataUpdatedAt,
+          pageCount: observed.data?.pages.length ?? 0,
+          hasNext: observed.hasNextPage,
+          fetchingNext: observed.isFetchingNextPage,
+          refetch,
+          fetchNext,
+        };
+        if (observed.status === "pending") {
+          return { ...controls, state: "pending" };
+        }
+        if (observed.status === "success") {
+          return { ...controls, state: "success", rows: rows ?? [] };
+        }
+        if (!isTaggedError(observed.error)) {
+          throw new TypeError("Query engine received an untagged failure");
+        }
+        return {
+          ...controls,
+          state: "failure",
+          error: observed.error as TError,
+          ...(rows === undefined ? {} : { previous: rows }),
+        };
+      };
+      cached = projectPaginated(observer.getCurrentResult());
+
+      return {
+        key,
+        getCurrentState: () => cached,
+        subscribe: (listener: () => void) => observer.subscribe((observed) => {
+          cached = projectPaginated(observed);
+          listener();
+        }),
+        refetch,
+        fetchNext,
+        destroy: () => observer.destroy(),
+      };
+    },
+    prefetchPaginated: async (procedure, input, prefetchOptions) => {
+      const observer = runtime.observePaginated(procedure, input, prefetchOptions);
+      try {
+        const state = await observer.refetch();
+        if (state.state === "pending") {
+          throw new TypeError("Prefetch did not settle");
+        }
+        return state.state === "success" ? ok(state.rows) : err(state.error);
       } finally {
         observer.destroy();
       }
@@ -1227,6 +1554,37 @@ export const createQueryRuntime = <TClient>(
             ? router.procedures.get(path)
             : undefined;
           if (!procedure || procedure._def.kind !== "query") continue;
+          const pagination = (procedure._def as { readonly pagination?: PaginationManifest }).pagination;
+          if (pagination) {
+            // Paginated entries hold InfiniteData — normalize page by page
+            // through the page codec so every row re-brands and re-indexes.
+            const raw = query.state.data as
+              | { readonly pages?: unknown; readonly pageParams?: unknown }
+              | undefined;
+            const pages = Array.isArray(raw?.pages) ? (raw.pages as readonly unknown[]) : undefined;
+            const decodedPages: unknown[] = [];
+            let decodable = pages !== undefined;
+            for (const page of pages ?? []) {
+              const decoded = procedure._def.output.decode(page);
+              if (!decoded.ok) { decodable = false; break; }
+              decodedPages.push(decoded.value);
+            }
+            if (!decodable) {
+              queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+            } else {
+              const wasInvalidated = query.state.isInvalidated;
+              queryClient.setQueryData(
+                query.queryKey,
+                {
+                  pages: decodedPages,
+                  pageParams: Array.isArray(raw?.pageParams) ? raw.pageParams : [],
+                },
+                { updatedAt: query.state.dataUpdatedAt },
+              );
+              if (wasInvalidated) query.invalidate();
+            }
+            continue;
+          }
           const normalized = procedure._def.output.decode(query.state.data);
           if (!normalized.ok) {
             queryClient.removeQueries({ queryKey: query.queryKey, exact: true });

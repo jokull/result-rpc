@@ -45,6 +45,7 @@ export default defineConfig({
           "/concepts/react",
           "/concepts/mutations",
           "/concepts/entities",
+          "/concepts/pagination",
           "/concepts/subscriptions",
         ],
       },
