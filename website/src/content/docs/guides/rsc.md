@@ -128,6 +128,46 @@ version across a deploy, the boundary **skips** hydration (with a dev warning)
 and the client fetches fresh, rather than throwing during render and taking down
 the tree. A stale server payload never renders as if it were current.
 
-[`08-bookings`](/reference/examples/#08-bookings) and the Waku kitchen-sink
-example exercise this end to end — prefetched paginated feeds, skeleton
-fallbacks, and mutations patching server-rendered rows.
+## Only successes hydrate
+
+`dehydrate()` carries successful queries only — a prefetch that *failed* on the
+server is deliberately not persisted. A server-rendered failure is a snapshot of
+one request's bad luck; replaying it on the client would show a stale error the
+user cannot retry past. Instead the client starts that query cold and fetches
+once, so the failure is live and its [shell](/concepts/shells/) owns it. Plan
+for a not-found detail page to render its skeleton briefly and cost one client
+call.
+
+## Per-framework mounting
+
+The pattern is identical everywhere; only the mount point and the prefetch site
+move. Three worked examples ship in the repo:
+
+| Example | Framework | Prefetch happens in | RPC handler mounts at |
+| --- | --- | --- | --- |
+| `09-waku` | Waku (RSC) | async server component | `src/pages/_api/rpc.ts` → `/rpc` |
+| `10-nextjs` | Next.js App Router (RSC) | async server component | `app/api/rpc/route.ts` → `/api/rpc` |
+| `11-tanstack-start` | TanStack Start (SSR) | route **loader** | `src/routes/api.rpc.ts` → `/api/rpc` |
+
+Three traps worth knowing before you wire your own:
+
+- **Match the endpoint on both ends.** The library defaults to `/rpc`, but
+  Next.js and TanStack Start mount route handlers under `/api/`. Set both
+  `endpoint` on `createFetchHandler` *and* `url` on `fetchTransport`, or every
+  call 404s silently.
+- **TanStack Start reserves `src/server.ts` and `src/client.ts`.** It resolves
+  those paths as its own optional entries, so the file names used by every other
+  result-rpc example silently hijack them (the symptom is an opaque
+  `Cannot read properties of undefined (reading 'fetch')`). Name them
+  `rpc-server.ts` / `rpc-client.ts` there.
+- **In TanStack Start, loaders are isomorphic — that is a client-boundary
+  hazard.** A loader that imports your database module directly typechecks and
+  works in dev SSR, then ships your database to the browser on the first client
+  navigation. There is no `'use client'` directive to protect you here: put the
+  server wall at a `createServerFn`, and re-read
+  [The client boundary](/concepts/client-boundary/).
+
+All three exercise the same app end to end — prefetched paginated feeds,
+skeleton fallbacks, mutations patching server-rendered rows, and a
+`tryDb` constraint surfacing as a domain error — so you can diff them to see
+exactly what the framework changes and what it doesn't.

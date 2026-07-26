@@ -126,6 +126,41 @@ Three cheap rules keep this honest:
 3. **Never import the router into anything a browser bundles.** Colocating "for
    convenience" ships handlers; there is no convenience worth a leaked secret.
 
+## Isomorphic loaders are a second leak vector
+
+The rule above is about *what you import*. Some frameworks add a second hazard:
+code that **looks** server-side but runs in both places.
+
+TanStack Router/Start **loaders are isomorphic** — they run on the server during
+SSR and in the browser on client-side navigation. A loader that imports your
+database module directly will typecheck, work perfectly in dev SSR, and then
+ship your database driver (and whatever it closes over) to the browser the first
+time a user navigates client-side. Nothing warns you, because nothing is
+technically wrong: you asked for that module in code that runs on the client.
+
+There is no `'use client'` directive protecting you here, the way RSC frameworks
+protect a server component. The fix is to put an explicit server wall inside the
+loader:
+
+```ts
+// ☠️ the loader imports the server module directly — ships the db on client nav
+import { db } from "./db"
+export const Route = createFileRoute("/")({
+  loader: async () => db.query.spots.findMany(),
+})
+
+// ✅ the server wall is a server function; the loader only calls it
+const loadSpots = createServerFn().handler(async () => {
+  const { db } = await import("./db")          // server-only, never bundled
+  return runtime.dehydrate()
+})
+export const Route = createFileRoute("/")({ loader: () => loadSpots() })
+```
+
+The general test applies to any framework: **for every module a client bundle can
+reach, ask what it transitively imports.** RSC's `'use client'`/server-component
+split answers that question for you; isomorphic loaders make it your job.
+
 ## Monorepos and pre-built `packages/api`
 
 If you ship a built `packages/api` (emitted `.d.ts` + `.js`), consumers get the

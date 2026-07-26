@@ -1,0 +1,91 @@
+/**
+ * SERVER-ONLY: the sqlite driver and the seed. Imported by server.ts and
+ * the RSC pages — never by anything under a 'use client' boundary.
+ *
+ * The database lives in a file under the example directory so Next's
+ * separate module graphs (react-server + ssr) and dev reloads all see one
+ * store rather than three in-memory copies.
+ */
+import "server-only";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { join } from "node:path";
+import { DDL, spots } from "./schema";
+
+// Resolved from cwd, NOT `new URL(..., import.meta.url)`: Turbopack treats
+// that pattern as a static asset reference and fails the build on a file that
+// does not exist yet. `next dev`/`next start` both run from the project root.
+const DB_PATH = join(process.cwd(), "spots.sqlite");
+
+const CITIES = [
+  "Kyoto",
+  "Tokyo",
+  "Osaka",
+  "Nara",
+  "Kanazawa",
+  "Hakone",
+] as const;
+
+const NAMES = [
+  "Fushimi Inari at dawn",
+  "Nakameguro canal walk",
+  "Dotonbori neon crawl",
+  "Nara deer park loop",
+  "Omicho market breakfast",
+  "Lake Ashi pirate ferry",
+  "Kiyomizu-dera veranda",
+  "Shimokitazawa vinyl dig",
+  "Kuromon market skewers",
+  "Todai-ji great buddha",
+  "Higashi chaya tea house",
+  "Open-air museum stroll",
+  "Arashiyama bamboo grove",
+  "Golden Gai bar hop",
+  "Umeda sky escalator",
+  "Isuien garden pause",
+  "21st Century Museum",
+  "Owakudani black eggs",
+  "Philosopher's Path bikes",
+  "Tsukiji outer market",
+  "Shinsekai kushikatsu",
+  "Kasuga lantern path",
+  "Kenroku-en in the rain",
+  "Hakone shrine torii",
+  "Gion twilight walk",
+  "Yanaka cemetery cats",
+  "Osaka castle run",
+  "Mount Wakakusa climb",
+  "Nagamachi samurai lanes",
+  "Sounzan cable car",
+] as const;
+
+const seed = (sqlite: Database.Database) => {
+  for (const statement of DDL) sqlite.exec(statement);
+  const count = sqlite.prepare("SELECT COUNT(*) AS n FROM spots").get() as { n: number };
+  if (count.n > 0) return;
+  const insert = sqlite.prepare(
+    "INSERT INTO spots (id, name, city, description, likes) VALUES (?, ?, ?, ?, ?)",
+  );
+  const tx = sqlite.transaction(() => {
+    NAMES.forEach((name, i) => {
+      const id = `spot-${String(i + 1).padStart(2, "0")}`;
+      const city = CITIES[i % CITIES.length]!;
+      insert.run(
+        id,
+        name,
+        city,
+        `A ${city} favorite: ${name.toLowerCase()}. Best before the crowds arrive.`,
+        (i * 7) % 23,
+      );
+    });
+  });
+  tx();
+};
+
+const sqlite = new Database(DB_PATH);
+sqlite.pragma("journal_mode = WAL");
+seed(sqlite);
+
+export const db = drizzle({ client: sqlite });
+export type Db = typeof db;
+export { spots };
