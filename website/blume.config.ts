@@ -41,6 +41,7 @@ export default defineConfig({
       {
         label: "Client and cache",
         items: [
+          "/concepts/client-boundary",
           "/concepts/client",
           "/concepts/react",
           "/concepts/mutations",
@@ -73,6 +74,7 @@ export default defineConfig({
         items: [
           "/reference/examples",
           "/reference/sharp-edges",
+          "/reference/agent-skill",
         ],
       },
     ],

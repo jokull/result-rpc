@@ -6,6 +6,7 @@
   "sideEffects": false,
   "files": [
     "dist",
+    "skills",
     "README.md",
     "ARCHITECTURE.md",
     "DESIGN.md"

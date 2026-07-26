@@ -17,6 +17,13 @@ export const trpc = createTRPCReact<LegacyRouter>()
 export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) })
 ```
 
+One difference to internalize before your first slice: tRPC ships its router to
+the client **as a type** (`createTRPCReact<LegacyRouter>`), erased at build.
+result-rpc ships a **real client value** built from your `contract` — so *what
+you import decides what bundles*. Pass the contract, never the server router, or
+handlers and secrets ship to the browser. This is the one migration mistake that
+is a security bug; read [The client boundary](/concepts/client-boundary/) first.
+
 The recommended first slice is **the auth layer plus one feature router** —
 small enough to finish in days, and it exercises the part tRPC cannot express
 (a shell owning session expiry) so the migration proves its value immediately

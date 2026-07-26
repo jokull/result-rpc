@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { err, error, ok, serialize, wire } from "../index.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
-import { createClient, type ClientEvent } from "./client.js";
+import { createClient, __resetClientBoundaryWarning, type ClientEvent } from "./client.js";
 import {
   batchFetchTransport,
   cancelled,
@@ -650,5 +650,75 @@ describe("file uploads", () => {
     // no multipart parts: the marker stays a plain object and fails validation
     expect(response.status).toBe(400);
     expect(await response.text()).toContain("server/bad-request");
+  });
+});
+
+describe("client-boundary dev guard", () => {
+  // Hermetic DOM-global control: set window/document to an exact presence,
+  // run, then restore whatever was there before — so these tests are
+  // deterministic no matter what ambient state other suites leave behind.
+  const withDom = <T,>(present: boolean, fn: () => T): T => {
+    const g = globalThis as { window?: unknown; document?: unknown };
+    const hadWindow = "window" in g;
+    const hadDocument = "document" in g;
+    const savedWindow = g.window;
+    const savedDocument = g.document;
+    if (present) { g.window = {}; g.document = {}; }
+    else { delete g.window; delete g.document; }
+    try {
+      return fn();
+    } finally {
+      if (hadWindow) g.window = savedWindow; else delete g.window;
+      if (hadDocument) g.document = savedDocument; else delete g.document;
+    }
+  };
+
+  const withWarnCapture = (fn: () => void): string[] => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(" "));
+    try {
+      fn();
+    } finally {
+      console.warn = original;
+    }
+    return warnings;
+  };
+
+  const transport = () => fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
+  const boundaryContract = r.contract({
+    value: { byId: r.procedure().input(wire.object({ id: wire.string })).output(wire.string).query() },
+  });
+
+  test("warns once when a router is handed to createClient in a browser", () => {
+    withDom(true, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() => {
+        createClient({ router, transport: transport() });
+        createClient({ router, transport: transport() }); // second call stays silent
+      });
+      expect(warnings.length).toBe(1);
+      expect(warnings[0]).toContain("client bundle");
+      expect(warnings[0]).toContain("client-boundary");
+    });
+    __resetClientBoundaryWarning();
+  });
+
+  test("stays silent on the server (no window), even for a router", () => {
+    withDom(false, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() => createClient({ router, transport: transport() }));
+      expect(warnings.length).toBe(0);
+    });
+  });
+
+  test("stays silent for a contract client in a browser", () => {
+    withDom(true, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() =>
+        createClient({ contract: boundaryContract, transport: transport() }));
+      expect(warnings.length).toBe(0);
+    });
+    __resetClientBoundaryWarning();
   });
 });
