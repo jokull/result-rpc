@@ -15,8 +15,8 @@ export const User = defineModel("user", {
 })
 
 const setAvatar = app.procedure()
-  .input(wire.object({ image: wire.file({ accept: ["image/*"] }) }))
-  .output(User.codec)                     // ← returns WHO changed
+  .input(wire.object({ key: wire.string }))   // a bucket reference; bytes are out of band
+  .output(User.codec)                          // ← returns WHO changed
   .mutation(...)
 ```
 

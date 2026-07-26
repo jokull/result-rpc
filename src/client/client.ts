@@ -36,7 +36,6 @@ import type {
   RouterContract,
   RouterRecord,
 } from "../server/contract.js";
-import { extractFiles } from "../files.js";
 import {
   cancelled,
   isCancelled,
@@ -297,11 +296,9 @@ const callProcedureOnce = async (
     throw new TypeError(`Invalid input for ${path}: ${details}`);
   }
 
-  const { value: markedInput, files } = extractFiles(encodedInput.value);
   const outcome = await transport.request(
-    requestEnvelope(path, markedInput as typeof encodedInput.value),
+    requestEnvelope(path, encodedInput.value),
     options,
-    files,
   );
   if (!outcome.ok) return err(clientFailure(outcome));
 
@@ -463,9 +460,6 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
   async function* stream(): AsyncGenerator<Result<T, E>> {
       const encodedInput = procedure._def.input.encode(input);
       if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
-      if (extractFiles(encodedInput.value).files.length > 0) {
-        throw new TypeError(`Subscription input for ${path} cannot contain files`);
-      }
       if (!transport.stream) {
         yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
         return;

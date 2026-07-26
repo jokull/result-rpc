@@ -86,7 +86,6 @@ export type {
   CodecIssue,
   DecodeResult,
   EncodedOf,
-  FileOptions,
   InputOf,
   WireCodec,
   WireScalar,

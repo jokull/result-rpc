@@ -1453,8 +1453,8 @@ export const User = defineModel("user", {
 })
 
 const setAvatar = app.procedure()
-  .input(wire.object({ image: wire.file({ accept: ["image/*"] }) }))
-  .output(User.codec)                     // ← returns WHO changed
+  .input(wire.object({ key: wire.string }))   // a bucket reference; bytes are out of band
+  .output(User.codec)                          // ← returns WHO changed
   .mutation(...)
 ```
 
@@ -1862,35 +1862,30 @@ enforced at runtime. Invalid values are never reflected back to the client.
 Custom procedure codecs can enforce finer domain-specific collection, string,
 and nesting limits.
 
-## File uploads keep the typed input
+## Binaries are out of band
 
-`File` and `Blob` cannot cross a value serializer, and the usual answer —
-degrade the whole input to `FormData` — costs the contract exactly where
-uploads need it most. result-rpc keeps the typed object; files ride as
-multipart sidecar parts the runtime substitutes transparently:
+result-rpc does not move file bytes over the RPC wire. Every request is the one
+JSON-shaped protocol content-type — there is no multipart path — which keeps the
+surface small and the CSRF defense uniform (a browser cannot send that
+content-type cross-origin without a preflight the server never grants).
+
+Upload bytes straight to object storage (R2, S3, a Hono route you mount),
+typically via a presigned URL, and let the contract carry only the **reference**:
 
 ```ts
+// mint a target (RPC or a plain POST route), PUT the file to it directly,
+// then finish with an RPC that carries only the bucket key:
 const setAvatar = app.procedure()
-  .input(wire.object({
-    userId: wire.string,
-    image: wire.file({ maxBytes: 5_000_000, accept: ["image/*"] }),
-  }))
-  .output(AvatarCodec)
+  .input(wire.object({ userId: wire.string, key: wire.string }))
+  .output(User.codec)
   .errors({ ImageUnprocessable })
-  .mutation(async ({ input }) => {
-    // input.image is a real File — name, size, stream(), the works
-    return ok(await store(input.userId, input.image))
-  })
-
-await client.setAvatar({ userId, image: fileInput.files[0] })
+  .mutation(async ({ input, context }) =>
+    ok(await context.users.setAvatarFromKey(input.userId, input.key)))
 ```
 
-Size and MIME constraints are declared on the codec and enforced on both sides
-— oversized or wrong-typed files reject at the client before any bytes move,
-and again on the server. Uploads bypass batching (one multipart request per
-call), subscriptions reject file inputs, and a file marker smuggled into an
-ordinary request never resolves — the substitution only exists on multipart
-requests and must be a perfect bijection with the parts.
+The contract stays fully typed, uploads scale on your storage provider instead
+of your app server, resumable/multipart-to-storage uploads work with no library
+involvement, and the RPC endpoint keeps its single content-type.
 
 ## Cancellation is not an operation error
 
