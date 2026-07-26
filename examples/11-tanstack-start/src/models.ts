@@ -5,13 +5,13 @@
  * SAME entity, so one mutation patches all of them in place.
  */
 import { modelFromDrizzle } from "result-rpc/drizzle";
-import { wire, type InputOf } from "result-rpc";
+import { wire, type InputOf, type ModelValue } from "result-rpc";
 import { spots } from "./schema.js";
 
 export const Spot = modelFromDrizzle("spot", spots, {
   columns: ["id", "name", "city", "description", "likes"],
 });
-export type SpotRow = InputOf<typeof Spot.codec>;
+export type SpotRow = ModelValue<typeof Spot>;
 
 /**
  * Query-relative aggregate — a one-off `wire.object`, NOT a model. Nothing

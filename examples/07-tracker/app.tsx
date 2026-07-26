@@ -8,7 +8,7 @@
  * patched in place with zero refetches.
  */
 import { useState } from "react";
-import { errorCatalog, matchError, validateStandard, type InputOf } from "../../src/index.js";
+import { errorCatalog, matchError, validateStandard, type ModelValue } from "../../src/index.js";
 import {
   boundaryShells,
   layerShell,
@@ -21,7 +21,7 @@ import { issueErrors, projectErrors } from "./errors.js";
 import { Issue } from "./models.js";
 import { createIssueSchema } from "./schema.js";
 
-type IssueView = InputOf<typeof Issue.codec>;
+type IssueView = ModelValue<typeof Issue>;
 
 // -- shells ---------------------------------------------------------------------
 

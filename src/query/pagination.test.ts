@@ -38,7 +38,7 @@ const r = rpc.context<{ readonly items: readonly { id: string; label: string }[]
 const feed = r
   .procedure()
   .input(wire.object({ q: wire.string }))
-  .output(Item.codec)
+  .output(Item.all("test fixture"))
   .paginate({ cursor: wire.string }, ({ input, context }) => {
     pageRequests += 1;
     const offset = input.cursor === null ? 0 : Number(input.cursor);
@@ -55,7 +55,7 @@ const feed = r
 const rename = r
   .procedure()
   .input(wire.object({ id: wire.string, label: wire.string }))
-  .output(Item.codec)
+  .output(Item.all("test fixture"))
   .mutation(({ input }) => ok(input));
 
 const router = r.router({ feed, rename });

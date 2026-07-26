@@ -19,13 +19,13 @@ export const app = rpc.context<AppContext>();
 export const feedContract = app
   .procedure()
   .input(wire.object({}))
-  .output(Spot.codec)
+  .output(Spot.all("every spot field is public"))
   .paginate({ cursor: wire.string });
 
 export const spotByIdContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(Spot.codec)
+  .output(Spot.all("every spot field is public"))
   .errors({ ...pickErrors(spotErrors, "notFound") })
   .query();
 
@@ -45,7 +45,7 @@ export const overviewContract = app
 export const likeSpotContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(Spot.codec)
+  .output(Spot.all("every spot field is public"))
   .errors({ ...pickErrors(spotErrors, "notFound") })
   .affects(overviewContract)
   .mutation();
@@ -64,7 +64,7 @@ export const addSpotContract = app
       description: wire.string,
     }),
   )
-  .output(Spot.codec)
+  .output(Spot.all("every spot field is public"))
   .errors({ ...pickErrors(spotErrors, "nameTaken") })
   .affects(feedContract)
   .affects(overviewContract)

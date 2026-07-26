@@ -26,14 +26,14 @@ describe("attack-07 stale refetch vs fresh patch", () => {
   test("a patch applied mid-refetch survives the stale refetch response", async () => {
     const db = { user: { id: "u1", name: "old" }, meDelayMs: 0 };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.codec).query(async ({ context }) => {
+    const me = app.procedure().output(User.all("test fixture")).query(async ({ context }) => {
       const snapshot = { ...context.db.user }; // read BEFORE the delay: a slow DB read
       await sleep(context.db.meDelayMs);
       return ok(snapshot);
     });
     const setName = app.procedure()
       .input(wire.object({ name: wire.string }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(({ input, context }) => {
         context.db.user = { ...context.db.user, name: input.name };
         return ok(context.db.user);

@@ -16,7 +16,7 @@ export const User = defineModel("user", {
 
 const setAvatar = app.procedure()
   .input(wire.object({ key: wire.string }))   // a bucket reference; bytes are out of band
-  .output(User.codec)                          // ← returns WHO changed
+  .output(UserCard)                            // ← returns WHO changed
   .mutation(...)
 ```
 
@@ -37,7 +37,7 @@ equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
 world, zero refetches anywhere.
 
 A model is to values what an error definition is to failures — a named,
-shared declaration. `Doc.codec` is the canonical shape; `Doc.pick("id",
+shared declaration. `Doc.all("why")` is every field; `Doc.pick("id",
 "title")` declares a projection (the key field is mandatory — an entity
 without its identity is just data). Use them anywhere in outputs, at any
 depth, including inside each other. The mechanics are the decode pass you
@@ -45,7 +45,7 @@ already pay for: decoding brands entity objects, the runtime indexes every
 cached result by the entities it contains, and mutations that return
 entities patch by identity. There are no heuristics and no schema walking —
 **an inline `wire.object` collects nothing, silently**; composing outputs
-from model codecs is the one discipline this asks of query writers.
+from model views is the one discipline this asks of query writers.
 
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are
@@ -133,6 +133,76 @@ pins, several of them fixed by building it:
 - **Racing mutation responses apply in arrival order** (no versions exist on
   the wire). For contended entities, `touch` or `invalidateEntity` reconciles
   — a refetch always converges. Documented semantics, pinned by test.
+
+## A model is not a view
+
+This is the one rule in the entity system that exists for **security**, not
+ergonomics:
+
+> A model is the full truth about a row. An output ships one audience's view of
+> it. A model never reaches an output un-scoped.
+
+```ts
+export const User = defineModel("user", {
+  key: "id",
+  shape: { id: wire.string, name: wire.string, email: wire.string,
+           latestLat: wire.number, latestLng: wire.number },
+})
+
+// Name the audiences once, beside the model.
+export const UserRef  = User.pick("id", "name")                  // a mention
+export const UserCard = User.pick("id", "name", "avatarUrl")     // a card
+export const UserSelf = User.all("the viewer is the subject of this record")
+```
+
+```ts
+friends.output(wire.array(UserCard))   // can only ever ship three fields
+me.output(UserSelf)                     // wide, and it says why
+```
+
+**Why it is not merely style.** The dangerous version of this bug is not
+picking the wrong field today — that is visible in the diff of the endpoint
+that leaks. It is someone adding `latestLat` to the model *next month* for the
+profile page, and every output that consumed the whole model silently
+beginning to ship it. That leak appears in a diff which does not touch the
+leaking endpoint, so no reviewer of that change is looking at your friend
+list, and no test fails. A per-output allowlist cannot widen retroactively,
+which closes the entire class.
+
+Three forms, in order of how often you should reach for them:
+
+| Form | Use it for |
+| --- | --- |
+| `Model.pick("id", …)` | the flat 80% case; the key field is mandatory |
+| `Model.select({ … })` | nesting and computed fields (below) |
+| `Model.all("why")` | genuinely every field — costs a sentence that lands in review |
+
+`select` takes one flat map: `true` for the model's own fields, a **codec** for
+anything nested or computed, so relationships and one-off aggregates read
+alike and every level keeps entity identity:
+
+```ts
+export const HotelCard = Hotel.select({
+  id: true,
+  name: true,
+  topReviewer: UserCard,                    // another model's view — still patches
+  recentReviews: wire.array(ReviewRow),     // to-many
+  reviewCount: wire.number,                 // computed, not a column
+})
+```
+
+Be clear-eyed about what this buys: **selection is not authorization.** Picking
+`latestLat` into a friend list is still a leak; the type system cannot know who
+is looking. What it guarantees is that every widening is a local, visible,
+reviewable act instead of an invisible consequence of an edit somewhere else.
+
+Two supporting properties make the guarantee hold end to end. With the
+[Drizzle bridge](/guides/drizzle/) there are two allowlists, and they answer
+different questions — `columns:` on the model asks *may this column ever leave
+the database* (`passwordHash`: never, anywhere), while `.pick()` at the output
+asks *does this endpoint ship it*. And at the cache layer, a patch only
+overwrites keys a row **already holds**, so a mutation returning `UserSelf`
+cannot add coordinates to a cached `UserCard` row.
 
 ## When to mint a model (and when never to)
 

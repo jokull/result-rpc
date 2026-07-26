@@ -28,11 +28,11 @@ const User = defineModel("a04-user", {
 
 const boot = () => {
   const app = rpc.context<{ readonly db: { user: { id: string; name: string; avatarUrl: string } } }>();
-  const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
-  const profile = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
+  const profile = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
   const setAvatar = app.procedure()
     .input(wire.object({ avatarUrl: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       context.db.user = { ...context.db.user, avatarUrl: input.avatarUrl };
       return ok(context.db.user);

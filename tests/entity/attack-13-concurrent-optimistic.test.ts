@@ -27,10 +27,10 @@ describe("attack-13 concurrent optimistic mutations on one entity", () => {
   test("a stale authoritative response never clobbers a newer confirmed write", async () => {
     const db = { user: { id: "u1", name: "initial", starred: false } };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+    const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
     const setName = app.procedure()
       .input(wire.object({ name: wire.string, delayMs: wire.number }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(async ({ input, context }) => {
         context.db.user = { ...context.db.user, name: input.name };
         const snapshot = context.db.user; // truth at A's processing time: starred still false
@@ -39,7 +39,7 @@ describe("attack-13 concurrent optimistic mutations on one entity", () => {
       });
     const star = app.procedure()
       .input(wire.object({}))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(({ context }) => {
         context.db.user = { ...context.db.user, starred: true };
         return ok(context.db.user);

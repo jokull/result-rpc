@@ -3,6 +3,7 @@ import {
   collectEntities,
   defineModel,
   entityIdFor,
+  entityBrandOf,
   mergeByExistingKeys,
   patchEntity,
 } from "./model.js";
@@ -22,14 +23,14 @@ const Doc = defineModel("doc", {
   shape: {
     id: wire.string,
     title: wire.string,
-    author: User.codec,
+    author: User.all("test fixture"),
   },
 });
 
 describe("defineModel", () => {
   test("the canonical codec decodes and the kind carries the model name", () => {
-    expect(Doc.codec.kind).toBe("model(doc)");
-    const decoded = Doc.codec.decode({
+    expect(Doc.all("test fixture").kind).toBe("model(doc):all");
+    const decoded = Doc.all("test fixture").decode({
       id: "d1",
       title: "Roadmap",
       author: { id: "u1", name: "J", avatarUrl: "a.png" },
@@ -52,7 +53,7 @@ describe("defineModel", () => {
 
 describe("collectEntities", () => {
   test("collects nested and array entities from decoded values, once per object", () => {
-    const decoded = wire.array(Doc.codec).decode([
+    const decoded = wire.array(Doc.all("test fixture")).decode([
       { id: "d1", title: "A", author: { id: "u1", name: "J", avatarUrl: "x" } },
       { id: "d2", title: "B", author: { id: "u1", name: "J", avatarUrl: "x" } },
     ]);
@@ -69,7 +70,7 @@ describe("collectEntities", () => {
   });
 
   test("entities inside Map and Set values are collected", () => {
-    const decoded = Doc.codec.decode({
+    const decoded = Doc.all("test fixture").decode({
       id: "d1", title: "A", author: { id: "u1", name: "J", avatarUrl: "x" },
     });
     if (!decoded.ok) throw new Error("decode failed");
@@ -81,7 +82,7 @@ describe("collectEntities", () => {
 
 describe("patchEntity", () => {
   const decode = () => {
-    const decoded = wire.array(Doc.codec).decode([
+    const decoded = wire.array(Doc.all("test fixture")).decode([
       { id: "d1", title: "A", author: { id: "u1", name: "J", avatarUrl: "old.png" } },
       { id: "d2", title: "B", author: { id: "u1", name: "J", avatarUrl: "old.png" } },
     ]);
@@ -163,16 +164,16 @@ describe("composite keys", () => {
   });
 
   test("each key combination is its own entity", () => {
-    const en = Content.codec.decode({ id: "t1", locale: "en", title: "Tokyo" });
-    const ja = Content.codec.decode({ id: "t1", locale: "ja", title: "東京" });
+    const en = Content.all("test fixture").decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const ja = Content.all("test fixture").decode({ id: "t1", locale: "ja", title: "東京" });
     if (!en.ok || !ja.ok) throw new Error("decode failed");
     const found = collectEntities([en.value, ja.value]);
     expect(found.map((entity) => entity.id).sort()).toEqual(["t1:en", "t1:ja"]);
   });
 
   test("patching one locale never touches the other", () => {
-    const en = Content.codec.decode({ id: "t1", locale: "en", title: "Tokyo" });
-    const ja = Content.codec.decode({ id: "t1", locale: "ja", title: "東京" });
+    const en = Content.all("test fixture").decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const ja = Content.all("test fixture").decode({ id: "t1", locale: "ja", title: "東京" });
     if (!en.ok || !ja.ok) throw new Error("decode failed");
     const root = { rows: [en.value, ja.value] };
     const { value, changed } = patchEntity(root, Content, "t1:en", (current) => ({
@@ -194,5 +195,60 @@ describe("composite keys", () => {
     expect(entityIdFor(Content, { id: "t1", locale: "en" })).toBe("t1:en");
     expect(entityIdFor(Content, "t1:en")).toBe("t1:en");
     expect(entityIdFor(Content, { id: "t1" } as never)).toBeUndefined();
+  });
+});
+
+describe("scoped outputs", () => {
+  const Person = defineModel("person", {
+    key: "id",
+    shape: { id: wire.string, name: wire.string, lat: wire.number },
+  });
+
+  test("all() demands a reason — a wide output states why in review", () => {
+    expect(() => (Person.all as (reason?: string) => unknown)()).toThrow(/takes a reason/);
+    expect(() => Person.all("   ")).toThrow(/takes a reason/);
+    expect(Person.all("the viewer is the subject").kind).toBe("model(person):all");
+  });
+
+  test("select mixes own fields, nested codecs, and computed values", () => {
+    const Card = Person.pick("id", "name");
+    const Row = Person.select({
+      id: true,
+      name: true,
+      friend: Card,
+      mutualCount: wire.number,
+    });
+    const decoded = Row.decode({
+      id: "p1",
+      name: "Ada",
+      friend: { id: "p2", name: "Grace" },
+      mutualCount: 3,
+    });
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) throw new Error("unreachable");
+    // The narrow view cannot carry what it does not name.
+    expect("lat" in (decoded.value as object)).toBe(false);
+    // Identity survives at every level: root and nested are both branded.
+    expect(entityBrandOf(decoded.value as object)).toBe(Person as never);
+    expect(entityBrandOf((decoded.value as { friend: object }).friend)).toBe(Person as never);
+  });
+
+  test("a selection still demands the key — identity is not optional", () => {
+    expect(() => Person.select({ name: true })).toThrow(/must include its key/);
+  });
+
+  test("select rejects a true for a field the model does not have", () => {
+    expect(() => Person.select({ id: true, nope: true } as never)).toThrow(/has no field "nope"/);
+  });
+
+  test("a wide payload cannot widen a narrow cached row", () => {
+    // The merge rule is the cache-layer half of the same guarantee: a
+    // mutation returning every field patches only the keys a narrow row
+    // already holds, so a friend-list row never gains coordinates.
+    const narrow = { id: "p1", name: "Ada" };
+    const wide = { id: "p1", name: "Ada Lovelace", lat: 51.5 };
+    const merged = mergeByExistingKeys(narrow, wide);
+    expect(merged).toEqual({ id: "p1", name: "Ada Lovelace" });
+    expect("lat" in merged).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import {
   wire,
   type CodecShape,
+  type InputOf,
   type ShapeInput,
   type WireCodec,
   type WireValue,
@@ -31,8 +32,6 @@ export interface ModelDefinition<
   readonly key: string | readonly string[];
   /** The identity fields, normalized. Composite keys join values in this order. */
   readonly keyFields: readonly string[];
-  /** The canonical codec: the full shape, identity-collecting on decode. */
-  readonly codec: WireCodec<ShapeInput<TShape>, WireValue>;
   /**
    * A projection codec — a subset of the shape, still identity-collecting.
    * The key field is mandatory: an entity without its identity is just data.
@@ -40,7 +39,52 @@ export interface ModelDefinition<
   pick<const TKeys extends readonly (keyof TShape & string)[]>(
     ...keys: TKeys
   ): WireCodec<ShapeInput<Pick<TShape, TKeys[number]>>, WireValue>;
+  /**
+   * A structured projection: `true` for the model's own fields, a codec for
+   * anything nested or computed. Relationships and one-off aggregates read
+   * alike, and every level keeps entity identity — so a nested model still
+   * patches by id.
+   *
+   *     Hotel.select({
+   *       id: true,
+   *       name: true,
+   *       topReviewer: UserCard,                 // another model's view
+   *       recentReviews: wire.array(ReviewRow),  // to-many
+   *       reviewCount: wire.number,              // computed, not a column
+   *     })
+   */
+  select<
+    const TSelection extends {
+      readonly [TKey in keyof TSelection]: SelectionValue<TShape, TKey>;
+    },
+  >(
+    selection: TSelection,
+  ): WireCodec<SelectionInput<TShape, TSelection>, WireValue>;
+  /**
+   * Every field of the model, which means this output widens whenever the
+   * model does. That is occasionally what you want (the viewer is the subject
+   * of the record) and usually not — so it costs a sentence saying why, which
+   * lands in review next to the decision.
+   *
+   *     User.all("viewer is the subject of this record")
+   */
+  all(reason: string): WireCodec<ShapeInput<TShape>, WireValue>;
 }
+
+/** `true` selects one of the model's own fields; a codec supplies any other. */
+export type SelectionValue<TShape extends CodecShape, TKey> = TKey extends keyof TShape
+  ? true | WireCodec<any, any>
+  : WireCodec<any, any>;
+
+export type SelectionInput<TShape extends CodecShape, TSelection> = {
+  readonly [TKey in keyof TSelection]: TSelection[TKey] extends true
+    ? TKey extends keyof TShape
+      ? InputOf<TShape[TKey]>
+      : never
+    : TSelection[TKey] extends WireCodec<infer TInput, any>
+      ? TInput
+      : never;
+};
 
 export type AnyModel = ModelDefinition<string, CodecShape>;
 
@@ -134,24 +178,60 @@ export const defineModel = <
     }
   }
   let self: ModelDefinition<TName, TShape>;
+  const requireKeyFields = (selected: readonly string[], what: string) => {
+    for (const field of keyFields) {
+      if (!selected.includes(field)) {
+        throw new TypeError(
+          `Model ${name} ${what} must include its key "${field}" — an entity without its identity is just data`,
+        );
+      }
+    }
+  };
   const definition: ModelDefinition<TName, TShape> = {
     $model: true,
     name,
     key: options.key,
     keyFields,
-    codec: brandingCodec(
-      wire.object(options.shape) as WireCodec<ShapeInput<TShape>, WireValue>,
-      `model(${name})`,
-      () => self as AnyModel,
-    ),
-    pick: (...keys) => {
-      for (const field of keyFields) {
-        if (!keys.includes(field as (typeof keys)[number])) {
-          throw new TypeError(
-            `Model ${name} projection must include its key "${field}" — an entity without its identity is just data`,
-          );
+    all: (reason) => {
+      if (typeof reason !== "string" || reason.trim().length === 0) {
+        throw new TypeError(
+          `Model ${name}: all() ships every field, so it takes a reason — say why this output is allowed to widen with the model`,
+        );
+      }
+      return brandingCodec(
+        wire.object(options.shape) as WireCodec<ShapeInput<TShape>, WireValue>,
+        `model(${name}):all`,
+        () => self as AnyModel,
+      );
+    },
+    select: (selection) => {
+      const entries = selection as Readonly<Record<string, unknown>>;
+      const keys = Object.keys(entries);
+      const own = keys.filter((key) => entries[key] === true);
+      requireKeyFields(own, "selection");
+      const subset: Record<string, WireCodec<unknown, WireValue>> = {};
+      for (const key of keys) {
+        const value = entries[key];
+        if (value === true) {
+          const codec = options.shape[key];
+          if (!codec) {
+            throw new TypeError(
+              `Model ${name} has no field "${key}" — select true only for the model's own fields, or give a codec`,
+            );
+          }
+          subset[key] = codec as WireCodec<unknown, WireValue>;
+        } else {
+          subset[key] = value as WireCodec<unknown, WireValue>;
         }
       }
+      return brandingCodec(
+        wire.object(subset) as WireCodec<never, WireValue>,
+        `model(${name}):{${[...keys].sort().join(",")}}`,
+        () => self as AnyModel,
+      ) as never;
+    },
+    pick: (...keys) => {
+      requireKeyFields(keys as readonly string[], "projection");
       const subset: Record<string, WireCodec<unknown, WireValue>> = {};
       for (const key of keys) subset[key] = options.shape[key]!;
       return brandingCodec(

@@ -80,7 +80,7 @@ await fetch(uploadUrl, { method: "PUT", body: file })
 // 3. The RPC that finishes the job carries only the reference.
 const setAvatar = app.procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
-  .output(User.codec)
+  .output(UserCard)
   .errors({ ImageUnprocessable })
   .mutation(async ({ input, context }) =>
     ok(await context.users.setAvatarFromKey(input.userId, input.key)))

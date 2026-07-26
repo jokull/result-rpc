@@ -73,7 +73,7 @@ export function OrdersTree() {
           {list.value.map((row) => (
             <article key={row.order.id}>
               <h3>
-                Order {row.order.id} · {row.order.email} — booked by {row.bookedBy.name}
+                Order {row.order.id} — booked by {row.bookedBy.name}
               </h3>
               <p>Note: {row.order.note}</p>
               <ul>

@@ -87,7 +87,7 @@ type. If a field can be independently unavailable, say so in the schema —
 
 ```ts
 .output(wire.object({
-  doc: Doc.codec,
+  doc: DocView,
   author: wire.union([
     User.pick("id", "name", "avatarUrl"),
     wire.object({ unavailable: wire.literal(true) }),

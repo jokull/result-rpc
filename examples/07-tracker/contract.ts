@@ -16,7 +16,7 @@ export const app = rpc.context<AppContext>();
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: User.codec,
+  provides: User.all("a tracker user is a public name and an id"),
   errors: authErrors,
 });
 
@@ -27,14 +27,14 @@ export const sessionMeContract = SessionLayer.contract(app);
 export const listIssuesContract = app
   .procedure()
   .input(wire.object({}))
-  .output(wire.array(Issue.codec))
+  .output(wire.array(Issue.all("the tracker shows every issue field it stores")))
   .errors({ ...authErrors })
   .query();
 
 export const issueByIdContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(Issue.codec)
+  .output(Issue.all("the tracker shows every issue field it stores"))
   .errors({
     ...authErrors,
     ...pickErrors(issueErrors, "notFound"),
@@ -45,7 +45,7 @@ export const issueByIdContract = app
 export const createIssueContract = app
   .procedure()
   .input(wire.standard(createIssueSchema))
-  .output(Issue.codec)
+  .output(Issue.all("the tracker shows every issue field it stores"))
   .errors({ ...authErrors, ...pickErrors(issueErrors, "titleTaken") })
   .affects(listIssuesContract)
   .mutation();
@@ -53,14 +53,14 @@ export const createIssueContract = app
 export const assignIssueContract = app
   .procedure()
   .input(wire.object({ issueId: wire.string, assigneeId: wire.string }))
-  .output(Issue.codec)
+  .output(Issue.all("the tracker shows every issue field it stores"))
   .errors({ ...authErrors, ...pickErrors(issueErrors, "notFound", "closed") })
   .mutation();
 
 export const closeIssueContract = app
   .procedure()
   .input(wire.object({ issueId: wire.string }))
-  .output(Issue.codec)
+  .output(Issue.all("the tracker shows every issue field it stores"))
   .errors({ ...authErrors, ...pickErrors(issueErrors, "notFound") })
   .mutation();
 
@@ -76,14 +76,14 @@ export const issueActivityContract = app
 export const listUsersContract = app
   .procedure()
   .input(wire.object({}))
-  .output(wire.array(User.codec))
+  .output(wire.array(User.all("a tracker user is a public name and an id")))
   .errors({ ...authErrors, ...directoryErrors })
   .query();
 
 export const listProjectsContract = app
   .procedure()
   .input(wire.object({}))
-  .output(wire.array(Project.codec))
+  .output(wire.array(Project.all("every project field is rendered in the sidebar")))
   .errors({ ...authErrors })
   .query();
 

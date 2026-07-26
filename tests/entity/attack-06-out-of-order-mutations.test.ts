@@ -28,10 +28,10 @@ describe("attack-06 out-of-order mutation responses", () => {
   test("cache converges to the server's final state", async () => {
     const db = { user: { id: "u1", name: "initial" } };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+    const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
     const setName = app.procedure()
       .input(wire.object({ name: wire.string, delayMs: wire.number }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(async ({ input, context }) => {
         // write immediately (server processing order = call order) ...
         context.db.user = { ...context.db.user, name: input.name };

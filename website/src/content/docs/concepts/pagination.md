@@ -20,7 +20,7 @@ cursor:
 const feed = rpc
   .procedure()
   .input(wire.object({ q: wire.string }))   // the list identity
-  .output(Message.codec)                     // ONE row
+  .output(MessageRow)                        // ONE row's view
   .paginate({ cursor: wire.string })         // cursor codec
 ```
 
@@ -32,7 +32,7 @@ returns one page; `nextCursor: null` means "this is the last page":
 const feed = rpc
   .procedure()
   .input(wire.object({ q: wire.string }))
-  .output(Message.codec)
+  .output(MessageRow)
   .paginate({ cursor: wire.string }, async ({ input, context }) => {
     const after = input.cursor ?? undefined
     const rows = await context.db.messages.page({ q: input.list.q, after, limit: 20 })

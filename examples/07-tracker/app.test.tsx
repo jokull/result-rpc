@@ -474,7 +474,7 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
       create: looseApp
         .procedure()
         .input(wire.object({ id: wire.string, title: wire.string }))
-        .output(Issue.codec)
+        .output(Issue.all("the tracker shows every issue field it stores"))
         .errors({ ...authErrors, ...pickErrors(issueErrors, "titleTaken") })
         .mutation(),
     },

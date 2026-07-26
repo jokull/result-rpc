@@ -25,7 +25,7 @@ const Team = defineModel("a09-team", {
 });
 
 const decodeUser = (id: string, name: string) => {
-  const decoded = User.codec.decode({ id, name });
+  const decoded = User.all("test fixture").decode({ id, name });
   if (!decoded.ok) throw new Error("decode failed");
   return decoded.value as { id: string; name: string };
 };
@@ -53,7 +53,7 @@ describe("attack-09 identity edges", () => {
 
   test("9c: same id under two models never cross-patches", () => {
     const user = decodeUser("x1", "user-name");
-    const teamDecoded = Team.codec.decode({ id: "x1", name: "team-name" });
+    const teamDecoded = Team.all("test fixture").decode({ id: "x1", name: "team-name" });
     if (!teamDecoded.ok) throw new Error("decode failed");
     const root = [user, teamDecoded.value];
     const { value } = patchEntity(root, User as never, "x1", (c) =>
@@ -73,7 +73,7 @@ describe("attack-09 identity edges", () => {
       shape: { id: wire.string, name: wire.string, email: wire.string },
     });
     const BriefFull = Full.pick("id", "name");
-    const full = Full.codec.decode({ id: "u1", name: "old", email: "a@b.c" });
+    const full = Full.all("test fixture").decode({ id: "u1", name: "old", email: "a@b.c" });
     const brief = BriefFull.decode({ id: "u1", name: "old" });
     if (!full.ok || !brief.ok) throw new Error("decode failed");
     const root = { detail: full.value, row: brief.value };
@@ -89,7 +89,7 @@ describe("attack-09 identity edges", () => {
     const user = decodeUser("u1", "n");
     // A hostile/buggy composition: the ALREADY-DECODED object goes through
     // Team's codec (e.g. wire.serializable boundaries, or manual re-decode).
-    const redecoded = Team.codec.decode(user);
+    const redecoded = Team.all("test fixture").decode(user);
     if (!redecoded.ok) throw new Error("decode failed");
     const entities = collectEntities([user]);
     // ATTACK ASSERTION: the original object should still be a User entity.

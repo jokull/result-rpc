@@ -23,14 +23,14 @@ describe("modelFromDrizzle", () => {
       columns: ["id", "name", "phone"],
     });
     expect(Hotel.keyFields).toEqual(["id"]);
-    const decoded = Hotel.codec.decode({ id: "h1", name: "Fuji Inn", phone: null });
+    const decoded = Hotel.all("test fixture").decode({ id: "h1", name: "Fuji Inn", phone: null });
     expect(decoded.ok).toBe(true);
     if (!decoded.ok) throw new Error("unreachable");
     // nullable column round-trips null; branded like any hand-written model
     expect(decoded.value.phone).toBeNull();
     expect(collectEntities([decoded.value]).map((entity) => entity.id)).toEqual(["h1"]);
     // the allowlist is the wire: a column not named does not decode
-    expect(Hotel.codec.decode({ id: "h1", name: "x", phone: null, secret: "s" }).ok).toBe(false);
+    expect(Hotel.all("test fixture").decode({ id: "h1", name: "x", phone: null, secret: "s" }).ok).toBe(false);
   });
 
   test("composite keys are explicit; enum columns become literal unions", () => {
@@ -39,9 +39,9 @@ describe("modelFromDrizzle", () => {
       key: ["id", "locale"],
     });
     expect(TourContent.keyFields).toEqual(["id", "locale"]);
-    const decoded = TourContent.codec.decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const decoded = TourContent.all("test fixture").decode({ id: "t1", locale: "en", title: "Tokyo" });
     expect(decoded.ok).toBe(true);
-    expect(TourContent.codec.decode({ id: "t1", locale: "fr", title: "x" }).ok).toBe(false);
+    expect(TourContent.all("test fixture").decode({ id: "t1", locale: "fr", title: "x" }).ok).toBe(false);
     expect(collectEntities([decoded.ok ? decoded.value : {}]).map((entity) => entity.id))
       .toEqual(["t1:en"]);
   });

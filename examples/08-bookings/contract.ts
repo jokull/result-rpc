@@ -13,7 +13,7 @@ import {
 } from "./errors.js";
 import {
   AvailabilityRow,
-  Hotel,
+  HotelDetail,
   LocaleCodec,
   NextDepartureCodec,
   Order,
@@ -21,8 +21,8 @@ import {
   ReviewRowView,
   ReviewsPageCodec,
   ReviewStatsCodec,
-  TourContent,
-  User,
+  TourContentView,
+  UserCard,
 } from "./models.js";
 import type { AppContext } from "./server.js";
 
@@ -48,14 +48,14 @@ export const setNoteContract = app
 export const hotelByIdContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(Hotel.codec)
+  .output(HotelDetail)
   .errors({ ...hotelErrors })
   .query();
 
 export const updatePhoneContract = app
   .procedure()
   .input(wire.object({ id: wire.string, phone: wire.string }))
-  .output(Hotel.codec)
+  .output(HotelDetail)
   .errors({ ...hotelErrors })
   .mutation();
 
@@ -82,14 +82,14 @@ export const reviewStatsContract = app
 export const userByIdContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
-  .output(User.codec)
+  .output(UserCard)
   .errors({ ...userErrors })
   .query();
 
 export const renameUserContract = app
   .procedure()
   .input(wire.object({ id: wire.string, name: wire.string }))
-  .output(User.codec)
+  .output(UserCard)
   .errors({ ...userErrors })
   .mutation();
 
@@ -122,20 +122,20 @@ export const addReviewContract = app
 export const tourByIdContract = app
   .procedure()
   .input(wire.object({ id: wire.string, locale: LocaleCodec }))
-  .output(TourContent.codec)
+  .output(TourContentView)
   .errors({ ...tourErrors })
   .query();
 
 export const featuredToursContract = app
   .procedure()
   .input(wire.object({ locale: LocaleCodec }))
-  .output(wire.array(TourContent.codec))
+  .output(wire.array(TourContentView))
   .query();
 
 export const editTitleContract = app
   .procedure()
   .input(wire.object({ id: wire.string, locale: LocaleCodec, title: wire.string }))
-  .output(TourContent.codec)
+  .output(TourContentView)
   .errors({ ...tourErrors })
   .mutation();
 

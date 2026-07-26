@@ -303,7 +303,7 @@ type. If a field can be independently unavailable, say so in the schema —
 
 ```ts
 .output(wire.object({
-  doc: Doc.codec,
+  doc: DocView,
   author: wire.union([
     User.pick("id", "name", "avatarUrl"),
     wire.object({ unavailable: wire.literal(true) }),
@@ -1454,7 +1454,7 @@ export const User = defineModel("user", {
 
 const setAvatar = app.procedure()
   .input(wire.object({ key: wire.string }))   // a bucket reference; bytes are out of band
-  .output(User.codec)                          // ← returns WHO changed
+  .output(UserCard)                            // ← returns WHO changed
   .mutation(...)
 ```
 
@@ -1475,7 +1475,7 @@ equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
 world, zero refetches anywhere.
 
 A model is to values what an error definition is to failures — a named,
-shared declaration. `Doc.codec` is the canonical shape; `Doc.pick("id",
+shared declaration. `Doc.all("why")` is every field; `Doc.pick("id",
 "title")` declares a projection (the key field is mandatory — an entity
 without its identity is just data). Use them anywhere in outputs, at any
 depth, including inside each other. The mechanics are the decode pass you
@@ -1483,7 +1483,7 @@ already pay for: decoding brands entity objects, the runtime indexes every
 cached result by the entities it contains, and mutations that return
 entities patch by identity. There are no heuristics and no schema walking —
 **an inline `wire.object` collects nothing, silently**; composing outputs
-from model codecs is the one discipline this asks of query writers.
+from model views is the one discipline this asks of query writers.
 
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are
@@ -1877,7 +1877,7 @@ typically via a presigned URL, and let the contract carry only the **reference**
 // then finish with an RPC that carries only the bucket key:
 const setAvatar = app.procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
-  .output(User.codec)
+  .output(UserCard)
   .errors({ ImageUnprocessable })
   .mutation(async ({ input, context }) =>
     ok(await context.users.setAvatarFromKey(input.userId, input.key)))
@@ -2154,7 +2154,7 @@ Named here so they are not discovered at 2am:
   the price of rich values and client-side validation; it is a real number of
   kilobytes, and worth measuring in your bundle before committing.
 - **An inline `wire.object` collects no identity.** Entity updates only see
-  outputs composed from model codecs (`Doc.codec`, `Doc.pick(...)`) — a
+  outputs composed from model views (`Doc.pick(...)`, `Doc.select({...})`) — a
   hand-rolled shape opts out silently. Model identity is reference identity,
   same rule as services and middleware: one `defineModel` in a module
   constant; two calls are two models.

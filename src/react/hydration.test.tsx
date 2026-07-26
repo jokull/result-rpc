@@ -31,12 +31,12 @@ const makeWorld = () => {
   const getUser = r
     .procedure()
     .input(wire.object({ id: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .query(({ input, context }) => ok({ id: input.id, name: context.store.get(input.id) ?? "?" }));
   const rename = r
     .procedure()
     .input(wire.object({ id: wire.string, name: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       context.store.set(input.id, input.name);
       return ok({ id: input.id, name: input.name });

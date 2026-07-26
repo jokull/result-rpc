@@ -28,10 +28,10 @@ const User = defineModel("a03-user", {
 
 const boot = () => {
   const app = rpc.context<{ readonly db: { user: { id: string; name: string; avatarUrl: string } } }>();
-  const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
   const setAvatar = app.procedure()
     .input(wire.object({ avatarUrl: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       context.db.user = { ...context.db.user, avatarUrl: input.avatarUrl };
       return ok(context.db.user);
@@ -97,7 +97,7 @@ describe("attack-03 unbranded copies", () => {
   });
 
   test("3b: structuredClone strips the brand — the clone collects nothing", () => {
-    const decoded = User.codec.decode({ id: "u1", name: "J", avatarUrl: "v1.png" });
+    const decoded = User.all("test fixture").decode({ id: "u1", name: "J", avatarUrl: "v1.png" });
     if (!decoded.ok) throw new Error("decode failed");
     expect(collectEntities([decoded.value]).length).toBe(1);
     const clone = structuredClone(decoded.value);

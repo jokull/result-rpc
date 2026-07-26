@@ -500,7 +500,7 @@ describe("entity identities", () => {
   });
   const Doc = defineModel("rt-doc", {
     key: "id",
-    shape: { id: wire.string, title: wire.string, archived: wire.boolean, author: User.codec },
+    shape: { id: wire.string, title: wire.string, archived: wire.boolean, author: User.all("test fixture") },
   });
 
   const bootWorld = () => {
@@ -509,17 +509,17 @@ describe("entity identities", () => {
       docs: Map<string, { id: string; title: string; archived: boolean }>;
     } }>();
     const me = app.procedure()
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .query(({ context }) => ok(context.db.user));
     const list = app.procedure()
-      .output(wire.array(Doc.codec))
+      .output(wire.array(Doc.all("test fixture")))
       .query(({ context }) => ok([...context.db.docs.values()].map((doc) => ({
         ...doc,
         author: context.db.user,
       }))));
     const setAvatar = app.procedure()
       .input(wire.object({ avatarUrl: wire.string }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(({ input, context }) => {
         context.db.user = { ...context.db.user, avatarUrl: input.avatarUrl };
         return ok(context.db.user);
@@ -611,7 +611,7 @@ describe("entity identities", () => {
       shape: { id: wire.string, title: wire.string, archived: wire.boolean },
     });
     const list = app.procedure()
-      .output(wire.array(TouchDoc.codec))
+      .output(wire.array(TouchDoc.all("test fixture")))
       .query(({ context }) => ok([...context.db.docs.values()]));
     const remove = app.procedure()
       .input(wire.object({ id: wire.string }))
