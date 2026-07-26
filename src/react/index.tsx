@@ -159,7 +159,8 @@ const useRuntime = (): QueryRuntime => {
 let hydrationSkewWarned = false;
 const warnHydrationSkew = (cause: unknown) => {
   const isProduction =
-    typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production";
+    (globalThis as { process?: { env?: Record<string, string | undefined> } })
+      .process?.env?.["NODE_ENV"] === "production";
   if (isProduction || hydrationSkewWarned) return;
   hydrationSkewWarned = true;
   // eslint-disable-next-line no-console

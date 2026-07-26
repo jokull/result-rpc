@@ -1058,6 +1058,41 @@ The test suite collectively verifies observable Result and error-union parity th
 - query runtime;
 - SSR hydration.
 
+### Type performance
+
+TypeScript **7** is the development baseline (the native compiler; the same
+project checks in ~0.24s versus ~2.1s on 5.9). The library compiles clean under
+it, and the emitted declarations are validated for consumers on every build by
+`publint` and `are-the-types-wrong`.
+
+The property that matters for a typed-RPC library is not raw speed but **shape**:
+what a consumer's compiler pays *per procedure* must stay constant, because
+superlinear growth is what eventually makes an API package unusable
+(TypeScript's `ts7056` "inferred type exceeds the maximum length the compiler
+will serialize" is the terminal form). `pnpm bench:types` generates a synthetic
+consumer at three sizes, measures instantiations, and fails the build if the
+marginal cost per procedure grows more than 15% against
+`bench/baseline.json`.
+
+Measured, at the time of writing:
+
+- **Procedures scale linearly** — ~940 instantiations each, flat from 25 to 100.
+- **Shape width is nearly free** — quadrupling an object codec's fields (20 → 80)
+  costs about 4% more instantiations, because the mapped type is computed once
+  per shape and cached.
+- **Declaration emit is healthy** — a 60-procedure router emits without
+  `ts7056`, with no `any` leaking into the public surface.
+- The library requires **no `@types/node`**: a browser-only consumer compiling
+  with `types: []` gets a clean build, so environment globals are read through
+  `globalThis` rather than named directly.
+
+One measured negative result worth recording, so it is not "optimized" again:
+rewriting `ShapeInput`/`ShapeEncoded` from precomputed required/optional key
+unions into per-key `as` remapping — which reads as the more modern form —
+**regressed instantiations by 34%**. The helper form computes each key union
+once and reuses it; the remapped form re-evaluates the conditional for every
+key in both halves of the intersection.
+
 ## Initial implementation sequence
 
 1. Wire grammar, limits, codec primitives, and structural tagged-error definitions.

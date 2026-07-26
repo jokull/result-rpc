@@ -608,6 +608,15 @@ const createProxy = (
  * tree-shaken. Build the client from a `contract()` defined in a module that
  * never imports server code. See /concepts/client-boundary.
  */
+/**
+ * Reads NODE_ENV without requiring `@types/node`: a browser-only consumer
+ * compiles this library with `types: []`, so `process` may not be declared.
+ * Bundlers still see the `process.env.NODE_ENV` text and strip dev branches.
+ */
+const isProductionEnv = (): boolean =>
+  (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env?.["NODE_ENV"] === "production";
+
 const clientBoundaryWarningState = { warned: false };
 
 /** Test-only: reset the once-per-process router-in-browser warning. */
@@ -617,10 +626,8 @@ export const __resetClientBoundaryWarning = () => {
 
 const warnRouterInBrowser = () => {
   if (clientBoundaryWarningState.warned) return;
-  // Dev-only: bundlers strip `process.env.NODE_ENV === "production"` branches,
-  // and the whole check is behind a browser guard so servers never see it.
-  const isProduction =
-    typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production";
+  // Dev-only, and behind a browser guard so servers never see it.
+  const isProduction = isProductionEnv();
   const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
   if (isProduction || !isBrowser) return;
   clientBoundaryWarningState.warned = true;
