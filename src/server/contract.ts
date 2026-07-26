@@ -681,7 +681,7 @@ export class ProcedureImplementer<
     handler: (
       args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
     ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
-  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, "query" | "mutation"> {
+  ): Procedure<TRootContext, TInput, TOutput, TDefinitions, Exclude<TKind, "subscription">> {
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
@@ -694,7 +694,10 @@ export class ProcedureImplementer<
           TDefinitions
         >["handler"],
       }),
-    });
+      // The `this` parameter narrows TKind to the non-subscription branch at
+      // every call site; the cast restores the contract's exact kind, which
+      // the spread of `this.contract._def` preserves at runtime.
+    }) as Procedure<TRootContext, TInput, TOutput, TDefinitions, Exclude<TKind, "subscription">>;
   }
 
   stream(

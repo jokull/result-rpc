@@ -25,7 +25,7 @@ Three steps, each a value crossing one boundary:
 // app/rsc.ts — one runtime per request, shared by every server component
 import { cache } from "react"
 import { createServerClient } from "result-rpc/server"
-import { createQueryRuntime } from "result-rpc/react"
+import { createQueryRuntime } from "result-rpc/query"   // ← react-free entry
 import { appRouter } from "@app/server"      // server-only module
 
 export const getServerRuntime = cache(() => {
@@ -33,6 +33,20 @@ export const getServerRuntime = cache(() => {
   return createQueryRuntime({ client })
 })
 ```
+
+:::note[Two entries: `result-rpc/query` on the server, `result-rpc/react` in components]
+`result-rpc/react` is marked `"use client"`. Rendering its **components** from a
+server component is fine and expected — `<ResultRpcHydrationBoundary>` below is
+imported straight into a server component, and the bundler turns it into a
+client reference rather than executing it on the server. That is the boundary
+working as designed.
+
+What you cannot do is *call* its non-component exports on the server: a
+react-server environment will not evaluate a client module, so
+`createQueryRuntime` imported from `result-rpc/react` fails there. The cache
+runtime has no React dependency at all, so it ships as its own entry — import
+`createQueryRuntime` and its types from **`result-rpc/query`** in server code.
+:::
 
 `cache()` (React's per-request memo) means every server component in one request
 shares a runtime — prefetches accumulate, and you dehydrate once at the boundary.

@@ -1,0 +1,6 @@
+dist/
+.waku/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db

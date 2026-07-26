@@ -28,6 +28,10 @@
       "types": "./dist/drizzle.d.ts",
       "import": "./dist/drizzle.js"
     },
+    "./query": {
+      "types": "./dist/query/runtime.d.ts",
+      "import": "./dist/query/runtime.js"
+    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.js"

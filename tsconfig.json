@@ -17,5 +17,8 @@
     "allowImportingTsExtensions": true,
     "types": ["bun"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx"],
+  // 09-waku is a real installable app: it imports the package by name
+  // (aliased to dist/) and has its own tsconfig + node_modules.
+  "exclude": ["examples/09-waku"]
 }

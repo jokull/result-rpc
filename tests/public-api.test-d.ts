@@ -488,3 +488,45 @@ export type _TryPromiseTagged = Assert<Equal<
 >>
 // @ts-expect-error catch must return a tagged error, not an Error subclass
 void tryPromise(async () => 1, (cause) => new Error(String(cause)))
+
+// --- Regression: an implemented procedure keeps its contract's kind ---------
+// `ProcedureImplementer.handler()` once widened the kind to
+// `"query" | "mutation"`, which made every router-implemented procedure's
+// client fail the `$kind: "query"` constraint — so `runtime.prefetch(...)`
+// (the RSC server-prefetch path) could not typecheck against a server client.
+// Found by the Waku RSC example; pinned here.
+const kindContract = rpc.context<{}>()
+  .procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(wire.string)
+  .query();
+const kindMutationContract = rpc.context<{}>()
+  .procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(wire.string)
+  .mutation();
+
+const kindImplemented = rpc.context<{}>()
+  .implement(kindContract)
+  .handler(({ input }) => ok(input.id));
+const kindMutationImplemented = rpc.context<{}>()
+  .implement(kindMutationContract)
+  .handler(({ input }) => ok(input.id));
+
+type ImplementedQueryKind = typeof kindImplemented extends
+  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
+type ImplementedMutationKind = typeof kindMutationImplemented extends
+  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
+
+export type _ImplementedQueryStaysAQuery = Assert<Equal<ImplementedQueryKind, "query">>;
+export type _ImplementedMutationStaysAMutation = Assert<Equal<ImplementedMutationKind, "mutation">>;
+
+// The payoff: a client built from the implemented router exposes `$kind:
+// "query"`, so the RSC prefetch path accepts it.
+const kindRouter = rpc.context<{}>().router({ read: kindImplemented });
+const kindClient = createClient({
+  router: kindRouter,
+  transport: { request: async () => ({ ok: false, reason: "network" }) },
+});
+type ReadKind = typeof kindClient.read.$kind;
+export type _ClientProcedureIsAQuery = Assert<Equal<ReadKind, "query">>;
