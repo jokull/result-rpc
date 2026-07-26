@@ -1,6 +1,7 @@
 import {
   createContext,
   createElement,
+  Fragment,
   useContext,
   useEffect,
   useMemo,
@@ -137,8 +138,12 @@ export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
   const runtime = props.runtime ?? owned;
   const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
   if (props.hydrate !== undefined && hydrated.current !== props.hydrate) {
-    runtime.hydrate(props.hydrate);
     hydrated.current = props.hydrate;
+    try {
+      runtime.hydrate(props.hydrate);
+    } catch (cause) {
+      warnHydrationSkew(cause);
+    }
   }
   return createElement(RuntimeContext.Provider, { value: runtime }, props.children);
 };
@@ -147,6 +152,59 @@ const useRuntime = (): QueryRuntime => {
   const runtime = useContext(RuntimeContext);
   if (!runtime) throw new TypeError("useResultQuery requires ResultRpcProvider");
   return runtime;
+};
+
+let hydrationSkewWarned = false;
+const warnHydrationSkew = (cause: unknown) => {
+  const isProduction =
+    typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production";
+  if (isProduction || hydrationSkewWarned) return;
+  hydrationSkewWarned = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[result-rpc] skipped hydrating a dehydrated cache — its serializer/contract "
+      + "version did not match this client (a server and client bundle briefly "
+      + "skewed across a deploy). The client will fetch fresh instead of "
+      + "rendering stale server data. Original error: "
+      + (cause instanceof Error ? cause.message : String(cause)),
+  );
+};
+
+export interface ResultRpcHydrationBoundaryProps {
+  /**
+   * Cache state produced on the server by `runtime.dehydrate()`. It is a plain
+   * JSON-serializable object (a version stamp plus a string payload), so it
+   * crosses the RSC server→client boundary as an ordinary prop.
+   */
+  readonly state?: DehydratedQueryRuntime;
+  readonly children?: ReactNode;
+}
+
+/**
+ * Merges server-prefetched cache state into the enclosing runtime — the App
+ * Router idiom. Unlike the provider's one-shot `hydrate` prop, a boundary is
+ * nestable: each route segment's server component can prefetch, dehydrate, and
+ * render its own boundary, and every payload merges into the one client
+ * runtime. Hydrated entities are indexed exactly as fetched ones are, so a
+ * client mutation patches server-rendered rows with zero refetch.
+ *
+ * Hydration happens during render (before children read the cache, so the
+ * first paint has the data), once per distinct `state`, and never crashes the
+ * tree: a serializer/contract-version mismatch across a deploy is skipped with
+ * a dev warning and the client fetches fresh.
+ */
+export const ResultRpcHydrationBoundary = (props: ResultRpcHydrationBoundaryProps) => {
+  const runtime = useRuntime();
+  const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
+  if (props.state !== undefined && hydrated.current !== props.state) {
+    hydrated.current = props.state;
+    try {
+      runtime.hydrate(props.state);
+    } catch (cause) {
+      warnHydrationSkew(cause);
+    }
+  }
+  return createElement(Fragment, null, props.children);
 };
 
 /**

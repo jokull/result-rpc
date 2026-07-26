@@ -63,6 +63,7 @@ export default defineConfig({
         items: [
           "/guides/forms",
           "/guides/drizzle",
+          "/guides/rsc",
           "/guides/routing",
           "/guides/testing",
           "/guides/observability",
