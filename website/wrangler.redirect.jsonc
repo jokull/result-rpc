@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "result-rpc-legacy-redirect",
+  "main": "./workers/legacy-redirect.ts",
+  "compatibility_date": "2026-07-27",
+  "routes": [
+    {
+      "pattern": "result-rpc.solberg.is",
+      "custom_domain": true
+    }
+  ]
+}

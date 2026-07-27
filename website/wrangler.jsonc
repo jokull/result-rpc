@@ -11,10 +11,6 @@
     {
       "pattern": "result-rpc.com",
       "custom_domain": true
-    },
-    {
-      "pattern": "result-rpc.solberg.is",
-      "custom_domain": true
     }
   ]
 }
