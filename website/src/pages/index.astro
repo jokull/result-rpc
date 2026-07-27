@@ -207,6 +207,16 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         </details>
 
         <details class="faq-item">
+          <summary><span>Which shells are included, and which do I write?</span></summary>
+          <div class="faq-body">
+            <p>The failures the framework itself invents come with owners already written. <code>boundaryShells()</code> returns three, nested outermost-first:</p>
+            <p><strong>TransportShell</strong> claims <code>client/offline</code>, <code>client/network-failure</code> and <code>client/timeout</code> — it pauses the operations beneath it and resumes them when the connection returns. <strong>DefectShell</strong> claims the things no component can render a branch for (<code>client/http-failure</code>, <code>client/protocol-violation</code>, <code>client/decode-failure</code>, <code>server/bad-request</code>, <code>server/internal</code>) and escalates them to the nearest error boundary. <strong>StaleShell</strong> claims <code>client/stale</code> — a deploy left this tab behind, so the reload is the fix. You also get <code>BoundaryProvider</code>, which doubles as the browser bridge (reconnect, focus, online/offline), and <code>useConnectivity()</code> for the offline banner.</p>
+            <p><strong>You write the ones only your app can own</strong>, because only you know what should happen. An auth shell claiming <code>session/expired</code> and redirecting to login. An entitlement shell claiming <code>billing/plan-required</code> and rendering the upgrade dialog. A workspace shell claiming <code>workspace/not-found</code> for a route segment. A rate-limit shell claiming <code>api/rate-limited</code> and showing a retry countdown. Each is a few lines: name the tags, pick pause or escalate, render the fallback.</p>
+            <p>Shells chain, so yours can hang off the built-ins with <code>from: StaleShell</code> and claim only what's left.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
           <summary><span>Do I have to use Drizzle?</span></summary>
           <div class="faq-body">
             <p>No. Models are plain wire codecs you can hand-write. Drizzle is one optional subpath that <em>derives</em> them from your tables so a column allowlist is the whole entity contract — but nothing requires it.</p>
