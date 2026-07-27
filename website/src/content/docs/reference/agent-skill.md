@@ -18,9 +18,9 @@ page, and the skill still points at it.
 
 Every page here is also served as raw Markdown — append `.md` to any URL:
 
-- Page Markdown: `https://result-rpc.solberg.is/concepts/pagination.md`
-- Index for LLMs: `https://result-rpc.solberg.is/llms.txt`
-- Full corpus: `https://result-rpc.solberg.is/llms-full.txt`
+- Page Markdown: `https://result-rpc.com/concepts/pagination.md`
+- Index for LLMs: `https://result-rpc.com/llms.txt`
+- Full corpus: `https://result-rpc.com/llms-full.txt`
 
 So an agent with web access can read the whole documentation set directly,
 whether or not the skill is installed. The skill just gives it the map and the

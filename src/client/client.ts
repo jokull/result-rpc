@@ -637,7 +637,7 @@ const warnRouterInBrowser = () => {
       + "router carries handlers, middleware, and their imports (db drivers, "
       + "secrets) — all of which are now in your client bundle. Pass a "
       + "`contract` defined in a server-code-free module instead. "
-      + "See https://result-rpc.solberg.is/concepts/client-boundary",
+      + "See https://result-rpc.com/concepts/client-boundary",
   );
 };
 

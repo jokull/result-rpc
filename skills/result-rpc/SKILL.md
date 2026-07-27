@@ -13,10 +13,10 @@ catch. React **shells** own failures by position, an entity cache patches by
 identity, and models can be **derived from Drizzle** so the wire contract can't
 drift from the database.
 
-This skill is a map. The documentation at **https://result-rpc.solberg.is** is
+This skill is a map. The documentation at **https://result-rpc.com** is
 the single source of truth — every page is also served as raw Markdown by
 appending `.md` to its URL, and the whole set is indexed at
-`https://result-rpc.solberg.is/llms.txt` (full text at `/llms-full.txt`). For
+`https://result-rpc.com/llms.txt` (full text at `/llms-full.txt`). For
 any task below, **fetch the linked `.md` page** rather than guessing — the docs
 carry the current API, and this file only routes you there.
 
@@ -32,7 +32,7 @@ way tRPC ships `AppRouter`). So **what you import decides what bundles**:
 > Bundlers do **not** tree-shake this away.
 
 If you touch client wiring, read
-**https://result-rpc.solberg.is/concepts/client-boundary.md** before anything
+**https://result-rpc.com/concepts/client-boundary.md** before anything
 else. `import type` from a server module is safe (erased); a value import is the
 footgun.
 
