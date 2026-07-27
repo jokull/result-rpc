@@ -156,7 +156,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
 type Assert<T extends true> = T
 
-// doc.byId resolves a dozen possible failures; under the onion the page sees one.
+// doc.byId resolves a dozen possible failures; with shells mounted the page sees one.
 const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" })
 type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"]
 export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>

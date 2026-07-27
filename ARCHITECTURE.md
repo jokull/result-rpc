@@ -2,7 +2,7 @@
 
 ## Purpose
 
-result-rpc is an RPC regime for React — one vertically integrated library for:
+result-rpc is an RPC layer for React — one library covering:
 
 - composing typed `Result` values;
 - declaring RPC procedures and their complete recoverable error sets;
@@ -809,7 +809,7 @@ Derivations deliberately NOT taken, evaluated against doctrine:
 
 ### Entity hardening (stress-test round)
 
-The entity system was adversarially stress-tested (urql Graphcache autopsy →
+The entity system was tested adversarially (urql Graphcache autopsy →
 attack-vector mapping; 26 empirical probes in `tests/entity/`; a seeded
 coherence oracle asserting active observers against a reference database).
 The round produced these load-bearing mechanisms:

@@ -3,7 +3,7 @@ import { defineConfig } from "blume";
 export default defineConfig({
   title: "result-rpc",
   description:
-    "One Result and one wire-safe error union from server to screen — the RPC regime for React.",
+    "Typed RPC for React. One Result and one wire-safe error union per procedure.",
   logo: {
     href: "/",
     image: "/result-rpc-lockup-blue.svg",
@@ -114,7 +114,7 @@ export default defineConfig({
         border: "#a8c5d9",
       },
       titles: {
-        "/": "One Result. One error union. Server to screen.",
+        "/": "One Result and one wire-safe error union per procedure",
       },
     },
     robots: true,

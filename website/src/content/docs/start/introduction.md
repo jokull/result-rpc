@@ -1,9 +1,7 @@
 ---
 title: "Introduction"
-description: "One Result and one wire-safe error union from server to screen \u2014 why the error channel is the architecture."
+description: "Typed RPC for React. One Result and one wire-safe error union per procedure."
 ---
-
-One Result. One error union. Server to screen.
 
 result-rpc is an RPC layer for React in the tRPC tradition — contract in
 TypeScript, procedures on the server, hooks in components — with one structural
@@ -11,26 +9,23 @@ change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
 
-It is built as the migration path for the tRPC app that grew up. There is a
-day when offline behavior, 5xx handling, session expiry, and observability
-stop being polish and become the work — and you find yourself threading them
-through every query and mutation, or bolting them on with `onError` defaults,
-axios-style interceptors, and a Sentry integration that guesses at what
-happened. That day, the error channel *is* the architecture. result-rpc is
-that channel designed on purpose: the corner cases are first-class values with
-first-class owners, and observability is a structured stream you tap, not a
-reconstruction.
+The problem it addresses shows up once an app is a few years old. Offline
+behavior, 5xx handling, session expiry, and observability stop being polish and
+become the work, and you end up threading them through every query and
+mutation, or bolting them on with `onError` defaults, axios-style interceptors,
+and a Sentry integration that guesses at what happened. This library treats
+those cases as ordinary values with declared owners, and emits observability as
+a structured stream rather than something you reconstruct after the fact.
 
-If you looked at Effect for this and backed away, what's here is the subset
-you wanted — typed errors, services, layers — at half the setup and a tenth of
-the weirdness, with hooks that read like the ones you already write.
+If you looked at Effect for this and decided it was more than you wanted, the
+overlapping parts are here — typed errors, services, layers — with a smaller
+API surface and hooks that look like the ones you already write.
 
-And if you already tried the halfway version — neverthrow or better-result on
-the server, procedures returning `Result` as data — you know exactly where it
-stops: tagged errors are not wire-safe, so the discipline dies at the
-serializer, and on the client `query.error` is suddenly a different thing
-from `query.data.error`. This library starts where that attempt ends. The
-Result *is* the protocol.
+If you tried the halfway version — neverthrow or better-result on the server,
+procedures returning `Result` as data — you know where it stops: tagged errors
+are not wire-safe, so the discipline dies at the serializer, and on the client
+`query.error` becomes a different thing from `query.data.error`. This library
+starts there: the Result crosses the wire intact.
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" })

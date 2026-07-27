@@ -87,7 +87,7 @@ Attempting the insert IS the uniqueness check — correct under concurrency,
 where the SELECT-first idiom races. The `db/*` tags are **server-side
 composition currency, never wire errors**: all are `visibility: "private"`,
 none belong in a procedure's `.errors()`. Handlers compose with them and
-collapse to declared domain tags at the boundary — the same doctrine as
+collapse to declared domain tags at the boundary — the same rule as
 [Result composition](/concepts/results/)'s upstream services, specialized
 for the database. One that slips through uncollapsed hits the
 undeclared-tag safety net and sanitizes to `server/internal`.

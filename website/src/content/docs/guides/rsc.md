@@ -92,8 +92,8 @@ Server-prefetched data arrives with the timestamp it was fetched. With the
 default `staleTime` of `0` it is immediately stale, so the client revalidates in
 the background on mount — correct, but a wasted round-trip when you just rendered
 it. Give prefetched queries a `staleTime` so the server data is trusted for a
-window and the first mount makes **zero** client requests. That is the whole
-point of prefetching: no loading flash *and* no immediate refetch.
+window and the first mount makes **zero** client requests — no loading flash
+and no immediate refetch.
 
 ## Nested boundaries merge
 

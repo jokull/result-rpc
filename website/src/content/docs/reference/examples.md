@@ -5,7 +5,7 @@ description: "The escalation ladder: eight runnable rungs that double as the DX 
 
 The `examples/` directory is an escalation ladder. Every rung is a
 self-contained app with runtime tests, every file typechecks under the
-repo's strict `pnpm check`, and the flagship claims are asserted with
+repo's strict `pnpm check`, and the main claims are asserted with
 **per-procedure request counters** — the examples are the library's DX
 regression suite, not demos.
 
@@ -44,7 +44,7 @@ arriving from tRPC.
 Mutations with optimistic updates and rollback, the basic
 `boundaryShells()` onion, the three-state connection banner, and an
 `errorCatalog` over a shell-narrowed union. The list's failure branch is
-`todos.error satisfies never` — the compiler certifying the onion is
+`todos.error satisfies never` — the compiler certifying the shells are
 mounted.
 
 ## 03-docs
@@ -52,7 +52,7 @@ mounted.
 The whole system in one small app: a `defineService` dependency graph,
 optional→required session/viewer layers, a four-shell onion, entity
 models, a rendered subscription, and a defect escalation boundary. The
-flagship test: change the avatar, and the header — a *different query* —
+key test: change the avatar, and the header — a *different query* —
 shows the new image at exactly one request (the mutation itself), zero
 refetches. Compile-time probes pin the narrowed unions: a query resolving
 a dozen possible failures presents exactly `doc/not-found`.

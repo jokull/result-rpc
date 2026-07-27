@@ -2,7 +2,7 @@
   <img src="brand/logo/result-rpc-lockup-preview.png" alt="result-rpc" width="720" />
 </p>
 
-<p align="center"><strong>One Result. One error union. Server to screen.</strong></p>
+<p align="center"><strong>Typed RPC for React. One Result and one wire-safe error union per procedure.</strong></p>
 
 <p align="center">
   <a href="https://result-rpc.com/start/introduction/">Documentation</a>
@@ -20,26 +20,23 @@ change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
 
-It is built as the migration path for the tRPC app that grew up. There is a
-day when offline behavior, 5xx handling, session expiry, and observability
-stop being polish and become the work — and you find yourself threading them
-through every query and mutation, or bolting them on with `onError` defaults,
-axios-style interceptors, and a Sentry integration that guesses at what
-happened. That day, the error channel *is* the architecture. result-rpc is
-that channel designed on purpose: the corner cases are first-class values with
-first-class owners, and observability is a structured stream you tap, not a
-reconstruction.
+The problem it addresses shows up once an app is a few years old. Offline
+behavior, 5xx handling, session expiry, and observability stop being polish and
+become the work, and you end up threading them through every query and
+mutation, or bolting them on with `onError` defaults, axios-style interceptors,
+and a Sentry integration that guesses at what happened. This library treats
+those cases as ordinary values with declared owners, and emits observability as
+a structured stream rather than something you reconstruct after the fact.
 
-If you looked at Effect for this and backed away, what's here is the subset
-you wanted — typed errors, services, layers — at half the setup and a tenth of
-the weirdness, with hooks that read like the ones you already write.
+If you looked at Effect for this and decided it was more than you wanted, the
+overlapping parts are here — typed errors, services, layers — with a smaller
+API surface and hooks that look like the ones you already write.
 
-And if you already tried the halfway version — neverthrow or better-result on
-the server, procedures returning `Result` as data — you know exactly where it
-stops: tagged errors are not wire-safe, so the discipline dies at the
-serializer, and on the client `query.error` is suddenly a different thing
-from `query.data.error`. This library starts where that attempt ends. The
-Result *is* the protocol.
+If you tried the halfway version — neverthrow or better-result on the server,
+procedures returning `Result` as data — you know where it stops: tagged errors
+are not wire-safe, so the discipline dies at the serializer, and on the client
+`query.error` becomes a different thing from `query.data.error`. This library
+starts there: the Result crosses the wire intact.
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" })
@@ -1285,7 +1282,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
 type Assert<T extends true> = T
 
-// doc.byId resolves a dozen possible failures; under the onion the page sees one.
+// doc.byId resolves a dozen possible failures; with shells mounted the page sees one.
 const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" })
 type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"]
 export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>
@@ -1481,7 +1478,7 @@ On the client, the full extent of the wiring is the mutation call itself:
 ```
 
 The list row, the detail header, and this very select all update in place.
-The flagship test in `examples/07-tracker` asserts it with per-procedure
+A test in `examples/07-tracker` asserts it with per-procedure
 request counters, not screenshots: after the mutation settles, the counts
 equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
 world, zero refetches anywhere.
@@ -1553,9 +1550,9 @@ order becomes a field too: a drag-reorder is one `sortKey` patch and every
 cached list re-sorts locally — no list invalidation for reorders, ever.
 
 
-### Stress-tested: what the coherence oracle pins
+### What the coherence oracle pins
 
-The entity system is proven by an adversarial suite (26 attack probes,
+The entity system is tested by an adversarial suite (26 attack probes,
 `tests/entity/`) and a **coherence oracle**: seeded-random interleavings of
 mounts, unmounts, mutations, and invalidations against a reference database,
 asserting after every settle that active observers match the oracle exactly
@@ -1592,7 +1589,7 @@ shape must be classified. Every new query starts life as one-off
 `wire.object`s, exactly like the tRPC output you'd have written anyway. Mint
 a model when you notice recurrence, and apply one rule: **will a mutation
 somewhere else ever need to update this field on this screen without a
-refetch?** No → one-off, forever, no guilt. Yes → model the keyed core, and
+refetch?** No → leave it a one-off. Yes → model the keyed core, and
 only its *context-free* fields — values that are true about the entity in
 every query (`name`, `phone`), never values relative to the query's input (a
 `minAvailable` computed over the requested date range lives in the
@@ -1630,7 +1627,7 @@ client cache identity, one schema walking the whole chain through the type
 checker. (`drizzle-orm` >= 1.0,
 optional peer, imported only by the `result-rpc/drizzle` subpath.)
 
-`examples/08-bookings/NOTES.md` is this doctrine applied to real-world
+`examples/08-bookings/NOTES.md` applies these rules to real-world
 shapes — a four-level relational tree, locale-variant content under a
 composite key, query-relative aggregates, derived summaries — with a table
 justifying every single node as model, pick, or one-off, and request

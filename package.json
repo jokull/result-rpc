@@ -1,7 +1,7 @@
 {
   "name": "result-rpc",
   "version": "0.1.0",
-  "description": "One Result and one wire-safe error union from server to screen",
+  "description": "One Result and one wire-safe error union per procedure",
   "type": "module",
   "sideEffects": false,
   "files": [

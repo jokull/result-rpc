@@ -21,8 +21,8 @@ const setAvatar = app.procedure()
 ```
 
 The mutation returned a `user` entity; the cache knows every query whose
-result contains `user:u_1`; each one is patched in place. That is the whole
-feature: **automatic invalidation and automatic updates by model + id**.
+result contains `user:u_1`; each one is patched in place — automatic
+invalidation and automatic updates by model + id.
 
 On the client, the full extent of the wiring is the mutation call itself:
 
@@ -31,7 +31,7 @@ On the client, the full extent of the wiring is the mutation call itself:
 ```
 
 The list row, the detail header, and this very select all update in place.
-The flagship test in `examples/07-tracker` asserts it with per-procedure
+A test in `examples/07-tracker` asserts it with per-procedure
 request counters, not screenshots: after the mutation settles, the counts
 equal `{ ...baseline, "issues.assign": 1 }` — one request in the whole
 world, zero refetches anywhere.
@@ -102,9 +102,9 @@ natural idempotency key. Add
 order becomes a field too: a drag-reorder is one `sortKey` patch and every
 cached list re-sorts locally — no list invalidation for reorders, ever.
 
-## Stress-tested: what the coherence oracle pins
+## What the coherence oracle pins
 
-The entity system is proven by an adversarial suite (26 attack probes,
+The entity system is tested by an adversarial suite (26 attack probes,
 `tests/entity/`) and a **coherence oracle**: seeded-random interleavings of
 mounts, unmounts, mutations, and invalidations against a reference database,
 asserting after every settle that active observers match the oracle exactly
@@ -211,7 +211,7 @@ shape must be classified. Every new query starts life as one-off
 `wire.object`s, exactly like the tRPC output you'd have written anyway. Mint
 a model when you notice recurrence, and apply one rule: **will a mutation
 somewhere else ever need to update this field on this screen without a
-refetch?** No → one-off, forever, no guilt. Yes → model the keyed core, and
+refetch?** No → leave it a one-off. Yes → model the keyed core, and
 only its *context-free* fields — values that are true about the entity in
 every query (`name`, `phone`), never values relative to the query's input (a
 `minAvailable` computed over the requested date range lives in the
@@ -226,7 +226,7 @@ over-modeling is bounded by the context-free rule. Relationships are never
 declared — they live in each query's output shape, discovered per result by
 walking, so there is no relation schema to keep in sync.
 
-`examples/08-bookings/NOTES.md` is this doctrine applied to real-world
+`examples/08-bookings/NOTES.md` applies these rules to real-world
 shapes — a four-level relational tree, locale-variant content under a
 composite key, query-relative aggregates, derived summaries — with a table
 justifying every single node as model, pick, or one-off, and request

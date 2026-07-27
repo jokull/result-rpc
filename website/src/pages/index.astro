@@ -2,7 +2,7 @@
 import PageLayout from 'blume/components/layout/PageLayout.astro';
 import data from 'blume:data';
 
-const pageDescription = 'One Result and one wire-safe error union from server to screen — the RPC regime for React.';
+const pageDescription = 'Typed RPC for React. One Result and one wire-safe error union per procedure.';
 
 ---
 
@@ -21,7 +21,7 @@ const pageDescription = 'One Result and one wire-safe error union from server to
   ogEnabled={data.config.og.enabled}
   ogImage="/og-home.png"
   page={{
-    title: 'result-rpc — one Result, one error union',
+    title: 'result-rpc — typed RPC for React',
     description: pageDescription,
     route: '/',
   }}
@@ -42,12 +42,12 @@ const pageDescription = 'One Result and one wire-safe error union from server to
   <div class="home-content">
     <section class="hero shell">
       <div class="hero-copy">
-        <div class="kicker"><span></span> For the tRPC app that grew up</div>
+        <div class="kicker"><span></span> A protocol for robust React apps</div>
         <h1>Errors are values.<br /><em>Values have owners.</em></h1>
         <p class="lede">There's a day when offline behavior, 5xx, session expiry and stale deploys stop being polish and become the work. This is the layer that already has owners for them.</p>
         <div class="actions">
           <a class="button primary" href="/start/quickstart/">Read the quickstart <span>→</span></a>
-          <a class="button secondary" href="/start/introduction/">Why the error channel is the architecture</a>
+          <a class="button secondary" href="/start/introduction/">Read the introduction</a>
         </div>
       </div>
       <div class="hero-visual">
@@ -58,7 +58,7 @@ const pageDescription = 'One Result and one wire-safe error union from server to
 // NetworkFailure | Timeout | HttpFailure |
 // ProtocolViolation | DecodeFailure | Stale</span>
 
-<span class="c">// under the onion: each shell subtracted what it owns</span>
+<span class="c">// with shells mounted: each one subtracted what it owns</span>
 <span class="k">const</span> query = AuthShell.useQuery(client.doc.byId, &#123; id &#125;)
 <span class="c">// DocNotFound — and a missing case fails to compile</span></code></pre>
           <figcaption>Nothing was hidden. Each tag left the union because a named owner took responsibility for it.</figcaption>
@@ -171,7 +171,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Does it work with React Server Components?</span></summary>
           <div class="faq-body">
-            <p>Yes — and properly. There's a <code>dehydrate</code>/<code>hydrate</code> bridge and a nestable <code>&lt;ResultRpcHydrationBoundary&gt;</code>: prefetch on the server, and the client renders on first paint with zero requests. Hydrated entities are indexed too, so a client mutation patches a server-rendered row in place. It's proven end to end on Waku, Next.js App Router, and TanStack Start.</p>
+            <p>Yes. There's a <code>dehydrate</code>/<code>hydrate</code> bridge and a nestable <code>&lt;ResultRpcHydrationBoundary&gt;</code>: prefetch on the server, and the client renders on first paint with zero requests. Hydrated entities are indexed too, so a client mutation patches a server-rendered row in place. There are working examples for Waku, Next.js App Router, and TanStack Start.</p>
           </div>
         </details>
 
@@ -179,7 +179,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
           <summary><span>Why <em>Result</em>? Why not just throw?</span></summary>
           <div class="faq-body">
             <p>Every JavaScript codebase that wants safety eventually reaches for errors-as-values — it's how safe languages work, and it bridges cleanly into TypeScript. There are excellent libraries for it: better-result, neverthrow, Effect. We vendored a slimmed-down port of the better-result API because it's genuinely nice to use.</p>
-            <p>But we needed one thing they don't give you: <strong>wire safety</strong>. A tagged error has to survive a codec and cross the network. That's the whole point — the same <code>Result&lt;T, E&gt;</code> the server returns is the one your component reads.</p>
+            <p>But we needed one thing they don't give you: <strong>wire safety</strong>. A tagged error has to survive a codec and cross the network. The same <code>Result&lt;T, E&gt;</code> the server returns is the one your component reads.</p>
           </div>
         </details>
 
@@ -250,7 +250,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
 
   <footer class="shell" slot="footer">
     <a class="brand" href="/" aria-label="result-rpc home"><img src="/result-rpc-lockup-blue.svg" alt="result-rpc" width="174" height="35" /></a>
-    <p>One Result. One error union. Server to screen.</p>
+    <p>One Result and one wire-safe error union per procedure.</p>
     <div><a href="/reference/sharp-edges/">Sharp edges</a><a href="https://github.com/jokull/result-rpc">GitHub</a></div>
   </footer>
 </PageLayout>

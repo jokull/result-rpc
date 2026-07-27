@@ -191,7 +191,7 @@ This surface ports the core DX of
 [neverthrow](https://github.com/supermacro/neverthrow), and happily credits
 both. Three things are deliberately not ported:
 
-- **Serialization helpers.** Wire safety is this library's own first-class
+- **Serialization helpers.** Wire safety is handled by this library's own
   concern — error `data` goes through declared codecs, rich values through
   the versioned serializer. A Result-level `toJSON` would be a second,
   weaker wire story.
