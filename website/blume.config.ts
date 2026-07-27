@@ -41,10 +41,12 @@ export default defineConfig({
       {
         label: "Client and cache",
         items: [
+          "/concepts/client-boundary",
           "/concepts/client",
           "/concepts/react",
           "/concepts/mutations",
           "/concepts/entities",
+          "/concepts/pagination",
           "/concepts/subscriptions",
         ],
       },
@@ -61,6 +63,7 @@ export default defineConfig({
         items: [
           "/guides/forms",
           "/guides/drizzle",
+          "/guides/rsc",
           "/guides/routing",
           "/guides/testing",
           "/guides/observability",
@@ -72,6 +75,7 @@ export default defineConfig({
         items: [
           "/reference/examples",
           "/reference/sharp-edges",
+          "/reference/agent-skill",
         ],
       },
     ],

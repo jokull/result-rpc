@@ -1,0 +1,15 @@
+{
+  "25": {
+    "types": 29515,
+    "instantiations": 64527
+  },
+  "50": {
+    "types": 34040,
+    "instantiations": 88027
+  },
+  "100": {
+    "types": 43090,
+    "instantiations": 135027
+  },
+  "marginalInstantiationsPerProcedure": 940
+}

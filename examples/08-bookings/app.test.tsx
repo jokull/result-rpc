@@ -159,7 +159,7 @@ async function renderSettledApp(client: AppClient): Promise<ReactTestRenderer> {
   await waitForText(
     renderer,
     (text) =>
-      text.includes("Order ord-1 · aiko@example.com — booked by Kenji Mori") &&
+      text.includes("Order ord-1 — booked by Kenji Mori") &&
       text.includes("Front desk: Hotel Okura") &&
       text.includes("Guest rating 4.2 · 5 reviews") &&
       text.includes("“Quiet floors, would return” — Noah Brandt (4/5)") &&
@@ -186,7 +186,7 @@ test("direct client round-trips the deep tree with column subsets at every level
   expect(list).toEqual(
     ok([
       {
-        order: { id: "ord-1", email: "aiko@example.com", note: "Honeymoon trip" },
+        order: { id: "ord-1", note: "Honeymoon trip" },
         bookedBy: { id: "u-kenji", name: "Kenji Mori" },
         lineItems: [
           {
@@ -229,7 +229,7 @@ test("direct client round-trips the deep tree with column subsets at every level
         ],
       },
       {
-        order: { id: "ord-2", email: "clara@example.com", note: "Anniversary" },
+        order: { id: "ord-2", note: "Anniversary" },
         bookedBy: { id: "u-sara", name: "Sara Lind" },
         lineItems: [
           {
@@ -476,7 +476,7 @@ test("users.rename patches the author across cached review pages, the profile ca
     renderer,
     (text) =>
       text.includes("Top reviewer: Kenji Mori") &&
-      text.includes("Order ord-1 · aiko@example.com — booked by Kenji Mori") &&
+      text.includes("Order ord-1 — booked by Kenji Mori") &&
       text.includes("“Perfect Kyoto base” — Kenji Mori (4/5)"),
     "dashboard and the Granvia feed settled",
   );

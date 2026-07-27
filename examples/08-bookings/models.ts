@@ -45,6 +45,30 @@ export const User = modelFromDrizzle("user", users, {
   columns: ["id", "name", "avatarUrl"],
 });
 
+// -- views: every output names its audience ---------------------------------------
+//
+// A model is the full truth about a row; a view is what one audience may see.
+// Outputs take views, never a bare model — so adding a column to a model above
+// widens nothing below, and the audience is legible in review as a NAME.
+
+/** The customer looking at their own order — the email is theirs to see. */
+export const OrderSelf = Order.all("the viewer is the customer on this order");
+/** An order summarised inside a tree row: no email. */
+export const OrderRow = Order.pick("id", "note");
+
+/** Hotels in a list: enough to render a card, no contact details. */
+export const HotelCard = Hotel.pick("id", "name", "city");
+/** The hotel page, where the phone number is the point. */
+export const HotelDetail = Hotel.all("the detail page is where contact info belongs");
+
+/** A bare mention of a person — a name next to something else. */
+export const UserRef = User.pick("id", "name");
+/** A person rendered as a card, avatar and all. */
+export const UserCard = User.pick("id", "name", "avatarUrl");
+
+/** Marketing copy — every column is public by construction. */
+export const TourContentView = TourContent.all("public marketing copy, no private columns");
+
 export const LocaleCodec = wire.union([wire.literal("en"), wire.literal("ja")] as const);
 export type Locale = InputOf<typeof LocaleCodec>;
 
@@ -83,8 +107,10 @@ export const LineItemView = wire.object({
 });
 
 export const OrderTreeRow = wire.object({
-  order: Order.codec,
-  bookedBy: User.pick("id", "name"),
+  // Was `Order.all("every field of this model is this output's audience")` — which shipped the customer's email into every tree
+  // row. A view makes the audience explicit and cannot widen later.
+  order: OrderRow,
+  bookedBy: UserRef,
   lineItems: wire.array(LineItemView),
 });
 export type OrderTree = InputOf<typeof OrderTreeRow>;
@@ -103,7 +129,7 @@ export const ReviewRowView = wire.object({
     rating: wire.number,
     body: wire.string,
   }),
-  author: User.pick("id", "name", "avatarUrl"),
+  author: UserCard,
 });
 
 /** Offset pagination, real-world style: page number in, hasMore sentinel out. */

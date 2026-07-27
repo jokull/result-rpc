@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { err, error, ok, serialize, wire } from "../index.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
-import { createClient, type ClientEvent } from "./client.js";
+import { createClient, __resetClientBoundaryWarning, type ClientEvent } from "./client.js";
 import {
   batchFetchTransport,
   cancelled,
@@ -577,78 +577,92 @@ describe("contract skew", () => {
   });
 });
 
-describe("file uploads", () => {
-  const makeUploadWorld = (transportKind: "fetch" | "batch") => {
-    const r = rpc.context<{}>();
-    const router = r.router({
-      avatar: r.procedure()
-        .input(wire.object({
-          userId: wire.string,
-          image: wire.file({ maxBytes: 1024, accept: ["image/*"] }),
-        }))
-        .output(wire.object({ name: wire.string, bytes: wire.number, preview: wire.string }))
-        .mutation(async ({ input }) => {
-          const text = await input.image.text();
-          return ok({
-            name: input.image.name,
-            bytes: input.image.size,
-            preview: `${input.userId}:${text.slice(0, 8)}`,
-          });
-        }),
-      ping: r.procedure().output(wire.string).query(() => ok("pong")),
-    });
-    const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
-      handler(new Request(input, init))) as typeof globalThis.fetch;
-    const transport = transportKind === "fetch"
-      ? fetchTransport({ url: "https://example.test/rpc", fetch: localFetch })
-      : batchFetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
-    return { client: createClient({ router, transport }), handler };
+describe("content-type gate (CSRF surface)", () => {
+  test("a request without the protocol content-type is rejected", async () => {
+    // Binaries are out of band (a bucket reference on the contract), so there
+    // is no simpler content-type the handler accepts. Every request must carry
+    // the protocol content-type — a non-CORS-simple type that forces a
+    // preflight, which is the uniform CSRF defense.
+    const envelope = serialize({ v: 1, path: "value.byId", input: { id: "one" } });
+    if (!envelope.ok) throw new Error("unreachable");
+    for (const contentType of ["multipart/form-data", "text/plain", "application/json"]) {
+      const response = await handler(new Request("https://example.test/rpc", {
+        method: "POST",
+        headers: { "content-type": contentType },
+        body: envelope.value,
+      }));
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain("protocol/invalid-request");
+    }
+  });
+});
+
+describe("client-boundary dev guard", () => {
+  // Hermetic DOM-global control: set window/document to an exact presence,
+  // run, then restore whatever was there before — so these tests are
+  // deterministic no matter what ambient state other suites leave behind.
+  const withDom = <T,>(present: boolean, fn: () => T): T => {
+    const g = globalThis as { window?: unknown; document?: unknown };
+    const hadWindow = "window" in g;
+    const hadDocument = "document" in g;
+    const savedWindow = g.window;
+    const savedDocument = g.document;
+    if (present) { g.window = {}; g.document = {}; }
+    else { delete g.window; delete g.document; }
+    try {
+      return fn();
+    } finally {
+      if (hadWindow) g.window = savedWindow; else delete g.window;
+      if (hadDocument) g.document = savedDocument; else delete g.document;
+    }
   };
 
-  test("a typed File field rides the wire and arrives as a real File", async () => {
-    const { client } = makeUploadWorld("fetch");
-    const image = new File(["png-data-here"], "me.png", { type: "image/png" });
-    const result = await client.avatar({ userId: "u_1", image });
-    expect(result).toEqual(ok({ name: "me.png", bytes: 13, preview: "u_1:png-data" }));
+  const withWarnCapture = (fn: () => void): string[] => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.join(" "));
+    try {
+      fn();
+    } finally {
+      console.warn = original;
+    }
+    return warnings;
+  };
+
+  const transport = () => fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
+  const boundaryContract = r.contract({
+    value: { byId: r.procedure().input(wire.object({ id: wire.string })).output(wire.string).query() },
   });
 
-  test("uploads bypass batching; plain calls still batch alongside", async () => {
-    const { client } = makeUploadWorld("batch");
-    const image = new File(["x"], "tiny.gif", { type: "image/gif" });
-    const [uploaded, ponged] = await Promise.all([
-      client.avatar({ userId: "u_2", image }),
-      client.ping(),
-    ]);
-    expect(uploaded.ok).toBe(true);
-    expect(ponged).toEqual(ok("pong"));
-  });
-
-  test("file constraints reject at the client boundary before any bytes move", async () => {
-    const { client } = makeUploadWorld("fetch");
-    const huge = new File(["x".repeat(2048)], "big.png", { type: "image/png" });
-    await expect(client.avatar({ userId: "u_3", image: huge }))
-      .rejects.toThrow(/exceeds 1024 bytes/);
-    const wrongType = new File(["hi"], "notes.txt", { type: "text/plain" });
-    await expect(client.avatar({ userId: "u_3", image: wrongType }))
-      .rejects.toThrow(/Unsupported file type/);
-  });
-
-  test("a smuggled marker in a plain request never resolves to a file", async () => {
-    const { handler } = makeUploadWorld("fetch");
-    const envelope = serialize({
-      v: 1,
-      path: "avatar",
-      input: { userId: "u_4", image: { $resultRpcFile: 0 } },
+  test("warns once when a router is handed to createClient in a browser", () => {
+    withDom(true, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() => {
+        createClient({ router, transport: transport() });
+        createClient({ router, transport: transport() }); // second call stays silent
+      });
+      expect(warnings.length).toBe(1);
+      expect(warnings[0]).toContain("client bundle");
+      expect(warnings[0]).toContain("client-boundary");
     });
-    if (!envelope.ok) throw new Error("unreachable");
-    const response = await handler(new Request("https://example.test/rpc", {
-      method: "POST",
-      headers: { "content-type": "application/result-rpc+devalue; sv=1" },
-      body: envelope.value,
-    }));
-    // no multipart parts: the marker stays a plain object and fails validation
-    expect(response.status).toBe(400);
-    expect(await response.text()).toContain("server/bad-request");
+    __resetClientBoundaryWarning();
+  });
+
+  test("stays silent on the server (no window), even for a router", () => {
+    withDom(false, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() => createClient({ router, transport: transport() }));
+      expect(warnings.length).toBe(0);
+    });
+  });
+
+  test("stays silent for a contract client in a browser", () => {
+    withDom(true, () => {
+      __resetClientBoundaryWarning();
+      const warnings = withWarnCapture(() =>
+        createClient({ contract: boundaryContract, transport: transport() }));
+      expect(warnings.length).toBe(0);
+    });
+    __resetClientBoundaryWarning();
   });
 });

@@ -1,0 +1,9 @@
+node_modules/
+.output/
+.nitro/
+.tanstack/
+dist/
+src/routeTree.gen.ts
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -76,8 +76,6 @@ export interface ClientTransport {
   request(
     envelope: RequestEnvelope,
     options?: TransportRequestOptions,
-    /** Sidecar file parts referenced by markers inside the envelope input. */
-    files?: readonly Blob[],
   ): Promise<TransportOutcome>;
   stream?(
     envelope: RequestEnvelope,
@@ -126,7 +124,7 @@ const readResponseBody = async (
 };
 
 export const fetchTransport = (options: FetchTransportOptions): ClientTransport => ({
-  request: async (envelope, requestOptions = {}, files) => {
+  request: async (envelope, requestOptions = {}) => {
     const timeoutMs = requestOptions.timeoutMs ?? options.timeoutMs ?? 30_000;
     if (requestOptions.signal?.aborted) throw cancelled;
 
@@ -142,26 +140,11 @@ export const fetchTransport = (options: FetchTransportOptions): ClientTransport 
       throw new TypeError("Request envelope is not serializable");
     }
 
-    // Files ride as multipart sidecar parts; the envelope stays devalue.
-    let requestBody: string | FormData = encoded.value;
-    let headers: Record<string, string> = {
-      ...options.headers,
-      "content-type": PROTOCOL_CONTENT_TYPE,
-    };
-    if (files && files.length > 0) {
-      const form = new FormData();
-      form.set("envelope", encoded.value);
-      files.forEach((part, index) => form.set(String(index), part));
-      requestBody = form;
-      // fetch sets the multipart boundary itself
-      headers = { ...options.headers };
-    }
-
     try {
       const response = await (options.fetch ?? globalThis.fetch)(options.url, {
         method: "POST",
-        headers,
-        body: requestBody,
+        headers: { ...options.headers, "content-type": PROTOCOL_CONTENT_TYPE },
+        body: encoded.value,
         signal,
       });
       const body = await readResponseBody(
@@ -385,13 +368,8 @@ export const batchFetchTransport = (
 
   const streaming = fetchTransport(options);
   return {
-    request: (envelope, requestOptions = {}, files) => new Promise((resolve, reject) => {
+    request: (envelope, requestOptions = {}) => new Promise((resolve, reject) => {
       if (requestOptions.signal?.aborted) return reject(cancelled);
-      if (files && files.length > 0) {
-        // uploads never batch: one multipart request per call
-        streaming.request(envelope, requestOptions, files).then(resolve, reject);
-        return;
-      }
       queue.push({ envelope, options: requestOptions, resolve, reject });
       if (queue.length >= maxItems) void flush();
       else if (!scheduled) {

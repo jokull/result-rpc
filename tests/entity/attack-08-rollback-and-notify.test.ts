@@ -31,7 +31,7 @@ const User = defineModel("a08-user", {
 const boot = () => {
   const app = rpc.context<{ readonly db: { users: Map<string, { id: string; name: string; avatarUrl: string }> } }>();
   const list = app.procedure()
-    .output(wire.array(User.codec))
+    .output(wire.array(User.all("test fixture")))
     .query(({ context }) => ok([...context.db.users.values()]));
   const router = app.router({ list });
   const db = { users: new Map([

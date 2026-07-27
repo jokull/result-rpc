@@ -36,7 +36,6 @@ import type {
   RouterContract,
   RouterRecord,
 } from "../server/contract.js";
-import { extractFiles } from "../files.js";
 import {
   cancelled,
   isCancelled,
@@ -297,11 +296,9 @@ const callProcedureOnce = async (
     throw new TypeError(`Invalid input for ${path}: ${details}`);
   }
 
-  const { value: markedInput, files } = extractFiles(encodedInput.value);
   const outcome = await transport.request(
-    requestEnvelope(path, markedInput as typeof encodedInput.value),
+    requestEnvelope(path, encodedInput.value),
     options,
-    files,
   );
   if (!outcome.ok) return err(clientFailure(outcome));
 
@@ -463,9 +460,6 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
   async function* stream(): AsyncGenerator<Result<T, E>> {
       const encodedInput = procedure._def.input.encode(input);
       if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
-      if (extractFiles(encodedInput.value).files.length > 0) {
-        throw new TypeError(`Subscription input for ${path} cannot contain files`);
-      }
       if (!transport.stream) {
         yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
         return;
@@ -605,6 +599,48 @@ const createProxy = (
   return proxy;
 };
 
+/**
+ * A router (unlike a contract) holds the implemented procedures — handlers,
+ * middleware, their imports. If one reaches a browser bundle, all of that
+ * ships with it: server code, database drivers, secrets. Handing `router` to
+ * `createClient` in a browser is that exact footgun, so warn once in dev.
+ * Bundlers do NOT save you — a top-level `.handler()`/`.router()` call is not
+ * tree-shaken. Build the client from a `contract()` defined in a module that
+ * never imports server code. See /concepts/client-boundary.
+ */
+/**
+ * Reads NODE_ENV without requiring `@types/node`: a browser-only consumer
+ * compiles this library with `types: []`, so `process` may not be declared.
+ * Bundlers still see the `process.env.NODE_ENV` text and strip dev branches.
+ */
+const isProductionEnv = (): boolean =>
+  (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env?.["NODE_ENV"] === "production";
+
+const clientBoundaryWarningState = { warned: false };
+
+/** Test-only: reset the once-per-process router-in-browser warning. */
+export const __resetClientBoundaryWarning = () => {
+  clientBoundaryWarningState.warned = false;
+};
+
+const warnRouterInBrowser = () => {
+  if (clientBoundaryWarningState.warned) return;
+  // Dev-only, and behind a browser guard so servers never see it.
+  const isProduction = isProductionEnv();
+  const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
+  if (isProduction || !isBrowser) return;
+  clientBoundaryWarningState.warned = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[result-rpc] createClient received a server `router` in a browser. The "
+      + "router carries handlers, middleware, and their imports (db drivers, "
+      + "secrets) — all of which are now in your client bundle. Pass a "
+      + "`contract` defined in a server-code-free module instead. "
+      + "See https://result-rpc.solberg.is/concepts/client-boundary",
+  );
+};
+
 export function createClient<
   TRouter extends RouterContract<any, ContractRouterRecord>,
 >(options: CreateContractClientOptions<TRouter>): ClientOf<TRouter>;
@@ -617,6 +653,7 @@ export function createClient(
     | CreateRouterClientOptions<Router<any, RouterRecord>>,
 ): ClientOf<ClientRouter> {
   const router = "contract" in options ? options.contract : options.router;
+  if ("router" in options) warnRouterInBrowser();
   const clientIdentity = Object.freeze({});
   clientRouters.set(clientIdentity, router);
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);

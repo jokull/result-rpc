@@ -28,10 +28,10 @@ describe("attack-11 double apply", () => {
   test("output entity + handler touch(): the patched query is not refetched", async () => {
     const db = { user: { id: "u1", name: "old" } };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+    const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
     const setName = app.procedure()
       .input(wire.object({ name: wire.string }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(({ input, context, touch }) => {
         context.db.user = { ...context.db.user, name: input.name };
         touch(User, "u1"); // belt and suspenders
@@ -73,7 +73,7 @@ describe("attack-11 double apply", () => {
   test("cross-entity casualty: patching entity A kills touch-invalidation for entity B in the same query", async () => {
     const Doc = defineModel("a11-doc", {
       key: "id",
-      shape: { id: wire.string, title: wire.string, author: User.codec },
+      shape: { id: wire.string, title: wire.string, author: User.all("test fixture") },
     });
     const db = {
       user: { id: "u1", name: "old" },
@@ -81,7 +81,7 @@ describe("attack-11 double apply", () => {
     };
     const app = rpc.context<{ readonly db: typeof db }>();
     const docs = app.procedure()
-      .output(wire.array(Doc.codec))
+      .output(wire.array(Doc.all("test fixture")))
       .query(({ context }) => ok(context.db.doc
         ? [{ ...context.db.doc, author: context.db.user }]
         : []));
@@ -90,7 +90,7 @@ describe("attack-11 double apply", () => {
     // decision table, both rows at once.
     const renameAndPurge = app.procedure()
       .input(wire.object({ name: wire.string }))
-      .output(User.codec)
+      .output(User.all("test fixture"))
       .mutation(({ input, context, touch }) => {
         context.db.user = { ...context.db.user, name: input.name };
         context.db.doc = undefined;

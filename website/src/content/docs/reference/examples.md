@@ -27,6 +27,9 @@ bun run examples/07-tracker/serve.ts   # 07 also runs in a real browser
 | [06-sentry](#06-sentry) | the observability story | incident-id correlation with zero plumbing |
 | [07-tracker](#07-tracker) | a real app, end to end | built *blind* from the docs; its friction log drove library fixes |
 | [08-bookings](#08-bookings) | entities on a real database | Drizzle 1.0; one rename patches 4 surfaces across 2 paginated feeds |
+| [09-waku](#framework-examples) | server rendering on Waku (RSC) | first paint from the server at **zero** client requests |
+| [10-nextjs](#framework-examples) | server rendering on Next.js App Router | same app, same proof, `app/api/rpc/route.ts` |
+| [11-tanstack-start](#framework-examples) | server rendering without RSC | prefetch in a **loader**; the isomorphic-loader hazard, named |
 
 ## 01-hello
 
@@ -122,6 +125,34 @@ every output shape, plus the cost ledger against disciplined tRPC + React
 Query and the Drizzle 1.0 migration notes (relations v2, `jsonb_*` under
 Bun).
 
+## Framework examples
+
+Rungs 09–11 are the **same app on three frameworks** — a feed of travel spots
+on Drizzle 1.0 + SQLite, with cursor pagination, an entity-returning mutation, a
+one-off aggregate kept fresh by `.affects()`, a `tryDb` constraint surfacing as
+a domain error, and shimmer skeletons. Their contract, models, schema, and
+components are byte-identical across all three, so a diff shows you exactly what
+each framework changes and what it doesn't. See the [RSC
+guide](/guides/rsc/) for the shared pattern.
+
+Each is browser-verified with the same four proofs: rows render server-prefetched
+at **zero** client requests on first paint, "Load more" costs exactly one call, a
+like patches its row **in place** while the aggregate follows, and a planted
+server-only canary is **absent** from the built client bundle.
+
+| | `09-waku` | `10-nextjs` | `11-tanstack-start` |
+| --- | --- | --- | --- |
+| Model | RSC | RSC | SSR + router loaders |
+| Prefetch in | async server component | async server component | route `loader` |
+| Handler | `src/pages/_api/rpc.ts` | `app/api/rpc/route.ts` | `src/routes/api.rpc.ts` |
+| Server wall | `'use client'` boundary | `'use client'` boundary | `createServerFn` |
+
+The TanStack Start rung is the instructive one: without RSC there is no
+`'use client'` directive to protect you, and its **isomorphic loaders** will ship
+your database to the browser on the first client navigation if you import it
+directly. That hazard is documented in [The client
+boundary](/concepts/client-boundary/#isomorphic-loaders-are-a-second-leak-vector).
+
 ## The method behind the ladder
 
 Rungs 01–06 grew with the library. 07 and 08 were built by agents — one
@@ -129,3 +160,9 @@ blind (docs-only, logging every friction), one spec-driven against the
 production-API census — precisely so the examples test the documentation
 as hard as they test the code. When a rung fought the library, the library
 changed; the friction logs stay in the repo as the record.
+
+Rungs 09–11 continued that: building 09 surfaced two real library defects (a
+procedure kind widened away from its contract, and a React entry that could not
+load under the react-server condition), both fixed and regression-pinned before
+10 and 11 were built. Those two then ran against the shipped API with **no
+workarounds** — which is the point of building the same thing three times.

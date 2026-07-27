@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["react", "react-dom"],
+    "paths": {
+      "result-rpc": ["../../dist/index.d.ts"],
+      "result-rpc/react": ["../../dist/react/index.d.ts"],
+      "result-rpc/server": ["../../dist/server/index.d.ts"],
+      "result-rpc/client": ["../../dist/client/index.d.ts"],
+      "result-rpc/drizzle": ["../../dist/drizzle.d.ts"],
+      "result-rpc/query": ["../../dist/query/runtime.d.ts"],
+      "drizzle-orm": ["./node_modules/drizzle-orm/index.d.ts"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"]
+    }
+  },
+  "include": ["src", "waku.config.ts"]
+}

@@ -22,7 +22,7 @@ const Node = defineModel("a02-node", {
 describe("attack-02 nested self occurrence", () => {
   test("self-cycle: the inner occurrence keeps the stale title and the cycle breaks", () => {
     interface N extends Record<string, unknown> { id: string; title: string; self?: N }
-    const decoded = Node.codec.decode({ id: "n1", title: "old" });
+    const decoded = Node.all("test fixture").decode({ id: "n1", title: "old" });
     if (!decoded.ok) throw new Error("decode failed");
     const node = decoded.value as unknown as N;
     node.self = node;
@@ -40,9 +40,9 @@ describe("attack-02 nested self occurrence", () => {
   test("target nested under a DIFFERENT parent entity IS patched (control)", () => {
     const Parent = defineModel("a02-parent", {
       key: "id",
-      shape: { id: wire.string, child: Node.codec },
+      shape: { id: wire.string, child: Node.all("test fixture") },
     });
-    const decoded = Parent.codec.decode({ id: "p1", child: { id: "n1", title: "old" } });
+    const decoded = Parent.all("test fixture").decode({ id: "p1", child: { id: "n1", title: "old" } });
     if (!decoded.ok) throw new Error("decode failed");
     const { value } = patchEntity(decoded.value, Node as never, "n1", (current) =>
       mergeByExistingKeys(current, { title: "new" }));

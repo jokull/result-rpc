@@ -95,8 +95,12 @@ const authedRoute = createRoute({
 const docRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: "/docs/$docId",
-  loader: ({ context, params }) =>
-    context.runtime.prefetch(context.client.doc.byId, { id: params.docId }),
+  // TS 7 no longer infers these from the parent route's context here, so the
+  // route names the shape it already declared on the root route.
+  loader: ({ context, params }: {
+    context: ResultRouterContext<DocClient>;
+    params: { docId: string };
+  }) => context.runtime.prefetch(context.client.doc.byId, { id: params.docId }),
   ...routeShell(DocShell, {
     layout: (outlet) => (
       <>

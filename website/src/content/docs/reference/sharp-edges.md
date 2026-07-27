@@ -28,7 +28,7 @@ Named here so they are not discovered at 2am:
   the price of rich values and client-side validation; it is a real number of
   kilobytes, and worth measuring in your bundle before committing.
 - **An inline `wire.object` collects no identity.** Entity updates only see
-  outputs composed from model codecs (`Doc.codec`, `Doc.pick(...)`) — a
+  outputs composed from model views (`Doc.pick(...)`, `Doc.select({...})`) — a
   hand-rolled shape opts out silently. Model identity is reference identity,
   same rule as services and middleware: one `defineModel` in a module
   constant; two calls are two models.

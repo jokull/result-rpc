@@ -41,7 +41,7 @@ export const UserModel = defineModel("user", {
   key: "id",
   shape: { id: wire.string, name: wire.string, avatarUrl: wire.string },
 });
-export const UserCodec = UserModel.codec;
+export const UserCodec = UserModel.all("a doc author is a public name and an id");
 export type User = InputOf<typeof UserCodec>;
 
 export const DocModel = defineModel("doc", {
@@ -53,7 +53,7 @@ export const DocModel = defineModel("doc", {
     savedAt: wire.date,
   },
 });
-export const DocCodec = DocModel.codec;
+export const DocCodec = DocModel.all("every doc field is rendered on the page");
 export type Doc = InputOf<typeof DocCodec>;
 
 export const DocEventCodec = wire.object({

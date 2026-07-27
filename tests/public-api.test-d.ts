@@ -12,6 +12,7 @@ import {
   matchError,
 } from "../src/index.js";
 import { createClient } from "../src/client/index.js";
+import { defineModel } from "../src/model.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
 import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, staleErrors, transportErrors } from "../src/index.js";
@@ -488,3 +489,91 @@ export type _TryPromiseTagged = Assert<Equal<
 >>
 // @ts-expect-error catch must return a tagged error, not an Error subclass
 void tryPromise(async () => 1, (cause) => new Error(String(cause)))
+
+// --- Regression: an implemented procedure keeps its contract's kind ---------
+// `ProcedureImplementer.handler()` once widened the kind to
+// `"query" | "mutation"`, which made every router-implemented procedure's
+// client fail the `$kind: "query"` constraint — so `runtime.prefetch(...)`
+// (the RSC server-prefetch path) could not typecheck against a server client.
+// Found by the Waku RSC example; pinned here.
+const kindContract = rpc.context<{}>()
+  .procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(wire.string)
+  .query();
+const kindMutationContract = rpc.context<{}>()
+  .procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(wire.string)
+  .mutation();
+
+const kindImplemented = rpc.context<{}>()
+  .implement(kindContract)
+  .handler(({ input }) => ok(input.id));
+const kindMutationImplemented = rpc.context<{}>()
+  .implement(kindMutationContract)
+  .handler(({ input }) => ok(input.id));
+
+type ImplementedQueryKind = typeof kindImplemented extends
+  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
+type ImplementedMutationKind = typeof kindMutationImplemented extends
+  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
+
+export type _ImplementedQueryStaysAQuery = Assert<Equal<ImplementedQueryKind, "query">>;
+export type _ImplementedMutationStaysAMutation = Assert<Equal<ImplementedMutationKind, "mutation">>;
+
+// The payoff: a client built from the implemented router exposes `$kind:
+// "query"`, so the RSC prefetch path accepts it.
+const kindRouter = rpc.context<{}>().router({ read: kindImplemented });
+const kindClient = createClient({
+  router: kindRouter,
+  transport: { request: async () => ({ ok: false, reason: "network" }) },
+});
+type ReadKind = typeof kindClient.read.$kind;
+export type _ClientProcedureIsAQuery = Assert<Equal<ReadKind, "query">>;
+
+// --- A model never reaches an output un-scoped -----------------------------
+// A model is the full truth about a row; an output ships one audience's view.
+// The blanket form is gone from the surface, so a model that grows a sensitive
+// column cannot silently widen every endpoint that mentions it. `all(reason)`
+// is the one wide path, and it costs a sentence that lands in review.
+const ScopedUser = defineModel("scoped-user", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    name: wire.string,
+    latestLat: wire.number,
+  },
+});
+
+// @ts-expect-error — `codec` is not on the model surface: pick/select/all only.
+const _noBlanketCodec = ScopedUser.codec;
+
+// @ts-expect-error — all() states why this output may widen with the model.
+const _allNeedsAReason = ScopedUser.all();
+
+const ScopedCard = ScopedUser.pick("id", "name");
+type Flat<T> = { readonly [K in keyof T]: T[K] };
+type ScopedCardValue = Flat<InputOf<typeof ScopedCard>>;
+export type _ViewShipsOnlyWhatItNames =
+  Assert<Equal<ScopedCardValue, { readonly id: string; readonly name: string }>>;
+
+// select(): `true` for own fields, a codec for anything nested or computed.
+const ScopedRow = ScopedUser.select({
+  id: true,
+  name: true,
+  friend: ScopedCard,
+  mutualCount: wire.number,
+});
+type ScopedRowValue = Flat<InputOf<typeof ScopedRow>>;
+export type _SelectMixesFieldsCodecsAndComputed = Assert<Equal<ScopedRowValue, {
+  readonly id: string;
+  readonly name: string;
+  readonly friend: InputOf<typeof ScopedCard>;
+  readonly mutualCount: number;
+}>>;
+
+// The identity rule survives every form: a projection without its key is not
+// an entity, it is data.
+// @ts-expect-error — the key field is mandatory in a projection.
+const _pickNeedsKey = ScopedUser.pick("name");

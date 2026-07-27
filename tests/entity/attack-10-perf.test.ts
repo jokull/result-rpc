@@ -24,7 +24,7 @@ const User = defineModel("a10-user", {
 });
 const Doc = defineModel("a10-doc", {
   key: "id",
-  shape: { id: wire.string, title: wire.string, author: User.codec },
+  shape: { id: wire.string, title: wire.string, author: User.all("test fixture") },
 });
 const Lone = defineModel("a10-lone", {
   key: "id",
@@ -42,10 +42,10 @@ describe("attack-10 perf", () => {
     const app = rpc.context<{}>();
     const list = app.procedure()
       .input(wire.object({ page: wire.number }))
-      .output(wire.array(Doc.codec))
+      .output(wire.array(Doc.all("test fixture")))
       .query(() => ok([]));
     const solo = app.procedure()
-      .output(wire.array(Lone.codec))
+      .output(wire.array(Lone.all("test fixture")))
       .query(() => ok([]));
     const router = app.router({ list, solo });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
@@ -60,7 +60,7 @@ describe("attack-10 perf", () => {
     const runtime = createQueryRuntime({ client });
 
     // Decode (brand) pages outside the timers.
-    const pageCodec = wire.array(Doc.codec);
+    const pageCodec = wire.array(Doc.all("test fixture"));
     const pages: unknown[] = [];
     for (let p = 0; p < PAGES; p += 1) {
       const raw = Array.from({ length: ROWS }, (_, i) => ({
@@ -72,7 +72,7 @@ describe("attack-10 perf", () => {
       if (!decoded.ok) throw new Error("decode failed");
       pages.push(decoded.value);
     }
-    const loneDecoded = wire.array(Lone.codec).decode(
+    const loneDecoded = wire.array(Lone.all("test fixture")).decode(
       Array.from({ length: ROWS }, (_, i) => ({ id: `l${i}`, title: `L${i}` })));
     if (!loneDecoded.ok) throw new Error("decode failed");
 

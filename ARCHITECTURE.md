@@ -512,18 +512,17 @@ HTTP status is derived from the definition policy. It is not used as the error's
 semantic discriminant. Clients still inspect status first so intermediary-generated
 failures can be distinguished from valid result-rpc envelopes.
 
-### File sidecars
+### Binaries are out of band
 
-`wire.file(options)` fields carry `File`/`Blob` values that never enter the
-devalue payload. After input encoding the client extracts them (cycle-safe,
-identity-preserving walk) into positional markers plus a parts list; the
-transport sends multipart/form-data with the envelope as a field and parts
-`0..n-1`. The server resolves markers back to parts before input decoding and
-requires a bijection — out-of-bounds, reused, or unused parts are protocol
-violations, and markers in non-multipart requests resolve to nothing and fail
-input validation. Constraints (`maxBytes`, `accept`) are enforced by the codec
-at both encode and decode. Uploads never batch; subscription inputs reject
-files.
+There is no file transport. Every request carries the single protocol
+content-type (`application/result-rpc+devalue`), which is not a CORS-simple type
+— so a browser cannot send it cross-origin without a preflight the server never
+grants. That uniform content-type requirement is the CSRF defense, and it holds
+precisely because no multipart/`FormData` path exists to speak a simpler type.
+Binary payloads are handled by object storage out of band (presigned PUT to
+R2/S3/a mounted route); the RPC contract carries only a typed reference (a
+bucket key). This removes the multipart CSRF and unbounded-`formData()` DoS
+surfaces entirely, at no cost to the contract's type safety.
 
 ### Decode trust boundary
 
@@ -1058,6 +1057,41 @@ The test suite collectively verifies observable Result and error-union parity th
 - parity server client;
 - query runtime;
 - SSR hydration.
+
+### Type performance
+
+TypeScript **7** is the development baseline (the native compiler; the same
+project checks in ~0.24s versus ~2.1s on 5.9). The library compiles clean under
+it, and the emitted declarations are validated for consumers on every build by
+`publint` and `are-the-types-wrong`.
+
+The property that matters for a typed-RPC library is not raw speed but **shape**:
+what a consumer's compiler pays *per procedure* must stay constant, because
+superlinear growth is what eventually makes an API package unusable
+(TypeScript's `ts7056` "inferred type exceeds the maximum length the compiler
+will serialize" is the terminal form). `pnpm bench:types` generates a synthetic
+consumer at three sizes, measures instantiations, and fails the build if the
+marginal cost per procedure grows more than 15% against
+`bench/baseline.json`.
+
+Measured, at the time of writing:
+
+- **Procedures scale linearly** — ~940 instantiations each, flat from 25 to 100.
+- **Shape width is nearly free** — quadrupling an object codec's fields (20 → 80)
+  costs about 4% more instantiations, because the mapped type is computed once
+  per shape and cached.
+- **Declaration emit is healthy** — a 60-procedure router emits without
+  `ts7056`, with no `any` leaking into the public surface.
+- The library requires **no `@types/node`**: a browser-only consumer compiling
+  with `types: []` gets a clean build, so environment globals are read through
+  `globalThis` rather than named directly.
+
+One measured negative result worth recording, so it is not "optimized" again:
+rewriting `ShapeInput`/`ShapeEncoded` from precomputed required/optional key
+unions into per-key `as` remapping — which reads as the more modern form —
+**regressed instantiations by 34%**. The helper form computes each key union
+once and reuses it; the remapped form re-evaluates the conditional for every
+key in both halves of the intersection.
 
 ## Initial implementation sequence
 

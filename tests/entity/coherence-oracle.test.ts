@@ -59,7 +59,7 @@ const makeWorld = () => {
   };
   const app = rpc.context<{ readonly db: Db }>();
   const rowCodec = wire.object({
-    doc: Doc.codec,
+    doc: Doc.all("test fixture"),
     owner: User.pick("id", "name", "avatarUrl"),
   });
   const rowFor = (database: Db, doc: DocRow) => ({
@@ -68,7 +68,7 @@ const makeWorld = () => {
   });
   const userById = app.procedure()
     .input(wire.object({ id: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .query(({ input, context }) => ok(context.db.users.get(input.id)!));
   const docsList = app.procedure()
     .input(wire.object({}))
@@ -81,7 +81,7 @@ const makeWorld = () => {
     .query(({ input, context }) => ok(rowFor(context.db, context.db.docs.get(input.id)!)));
   const renameUser = app.procedure()
     .input(wire.object({ id: wire.string, name: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       const user = { ...context.db.users.get(input.id)!, name: input.name };
       context.db.users.set(input.id, user);
@@ -98,7 +98,7 @@ const makeWorld = () => {
     });
   const renameDoc = app.procedure()
     .input(wire.object({ id: wire.string, title: wire.string }))
-    .output(Doc.codec)
+    .output(Doc.all("test fixture"))
     .mutation(({ input, context }) => {
       const doc = { ...context.db.docs.get(input.id)!, title: input.title };
       context.db.docs.set(input.id, doc);
@@ -106,7 +106,7 @@ const makeWorld = () => {
     });
   const archiveDoc = app.procedure()
     .input(wire.object({ id: wire.string }))
-    .output(Doc.codec)
+    .output(Doc.all("test fixture"))
     .mutation(({ input, context }) => {
       const doc = { ...context.db.docs.get(input.id)!, archived: true };
       context.db.docs.set(input.id, doc);
@@ -114,7 +114,7 @@ const makeWorld = () => {
     });
   const createDoc = app.procedure()
     .input(wire.object({ id: wire.string, title: wire.string, ownerId: wire.string }))
-    .output(Doc.codec)
+    .output(Doc.all("test fixture"))
     .affects(docsList)
     .mutation(({ input, context }) => {
       const doc = { ...input, archived: false };

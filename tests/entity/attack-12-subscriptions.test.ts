@@ -29,17 +29,17 @@ const User = defineModel("a12-user", {
 const boot = () => {
   const db = { user: { id: "u1", name: "old" } };
   const app = rpc.context<{ readonly db: typeof db }>();
-  const me = app.procedure().output(User.codec).query(({ context }) => ok(context.db.user));
+  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
   const setName = app.procedure()
     .input(wire.object({ name: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       context.db.user = { ...context.db.user, name: input.name };
       return ok(context.db.user);
     });
   const liveUserContract = app.procedure()
     .input(wire.object({ name: wire.string }))
-    .output(User.codec)
+    .output(User.all("test fixture"))
     .subscription();
   const liveUser = app.implement(liveUserContract).stream(async function* ({ input }) {
     yield ok({ id: "u1", name: input.name });

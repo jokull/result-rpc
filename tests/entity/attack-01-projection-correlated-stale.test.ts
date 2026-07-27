@@ -34,7 +34,7 @@ type Row = { id: string; status: string; closedAt: string | null };
 const boot = () => {
   const app = rpc.context<{ readonly db: Map<string, Row> }>();
   const list = app.procedure()
-    .output(wire.array(Ticket.codec))
+    .output(wire.array(Ticket.all("test fixture")))
     .query(({ context }) => ok([...context.db.values()]));
   const close = app.procedure()
     .input(wire.object({ id: wire.string }))

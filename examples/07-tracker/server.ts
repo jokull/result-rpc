@@ -3,7 +3,7 @@
  * from the layer, contract implementations, the router, and a fetch-handler
  * factory the tests use.
  */
-import { err, gen, mapError, ok, type InputOf } from "../../src/index.js";
+import { err, gen, mapError, ok, type ModelValue } from "../../src/index.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import {
   app,
@@ -26,9 +26,9 @@ import { Issue, Project, User, type ActivityEvent } from "./models.js";
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-export type UserRow = Mutable<InputOf<typeof User.codec>>;
-export type ProjectRow = Mutable<InputOf<typeof Project.codec>>;
-export type IssueRow = Mutable<InputOf<typeof Issue.codec>>;
+export type UserRow = Mutable<ModelValue<typeof User>>;
+export type ProjectRow = Mutable<ModelValue<typeof Project>>;
+export type IssueRow = Mutable<ModelValue<typeof Issue>>;
 
 export interface TrackerDb {
   users: Map<string, UserRow>;

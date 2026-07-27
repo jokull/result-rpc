@@ -61,7 +61,7 @@ const listOrders = app.implement(listOrdersContract).handler(async ({ context })
   // never selected; destinations carry no ids on the wire; occupants are
   // name pairs only.
   const rows = await context.db.query.orders.findMany({
-    columns: { id: true, email: true, note: true },
+    columns: { id: true, note: true }, // email is not this audience's
     orderBy: { id: "asc" },
     with: {
       user: { columns: { id: true, name: true } },

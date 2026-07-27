@@ -17,6 +17,7 @@ interface DigestibleManifest {
   readonly input: { readonly kind: string };
   readonly output: { readonly kind: string };
   readonly definitions: Readonly<Record<string, AnyErrorDefinition>>;
+  readonly pagination?: unknown;
 }
 
 interface Digestible {
@@ -41,7 +42,8 @@ export const contractDigest = (routerOrContract: Digestible): string => {
           `${definition.tag}#${definition.policy.httpStatus}/${definition.policy.retry}/${definition.policy.visibility}`)
         .sort()
         .join(",");
-      return `${path}|${manifest.kind}|in:${manifest.input.kind}|out:${manifest.output.kind}|${errors}`;
+      const paginated = manifest.pagination === undefined ? "" : "|paginated";
+      return `${path}|${manifest.kind}${paginated}|in:${manifest.input.kind}|out:${manifest.output.kind}|${errors}`;
     })
     .sort()
     .join("\n");

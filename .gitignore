@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .blume/
 website/dist/
+src/**/*.d.ts
