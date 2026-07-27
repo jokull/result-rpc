@@ -122,6 +122,6 @@ export default defineConfig({
   },
   deployment: {
     output: "static",
-    site: "https://result-rpc.solberg.is",
+    site: "https://result-rpc.com",
   },
 });

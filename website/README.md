@@ -15,7 +15,8 @@ pnpm build      # static output to dist/
 ```
 
 Deploy `dist/` to Cloudflare Workers Assets (`wrangler deploy`); the configured
-custom domain is `result-rpc.solberg.is`.
+primary custom domain is `result-rpc.com`; `result-rpc.solberg.is` remains as
+the legacy hostname during the transition.
 
 The docs pages were seeded from README.md section-for-section. When the README
 changes materially, port the change here (or restructure the README to point at

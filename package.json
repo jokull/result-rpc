@@ -65,7 +65,7 @@
     "type": "git",
     "url": "git+https://github.com/jokull/result-rpc.git"
   },
-  "homepage": "https://result-rpc.solberg.is",
+  "homepage": "https://result-rpc.com",
   "bugs": "https://github.com/jokull/result-rpc/issues",
   "keywords": [
     "rpc",

@@ -5,11 +5,11 @@
 <p align="center"><strong>One Result. One error union. Server to screen.</strong></p>
 
 <p align="center">
-  <a href="https://result-rpc.solberg.is/start/introduction/">Documentation</a>
+  <a href="https://result-rpc.com/start/introduction/">Documentation</a>
   ·
-  <a href="https://result-rpc.solberg.is/start/quickstart/">Quickstart</a>
+  <a href="https://result-rpc.com/start/quickstart/">Quickstart</a>
   ·
-  <a href="https://result-rpc.solberg.is/guides/migrating-from-trpc/">Migrate from tRPC</a>
+  <a href="https://result-rpc.com/guides/migrating-from-trpc/">Migrate from tRPC</a>
 </p>
 
 ---
@@ -704,7 +704,7 @@ handler must produce a tagged error, so an upstream `Error` subclass never
 travels past the boundary as itself. The full worked example — an upstream
 `safeJsonFetch` service composed into a procedure, its granular internal
 errors collapsed to one declared domain tag, all the way to the query hook —
-is in the [Result composition docs](https://result-rpc.solberg.is/concepts/results/).
+is in the [Result composition docs](https://result-rpc.com/concepts/results/).
 
 Credit where due: this surface deliberately ports the core DX of
 [better-result](https://github.com/kitlangton/better-result) and
