@@ -198,6 +198,15 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         </details>
 
         <details class="faq-item">
+          <summary><span>Do I have to model my whole data graph first?</span></summary>
+          <div class="faq-body">
+            <p>No, and there's no point where a shape has to be classified. Every query starts as a plain <code>wire.object</code> — the same output you'd have written in tRPC. You mint a model later, when you notice the same keyed thing showing up in several places, and only for the fields that are true about it in every query.</p>
+            <p><strong>Relationships are never declared.</strong> There's no relation schema to keep in sync — a relationship is just the shape of one query's output, discovered by walking the decoded result. So you compose whatever a screen needs: an entity nested in a one-off wrapper, an aggregate sitting next to a model, a projection with nothing but an <code>id</code> and a rank.</p>
+            <p>The curve is incremental in both directions. Under-modeling costs nothing — an unmodeled node behaves exactly like invalidate-and-refetch, which is where you already are today. And there's no demotion event: aggregates never go inside models, so adding one can't break a model you already have.</p>
+          </div>
+        </details>
+
+        <details class="faq-item">
           <summary><span>Do I have to use Drizzle?</span></summary>
           <div class="faq-body">
             <p>No. Models are plain wire codecs you can hand-write. Drizzle is one optional subpath that <em>derives</em> them from your tables so a column allowlist is the whole entity contract — but nothing requires it.</p>
