@@ -2,6 +2,9 @@
 
 Built with [Blume](https://useblume.dev/) — same stack as onwardpg's docs.
 Content lives in `src/content/docs/`; the landing page in `src/pages/`.
+The Space Grotesk / IBM Plex Sans / JetBrains Mono system and shared color
+roles live in `theme.css` and `blume.config.ts`. The direct-path Iris wordmark,
+favicons, and home OG asset live under `public/`.
 
 ```sh
 pnpm install
