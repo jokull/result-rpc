@@ -4,18 +4,6 @@ import data from 'blume:data';
 
 const pageDescription = 'One Result and one wire-safe error union from server to screen — the RPC regime for React.';
 
-const owners = [
-  { number: '01', label: 'Components', detail: 'Branch on domain errors only — exhaustively, or it fails to compile.' },
-  { number: '02', label: 'Shells', detail: 'Claim transport blips, auth expiry, and defects at the tree position that owns them.' },
-  { number: '03', label: 'Entities', detail: 'Mutations return who changed; every cached view patches in place. Zero refetches.' },
-  { number: '04', label: 'Deploys', detail: 'Contract digests detect stale clients; the reload is the fix, not a mystery incident.' },
-];
-
-const features = [
-  { eyebrow: 'Closed unions', title: 'Errors are values with owners', body: 'Every failure a call can produce is a typed, wire-safe tag in that operation’s own closed union — domain, transport, protocol, and staleness in one place.' },
-  { eyebrow: 'Error boundaries for values', title: 'Shells subtract what they own', body: 'Providers claim failure classes ambiently — pause and resume, or escalate to the real error boundary — and remove those tags from the unions components see.' },
-  { eyebrow: 'The identity graph', title: 'Update by model + id', body: 'Models derive from your Drizzle tables — one schema, Django-style. Change an avatar and the header, bylines, and rows across cached pages patch in place: automatic invalidation and updates, no normalized store.' },
-];
 ---
 
 <PageLayout
@@ -78,37 +66,100 @@ const features = [
       </div>
     </section>
 
-    <section class="owners shell" aria-labelledby="owners-title">
+    <section class="pillars shell" aria-labelledby="pillars-title">
       <div class="section-heading">
-        <p class="section-label">Failure ownership, end to end</p>
-        <h2 id="owners-title">Every tag has exactly one owner.</h2>
+        <p class="section-label">Four ideas, one library</p>
+        <h2 id="pillars-title">What you get that tRPC can't give you.</h2>
       </div>
-      <div class="route">
-        {owners.map((step) => (
-          <article class="route-step">
-            <span class="route-number">{step.number}</span>
-            <h3>{step.label}</h3>
-            <p>{step.detail}</p>
-          </article>
-        ))}
-      </div>
-    </section>
 
-    <section class="features shell">
-      <div class="section-heading compact">
-        <p class="section-label">Why result-rpc</p>
-        <h2>tRPC ergonomics. Effect-grade errors.<br />A cache that understands identity.</h2>
-      </div>
-      <div class="feature-grid">
-        {features.map((feature, index) => (
-          <article>
-            <span class="feature-index">0{index + 1}</span>
-            <p class="eyebrow">{feature.eyebrow}</p>
-            <h3>{feature.title}</h3>
-            <p>{feature.body}</p>
-          </article>
-        ))}
-      </div>
+      <article class="pillar">
+        <div class="pillar-copy">
+          <p class="eyebrow">01 · Stacked error contexts</p>
+          <h3>Errors have addresses.</h3>
+          <p>Every layer you compose <em>adds</em> to a procedure's error union — auth adds <code>Unauthorized</code>, the framework adds <code>Offline</code>, <code>Timeout</code>, <code>Stale</code>. On the client, shells <em>subtract</em> what they own at the junction in the tree that should own it: a banner claims offline, an auth boundary claims session expiry, a dialog owns the conflict.</p>
+          <p>By the time a leaf reads the union it holds only the domain errors that component can render — and a missing case fails to compile. Not a global <code>onError</code>, not a handler at every call site. Handled <strong>positionally</strong>, once.</p>
+          <a class="pillar-link" href="/concepts/shells/">How shells claim failures <span>→</span></a>
+        </div>
+        <figure class="pillar-code">
+          <pre><code><span class="c">// SERVER — every layer stacks onto the union</span>
+<span class="k">const</span> feed = app.procedure()
+  .use(authed)              <span class="c">// + Unauthorized</span>
+  .errors(&#123; RateLimited &#125;)   <span class="c">// + RateLimited</span>
+  .output(Post.pick(<span class="s">"id"</span>, <span class="s">"body"</span>)).query(handler)
+
+<span class="c">// CLIENT — shells peel it back, where it belongs</span>
+&lt;OfflineBanner&gt;      <span class="c">// claims Offline, Timeout</span>
+  &lt;SessionShell&gt;     <span class="c">// claims Unauthorized → redirect</span>
+    &lt;Feed /&gt;         <span class="c">// sees RateLimited | PostNotFound. done.</span></code></pre>
+        </figure>
+      </article>
+
+      <article class="pillar">
+        <div class="pillar-copy">
+          <p class="eyebrow">02 · The wire contract</p>
+          <h3>The wire is not JSON.</h3>
+          <p><code>Date</code>, <code>Map</code>, <code>Set</code>, <code>BigInt</code>, cycles — they cross intact and your return types stay clean, because the codec carries the complexity, not you. Declare a <em>model</em> and the client tracks it by identity. The same contract language reaches Standard Schema for forms and your Drizzle tables for entities — one source of truth.</p>
+          <p>GraphQL makes you model the whole graph to get identity. Because <em>you</em> own the wire, you breathe entities, scalars, and one-off aggregates into whatever shape a screen needs — no schema ceremony, no selection sets — and identity still holds on exactly what you return.</p>
+          <a class="pillar-link" href="/concepts/wire/">Rich types on the wire <span>→</span></a>
+        </div>
+        <figure class="pillar-code">
+          <pre><code><span class="k">const</span> search = app.procedure()
+  .output(wire.object(&#123;
+    hotel:  Hotel.pick(<span class="s">"id"</span>, <span class="s">"name"</span>), <span class="c">// entity — patches by id</span>
+    openAt: wire.date,                <span class="c">// a real Date, not a string</span>
+    from:   wire.number,              <span class="c">// a one-off aggregate</span>
+  &#125;))
+  .query(handler)
+
+<span class="c">// client receives: &#123; hotel, openAt: Date, from &#125;</span>
+<span class="c">// clean types. no codegen. no selection set.</span></code></pre>
+        </figure>
+      </article>
+
+      <article class="pillar">
+        <div class="pillar-copy">
+          <p class="eyebrow">03 · The client boundary</p>
+          <h3>We ship a client, not a type.</h3>
+          <p>tRPC ships its router as a <em>type</em>, erased at build. result-rpc ships a real runtime built from your contract — which is why codecs run on the wire, why the entity cache exists at all, and why rich types survive the trip.</p>
+          <p>It costs one discipline: import the <em>contract</em>, never the <em>router</em>. And that discipline is a <strong>security feature</strong> — a model never reaches an output un-scoped, and your server's type graph never leaks into a consumer's <code>tsc</code>. A real client in your bundle, and nothing behind it.</p>
+          <a class="pillar-link" href="/concepts/client-boundary/">The client boundary rule <span>→</span></a>
+        </div>
+        <figure class="pillar-code">
+          <pre><code><span class="c">// ✅ build the client from the CONTRACT —</span>
+<span class="c">//    a runtime of codecs, and nothing else</span>
+<span class="k">import</span> &#123; appContract &#125; <span class="k">from</span> <span class="s">"./contract"</span>
+<span class="k">export const</span> client = createClient(&#123;
+  contract: appContract, transport,
+&#125;)
+
+<span class="c">// ☠️ importing the ROUTER instead ships your</span>
+<span class="c">//    handlers, db driver, and secrets to the</span>
+<span class="c">//    browser. bundlers won't save you.</span></code></pre>
+        </figure>
+      </article>
+
+      <article class="pillar">
+        <div class="pillar-copy">
+          <p class="eyebrow">04 · Client freshness</p>
+          <h3>An invalidation ladder, not a tapestry.</h3>
+          <p>Keeping the UI current shouldn't be a hand-maintained web of optimistic updates and invalidations on the client. Entities are <em>addressable</em> — a keyed row — so when you author the mutation, the client already knows what changed. Return the entity and every cached view patches by id, for free, zero refetches.</p>
+          <p>Above that: <code>.affects()</code> declares which lists gain or lose the row, and the server can <code>touch()</code> cascades the output can't name. Underneath it all is <strong>TanStack Query core</strong> — stale timers and refetch logic are the floor. What we don't do is peer-to-peer sync; this is one client, kept incrementally in shape.</p>
+          <a class="pillar-link" href="/concepts/entities/">The entity cache <span>→</span></a>
+        </div>
+        <figure class="pillar-code">
+          <pre><code><span class="c">// FREE — return the entity, every view patches by id</span>
+rename: app.procedure()
+  .output(User.pick(<span class="s">"id"</span>, <span class="s">"name"</span>)).mutation(handler)
+
+<span class="c">// MEMBERSHIP — which lists change, declared once</span>
+comment: app.procedure().affects(commentsFor).mutation(handler)
+
+<span class="c">// CASCADES the output can't name — the server touches them</span>
+archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
+  touch(Task, id); <span class="c">/* … */</span>
+&#125;)</code></pre>
+        </figure>
+      </article>
     </section>
 
     <section class="cta">
@@ -167,23 +218,29 @@ const features = [
   .hero-code .k { color: #e7d28a; }
   .hero-code figcaption { padding: 15px 28px; border-top: 1px solid #303030; color: #c1d6e3; font-size: 12px; line-height: 1.55; }
   .section-heading { margin-bottom: 44px; }
-  .section-heading h2, .features h2, .cta h2 { margin: 12px 0 0; font: 700 clamp(34px, 3.8vw, 50px)/1.02 var(--blume-font-display); letter-spacing: -.05em; }
-  .owners { padding-block: 52px 96px; }
-  .route { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .route-step { padding: 23px; border: 1px solid rgba(17,17,17,.16); border-radius: 7px; background: rgba(255,253,247,.58); }
-  .route-step:nth-child(2) { transform: translateY(10px); }
-  .route-number { color: #2e5090; font: 600 11px/1 var(--blume-font-mono); }
-  .route-step h3 { margin: 14px 0 8px; font: 600 19px/1.15 var(--blume-font-display); letter-spacing: -.02em; }
-  .route-step p { margin: 0; color: #4a5351; font-size: 14px; line-height: 1.65; }
-  .features { padding-block: 30px 110px; }
-  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px; }
-  .feature-grid article { padding: 27px; border: 1px solid rgba(17,17,17,.16); border-radius: 7px; color: #111111; background: #e4edf4; }
-  .feature-grid article:nth-child(2) { background: #e9efec; }
-  .feature-grid article:nth-child(3) { background: #f2e9c7; }
-  .feature-index { color: #2e5090; font: 600 11px/1 var(--blume-font-mono); }
-  .feature-grid .eyebrow { margin: 15px 0 0; }
-  .feature-grid h3 { margin: 9px 0 11px; font: 600 21px/1.15 var(--blume-font-display); letter-spacing: -.025em; }
-  .feature-grid p:last-child { margin: 0; color: #3f4846; font-size: 14px; line-height: 1.65; }
+  .section-heading h2, .cta h2 { margin: 12px 0 0; font: 700 clamp(34px, 3.8vw, 50px)/1.02 var(--blume-font-display); letter-spacing: -.05em; }
+
+  /* --- Four pillars, zigzag rhythm --------------------------------------- */
+  .pillars { padding-block: 40px 104px; }
+  .pillar { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; padding-block: 54px; border-top: 1px solid rgba(17,17,17,.14); }
+  .pillar:first-of-type { border-top: 0; }
+  /* zigzag: on even rows the code takes column 1, copy column 2 */
+  .pillar:nth-child(even) .pillar-copy { order: 2; }
+  .pillar:nth-child(even) .pillar-code { order: 1; }
+  .pillar-copy h3 { margin: 14px 0 18px; color: #111111; font: 700 clamp(28px, 3vw, 38px)/1.04 var(--blume-font-display); letter-spacing: -.04em; }
+  .pillar-copy p { margin: 0 0 16px; color: #3f4846; font-size: 16px; line-height: 1.66; }
+  .pillar-copy p em { color: #2e5090; font-style: normal; font-weight: 600; }
+  .pillar-copy p strong { color: #111111; font-weight: 700; }
+  .pillar-copy code { padding: .08em .35em; border-radius: 4px; background: rgba(46,80,144,.1); color: #213e76; font: 500 .86em/1 var(--blume-font-mono); }
+  .pillar-link { display: inline-flex; align-items: center; gap: 9px; margin-top: 4px; color: #2e5090; font-size: 14px; font-weight: 600; text-decoration: none; }
+  .pillar-link span { transition: transform .15s ease; }
+  .pillar-link:hover span { transform: translateX(4px); }
+  .pillar-code { margin: 0; overflow: hidden; border: 1px solid #111111; border-radius: 12px; background: #111111; box-shadow: -11px 14px 0 #e7d28a; }
+  .pillar:nth-child(even) .pillar-code { box-shadow: 11px 14px 0 #a8c5d9; }
+  .pillar-code pre { margin: 0; padding: 26px; overflow-x: auto; font: 400 12.5px/1.7 var(--blume-font-mono); color: #f6f1e7; }
+  .pillar-code .c { color: #a8c5d9; }
+  .pillar-code .k { color: #e7d28a; }
+  .pillar-code .s { color: #cdb96a; }
   .cta { position: relative; overflow: hidden; color: #fffdf7; background: #2e5090; }
   .cta::after { position: absolute; inset: -65% -8% auto 55%; width: 560px; aspect-ratio: 1; border: 1px solid rgba(255,255,255,.18); border-radius: 50%; box-shadow: 0 0 0 48px rgba(255,255,255,.045), 0 0 0 96px rgba(255,255,255,.035); content: ""; }
   .cta-inner { position: relative; z-index: 1; padding-block: 86px; display: flex; flex-wrap: wrap; gap: 40px; align-items: center; justify-content: space-between; }
@@ -199,8 +256,11 @@ const features = [
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; min-height: 0; gap: 54px; padding-block: 55px 76px; }
     .hero-code { max-width: 680px; }
-    .route, .feature-grid { grid-template-columns: 1fr; }
-    .route-step:nth-child(2) { transform: none; }
+    /* stack pillars: copy first, code after, on every row */
+    .pillar { grid-template-columns: 1fr; gap: 32px; padding-block: 44px; }
+    .pillar:nth-child(even) .pillar-copy,
+    .pillar:nth-child(even) .pillar-code { order: 0; }
+    .pillar:nth-child(even) .pillar-code { box-shadow: -11px 14px 0 #e7d28a; }
   }
   @media (max-width: 680px) {
     .shell { width: min(100% - 30px, 1200px); }
@@ -212,7 +272,8 @@ const features = [
     h1 { font-size: clamp(47px, 14vw, 66px); }
     .lede { font-size: 16px; }
     .hero-code { width: calc(100% - 10px); }
-    .hero-code pre { padding: 22px 18px; font-size: 11px; }
+    .hero-code pre, .pillar-code pre { padding: 22px 18px; font-size: 11px; }
+    .pillar-copy h3 { font-size: clamp(25px, 8vw, 32px); }
     .cta-inner, .cta-actions { align-items: flex-start; flex-direction: column; }
   }
 </style>
