@@ -6,8 +6,8 @@ export default defineConfig({
     "One Result and one wire-safe error union from server to screen — the RPC regime for React.",
   logo: {
     href: "/",
-    image: "/favicon.svg",
-    text: "result-rpc",
+    image: "/result-rpc-lockup-blue.svg",
+    text: "",
   },
   github: {
     owner: "jokull",
@@ -81,32 +81,37 @@ export default defineConfig({
     ],
   },
   theme: {
+    action: "#2e5090",
     accent: {
-      light: "#4056c8",
-      dark: "#9caeff",
+      light: "#2e5090",
+      dark: "#a8c5d9",
     },
     background: {
-      light: "#fbfbfd",
-      dark: "#10131a",
+      light: "#f6f1e7",
+      dark: "#111111",
     },
-    fonts: {
-      body: "inter",
-      display: "source-serif-4",
-      mono: "ibm-plex-mono",
-    },
-    mode: "system",
+    mode: "light",
     radius: "sm",
+    fonts: {
+      display: "space-grotesk",
+      body: "ibm-plex-sans",
+      mono: "jetbrains-mono",
+    },
   },
   seo: {
     og: {
       enabled: true,
-      logo: "/favicon.svg",
+      fonts: [
+        { name: "Space Grotesk", weight: [500, 700] },
+        { name: "IBM Plex Sans", weight: [400, 600] },
+      ],
+      logo: "/result-rpc-lockup-blue.svg",
       palette: {
-        accent: "#9caeff",
-        background: "#1a2030",
-        foreground: "#f2f4fb",
-        muted: "#aeb6cc",
-        border: "#3c4763",
+        accent: "#2e5090",
+        background: "#f6f1e7",
+        foreground: "#111111",
+        muted: "#486494",
+        border: "#a8c5d9",
       },
       titles: {
         "/": "One Result. One error union. Server to screen.",

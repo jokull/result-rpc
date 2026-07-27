@@ -1,0 +1,82 @@
+/* result-rpc: expressive technical display, calm reading, precise code. */
+:root {
+  --result-canvas: #f6f1e7;
+  --result-paper: #fffdf7;
+  --result-ink: #111111;
+  --result-iris: #2e5090;
+  --result-iris-deep: #213e76;
+  --result-sky-soft: #e4edf4;
+  --result-sun: #e7d28a;
+  --blume-foreground: var(--result-ink);
+  --blume-muted: var(--result-sky-soft);
+  --blume-muted-foreground: #58615f;
+  --blume-border: rgb(17 17 17 / 16%);
+  --blume-accent: var(--result-iris);
+  --blume-accent-foreground: var(--result-paper);
+  --blume-action: var(--result-iris);
+  --blume-action-foreground: var(--result-paper);
+  --blume-code-background: #111111;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--blume-font-body);
+}
+
+body { background: var(--result-canvas); }
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--blume-font-display);
+  letter-spacing: -0.04em;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--blume-font-mono);
+}
+
+/* Inline code is annotation, not a miniature dark code panel. */
+.prose :not(pre) > code:not(:where([class~="not-prose"] *)) {
+  color: var(--result-iris-deep);
+  background: var(--result-sky-soft);
+  box-shadow: inset 0 0 0 1px rgb(46 80 144 / 16%);
+}
+
+.prose code.blume-inline-code span {
+  color: inherit;
+}
+
+:root[data-theme="dark"] .prose :not(pre) > code:not(:where([class~="not-prose"] *)) {
+  color: #dce8f0;
+  background: #1d2e4d;
+  box-shadow: inset 0 0 0 1px rgb(168 197 217 / 24%);
+}
+
+::selection {
+  color: var(--result-ink);
+  background: var(--result-sun);
+}
+
+/* Keep solid accent/action controls reliably high-contrast. */
+.bg-accent,
+.bg-action {
+  color: var(--result-paper);
+}
+
+/* Soft accent surfaces are backgrounds, not button colors. */
+.bg-accent\/10,
+.bg-accent\/20,
+.bg-accent\/25 {
+  color: var(--result-ink);
+}

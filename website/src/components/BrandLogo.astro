@@ -1,0 +1,17 @@
+---
+interface Props {
+  logo?: { href?: string } | null;
+}
+
+const { logo } = Astro.props;
+---
+
+<a class="result-brand" href={logo?.href ?? "/"} aria-label="result-rpc home">
+  <img src="/result-rpc-lockup-blue.svg" alt="result-rpc" width="249" height="50" />
+</a>
+
+<style>
+  .result-brand { display: inline-flex; align-items: center; flex: none; }
+  .result-brand img { display: block; width: 199px; height: auto; }
+  @media (max-width: 640px) { .result-brand img { width: 174px; } }
+</style>
