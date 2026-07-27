@@ -162,6 +162,68 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
       </article>
     </section>
 
+    <section class="batteries shell" aria-labelledby="batteries-title">
+      <div class="section-heading">
+        <p class="section-label">Batteries included</p>
+        <h2 id="batteries-title">Nine failure modes arrive already owned.</h2>
+        <p class="section-lede">Every layer stacks its failures onto the union on the way out. On the way back in, most of them already have a shell written to catch them — you only write the ones carrying a decision the framework can't make for you.</p>
+      </div>
+
+      <div class="ledger">
+        <div class="ledger-col">
+          <h3><span class="sign plus">+</span> The server stacks them on</h3>
+          <ul>
+            <li>
+              <p class="ledger-src">your handler</p>
+              <p class="ledger-tags"><code>doc/not-found</code></p>
+            </li>
+            <li>
+              <p class="ledger-src"><code>.use(authed)</code> — a middleware you wrote</p>
+              <p class="ledger-tags"><code>session/expired</code></p>
+            </li>
+            <li>
+              <p class="ledger-src">the framework, on every procedure</p>
+              <p class="ledger-tags"><code>client/offline</code> <code>client/network-failure</code> <code>client/timeout</code> <code>client/http-failure</code> <code>client/protocol-violation</code> <code>client/decode-failure</code> <code>server/bad-request</code> <code>server/internal</code> <code>client/stale</code></p>
+            </li>
+          </ul>
+        </div>
+
+        <div class="ledger-col">
+          <h3><span class="sign minus">−</span> The client peels them off</h3>
+          <ul>
+            <li>
+              <p class="ledger-src"><strong>TransportShell</strong> <span class="badge included">included</span></p>
+              <p class="ledger-tags"><code>client/offline</code> <code>client/network-failure</code> <code>client/timeout</code></p>
+              <p class="ledger-note">Pauses what's beneath it, resumes on reconnect.</p>
+            </li>
+            <li>
+              <p class="ledger-src"><strong>DefectShell</strong> <span class="badge included">included</span></p>
+              <p class="ledger-tags"><code>client/http-failure</code> <code>client/protocol-violation</code> <code>client/decode-failure</code> <code>server/bad-request</code> <code>server/internal</code></p>
+              <p class="ledger-note">Nothing a component can render a branch for — escalates to the error boundary.</p>
+            </li>
+            <li>
+              <p class="ledger-src"><strong>StaleShell</strong> <span class="badge included">included</span></p>
+              <p class="ledger-tags"><code>client/stale</code></p>
+              <p class="ledger-note">A deploy left this tab behind. The reload is the fix.</p>
+            </li>
+            <li>
+              <p class="ledger-src"><strong>AuthShell</strong> <span class="badge yours">you write it</span></p>
+              <p class="ledger-tags"><code>session/expired</code></p>
+              <p class="ledger-note">Redirect to login. Only you know where that is.</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="ledger-result">
+        <p class="ledger-result-label">What reaches your component</p>
+        <p class="ledger-result-tag"><code>doc/not-found</code></p>
+        <p class="ledger-result-note">One tag, and the compiler won't let you forget it. Nine of the ten failure modes above came with an owner already written; you wrote one shell, once, for the one that needed a decision.</p>
+      </div>
+
+      <p class="batteries-more">Other shells worth writing once: an entitlement shell claiming <code>billing/plan-required</code> that opens the upgrade dialog, a workspace shell claiming <code>workspace/not-found</code> for a route segment, a rate-limit shell claiming <code>api/rate-limited</code> with a retry countdown. Each is a few lines — name the tags, choose pause or escalate, render the fallback. Shells chain, so yours hangs off the built-ins and claims only what's left. <a href="/concepts/shells/">How shells work →</a></p>
+    </section>
+
     <section class="faq shell" aria-labelledby="faq-title">
       <div class="section-heading">
         <p class="section-label">Questions you're about to ask</p>
@@ -203,16 +265,6 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
             <p>No, and there's no point where a shape has to be classified. Every query starts as a plain <code>wire.object</code> — the same output you'd have written in tRPC. You mint a model later, when you notice the same keyed thing showing up in several places, and only for the fields that are true about it in every query.</p>
             <p><strong>Relationships are never declared.</strong> There's no relation schema to keep in sync — a relationship is just the shape of one query's output, discovered by walking the decoded result. So you compose whatever a screen needs: an entity nested in a one-off wrapper, an aggregate sitting next to a model, a projection with nothing but an <code>id</code> and a rank.</p>
             <p>The curve is incremental in both directions. Under-modeling costs nothing — an unmodeled node behaves exactly like invalidate-and-refetch, which is where you already are today. And there's no demotion event: aggregates never go inside models, so adding one can't break a model you already have.</p>
-          </div>
-        </details>
-
-        <details class="faq-item">
-          <summary><span>Which shells are included, and which do I write?</span></summary>
-          <div class="faq-body">
-            <p>The failures the framework itself invents come with owners already written. <code>boundaryShells()</code> returns three, nested outermost-first:</p>
-            <p><strong>TransportShell</strong> claims <code>client/offline</code>, <code>client/network-failure</code> and <code>client/timeout</code> — it pauses the operations beneath it and resumes them when the connection returns. <strong>DefectShell</strong> claims the things no component can render a branch for (<code>client/http-failure</code>, <code>client/protocol-violation</code>, <code>client/decode-failure</code>, <code>server/bad-request</code>, <code>server/internal</code>) and escalates them to the nearest error boundary. <strong>StaleShell</strong> claims <code>client/stale</code> — a deploy left this tab behind, so the reload is the fix. You also get <code>BoundaryProvider</code>, which doubles as the browser bridge (reconnect, focus, online/offline), and <code>useConnectivity()</code> for the offline banner.</p>
-            <p><strong>You write the ones only your app can own</strong>, because only you know what should happen. An auth shell claiming <code>session/expired</code> and redirecting to login. An entitlement shell claiming <code>billing/plan-required</code> and rendering the upgrade dialog. A workspace shell claiming <code>workspace/not-found</code> for a route segment. A rate-limit shell claiming <code>api/rate-limited</code> and showing a retry countdown. Each is a few lines: name the tags, pick pause or escalate, render the fallback.</p>
-            <p>Shells chain, so yours can hang off the built-ins with <code>from: StaleShell</code> and claim only what's left.</p>
           </div>
         </details>
 
@@ -332,6 +384,36 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
   .pillar-code .c { color: #a8c5d9; }
   .pillar-code .k { color: #e7d28a; }
   .pillar-code .s { color: #cdb96a; }
+  /* --- Batteries: the add/subtract ledger --------------------------------- */
+  .batteries { padding-block: 20px 96px; }
+  .section-lede { max-width: 66ch; margin: 18px 0 0; color: #3f4846; font-size: 16.5px; line-height: 1.66; }
+  .ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  .ledger-col { padding: 26px; border: 1px solid rgba(17,17,17,.16); border-radius: 9px; background: rgba(255,253,247,.6); }
+  .ledger-col:last-child { background: #e4edf4; }
+  .ledger-col h3 { display: flex; align-items: center; gap: 11px; margin: 0 0 20px; font: 600 17px/1.2 var(--blume-font-display); letter-spacing: -.02em; }
+  .sign { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font: 700 15px/1 var(--blume-font-mono); }
+  .sign.plus { color: #fffdf7; background: #2e5090; }
+  .sign.minus { color: #111111; background: #e7d28a; }
+  .ledger-col ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 17px; }
+  .ledger-col li { padding-bottom: 17px; border-bottom: 1px dashed rgba(17,17,17,.16); }
+  .ledger-col li:last-child { padding-bottom: 0; border-bottom: 0; }
+  .ledger-src { margin: 0 0 8px; color: #111111; font-size: 14px; line-height: 1.45; }
+  .ledger-src strong { font-weight: 700; }
+  .ledger-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+  .ledger-tags code, .ledger-src code { padding: .16em .42em; border-radius: 4px; background: rgba(46,80,144,.11); color: #213e76; font: 500 11.5px/1.35 var(--blume-font-mono); }
+  .ledger-note { margin: 9px 0 0; color: #4a5351; font-size: 13px; line-height: 1.55; }
+  .badge { padding: .18em .5em; border-radius: 4px; font: 600 10px/1 var(--blume-font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .badge.included { color: #1f5133; background: #cfe6d6; }
+  .badge.yours { color: #fffdf7; background: #2e5090; }
+  .ledger-result { margin-top: 22px; padding: 26px 30px; border: 2px solid #2e5090; border-radius: 9px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
+  .ledger-result-label { margin: 0; color: #2e5090; font: 600 11px/1.3 var(--blume-font-mono); letter-spacing: .12em; text-transform: uppercase; }
+  .ledger-result-tag { margin: 0; }
+  .ledger-result-tag code { padding: .2em .5em; border-radius: 5px; background: #2e5090; color: #fffdf7; font: 600 15px/1.3 var(--blume-font-mono); }
+  .ledger-result-note { flex: 1 1 380px; margin: 0; color: #3f4846; font-size: 14.5px; line-height: 1.6; }
+  .batteries-more { max-width: 78ch; margin: 26px 0 0; color: #4a5351; font-size: 14.5px; line-height: 1.68; }
+  .batteries-more code { padding: .08em .35em; border-radius: 4px; background: rgba(46,80,144,.1); color: #213e76; font: 500 .88em/1 var(--blume-font-mono); }
+  .batteries-more a { color: #2e5090; font-weight: 600; text-decoration: none; white-space: nowrap; }
+
   /* --- FAQ ---------------------------------------------------------------- */
   .faq { padding-block: 20px 104px; }
   .faq-list { display: grid; gap: 0; border-top: 1px solid rgba(17,17,17,.16); }
@@ -370,6 +452,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
     .pillar:nth-child(even) .pillar-copy,
     .pillar:nth-child(even) .pillar-code { order: 0; }
     .pillar:nth-child(even) .pillar-code { box-shadow: -11px 14px 0 #e7d28a; }
+    .ledger { grid-template-columns: 1fr; }
   }
   @media (max-width: 680px) {
     .shell { width: min(100% - 30px, 1200px); }
