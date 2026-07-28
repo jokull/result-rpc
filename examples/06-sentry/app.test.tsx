@@ -10,7 +10,7 @@ import {
   makeObservedClient,
   ResultRpcProvider,
 } from "./app.js";
-import { createQueryRuntime } from "../../src/react/index.js";
+import { createQueryRuntime } from "../../src/query/runtime.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }

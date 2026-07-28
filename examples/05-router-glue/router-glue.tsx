@@ -10,11 +10,11 @@ import { createElement, type ReactNode } from "react";
 import { Outlet, RouterProvider, type AnyRouter } from "@tanstack/react-router";
 import type { QueryRuntime } from "../../src/react/index.js";
 import {
-  createQueryRuntime,
   getLayerProcedureResolver,
   ResultRpcProvider,
   type AnyShell,
 } from "../../src/react/index.js";
+import { createQueryRuntime } from "../../src/query/runtime.js";
 
 export interface ResultRouterContext<TClient = unknown> {
   readonly client: TClient;

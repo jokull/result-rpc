@@ -784,6 +784,45 @@ describe("entity identities", () => {
 });
 
 describe("offline anti-thrash", () => {
+  test("browser offline pauses subscriptions without opening a stream", async () => {
+    let attempts = 0;
+    const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
+    const transport: ClientTransport = {
+      request: (...args) => local.request(...args),
+      stream: (...args) => {
+        attempts += 1;
+        return local.stream!(...args);
+      },
+    };
+    const client = createBrowserClient({ router, transport });
+    const runtime = createQueryRuntime({ client });
+    try {
+      globalThis.dispatchEvent(new Event("offline"));
+      const subscription = runtime.subscription(client.value.events, { fail: false });
+      const unsubscribe = subscription.subscribe(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(subscription.getCurrentState().connection).toBe("paused");
+      expect(attempts).toBe(0);
+
+      const opened = new Promise<void>((resolve) => {
+        const stop = subscription.subscribe(() => {
+          if (subscription.getCurrentState().eventCount > 0) {
+            stop();
+            resolve();
+          }
+        });
+      });
+      globalThis.dispatchEvent(new Event("online"));
+      await opened;
+      expect(attempts).toBe(1);
+      unsubscribe();
+      subscription.close();
+    } finally {
+      globalThis.dispatchEvent(new Event("online"));
+      runtime.clear();
+    }
+  });
+
   test("browser offline pauses fetches instead of burning the retry budget", async () => {
     let attempts = 0;
     const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });

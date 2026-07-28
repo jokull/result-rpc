@@ -1044,6 +1044,10 @@ const internalFailure = (
   cause: unknown,
   options: ExecutionOptions<unknown>,
 ): Result<never, ReturnType<typeof ServerInternal>> => {
+  // The caller leaving is control flow, not a handler defect. Re-throw the
+  // original cancellation so the transport boundary can stop without
+  // manufacturing an incident or a server/internal value for nobody to read.
+  if (options.signal?.aborted) throw cause;
   const id = incidentId();
   options.onInternalError?.({
     incidentId: id,
@@ -1111,6 +1115,7 @@ export const executeProcedure = async <
   };
 
   const result = await dispatch(0, contextWithHeaders(options.context, procedure, options));
+  if (options.signal?.aborted) throw options.signal.reason;
   if (
     result === null ||
     typeof result !== "object" ||
@@ -1256,6 +1261,7 @@ export async function* executeSubscription<
   try {
     while (true) {
       const step = await inner.next();
+      if (options.signal?.aborted) return;
       if (step.done) return;
       const result = step.value;
       if (result.ok) {

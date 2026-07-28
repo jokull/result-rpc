@@ -31,7 +31,7 @@ The server half derives from it:
 // server
 const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
   const user = await context.auth.user();
-  return user ? ok(user) : err(errors.Unauthorized({}));
+  return user ? ok(user) : err(errors.Unauthorized());
 });
 // Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
 
@@ -90,7 +90,7 @@ export const ViewerLayer = SessionLayer.require({
   name: "viewer",
   provides: UserCodec, // the narrowed value
   errors: { Unauthorized }, // the union the refinement contributes
-  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized({})) : ok(value)),
+  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized()) : ok(value)),
 });
 ```
 

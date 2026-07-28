@@ -50,10 +50,10 @@ whatever your storage wants. It only has to survive the codec you declared.
 
 ```tsx
 function Feed({ q }: { q: string }) {
-  const feed = useResultPaginatedQuery(client.feed, { q });
+  const feed = AppShell.usePaginatedQuery(client.feed, { q });
 
   if (feed.state === "pending") return <Spinner />;
-  if (feed.state === "failure") return null; // a shell owns it — see below
+  if (feed.state === "failure") return <FeedError error={feed.error} />;
 
   return (
     <>
@@ -72,9 +72,16 @@ function Feed({ q }: { q: string }) {
 
 `rows` is every loaded page flattened into one list. `fetchNext()` loads the
 next page and appends it; `hasNext` falls straight out of the last page's
-`nextCursor`. The failure branch narrows and claims exactly like
-`useResultQuery` — an enclosing [shell](/concepts/shells/) can own a paginated
-query's error, and the hook shows the previous rows while the shell decides.
+`nextCursor`. `AppShell.usePaginatedQuery` subtracts the errors claimed by that
+shell and its parents from the failure union, exactly like `AppShell.useQuery`.
+The remaining failure branch contains only errors this component still owns.
+While a shell handles a claimed error, the hook shows the previous rows (or a
+pending state when none exist).
+
+The global `useResultPaginatedQuery` also participates in ambient claiming
+when rendered under shell providers, but its declared return type remains the
+complete procedure union. Use the shell hook when compile-time subtraction is
+part of the component boundary.
 
 ## Why one cache entry matters
 

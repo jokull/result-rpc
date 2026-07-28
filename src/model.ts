@@ -33,7 +33,9 @@ export interface ModelDefinition<
   /** The identity fields, normalized. Composite keys join values in this order. */
   readonly keyFields: readonly string[];
   /**
-   * A projection codec — a subset of the shape, still identity-collecting.
+   * A strict projection codec — a subset of the shape, still
+   * identity-collecting. It validates an exact view; it does not strip fields
+   * from a wider runtime object.
    * The key field is mandatory: an entity without its identity is just data.
    */
   pick<const TKeys extends readonly (keyof TShape & string)[]>(

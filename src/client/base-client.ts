@@ -25,7 +25,7 @@ export type ClientRouter = Router<any, RouterRecord> | RouterContract<any, Contr
 export interface ResultSubscription<T, E extends AnyTaggedError> extends AsyncIterable<
   Result<T, E>
 > {
-  close(): void;
+  readonly close: () => void;
 }
 
 /** Runtime definitions plus an app-wide type guard for a client's public error union. */

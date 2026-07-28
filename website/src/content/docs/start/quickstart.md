@@ -68,6 +68,36 @@ export const handler = createFetchHandler({
 fetch-native server (Bun, Deno, Cloudflare Workers, Node 20+, Hono, Next
 route handlers).
 
+For a concrete Hono + Vite development setup, mount that fetch handler on a
+small Node server:
+
+```ts
+// server.ts
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { handler } from "./server/rpc";
+
+const server = new Hono();
+server.all("/rpc", (context) => handler(context.req.raw));
+serve({ fetch: server.fetch, port: 3001 });
+```
+
+and let the browser keep using the relative `/rpc` URL through Vite:
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: { proxy: { "/rpc": "http://127.0.0.1:3001" } },
+});
+```
+
+Run `tsx watch server.ts` and `vite` as the two development processes. In a
+single fetch-native deployment, mount `handler` directly and omit the proxy.
+
 The handler must return the declared Result. Returning an undeclared tag is a
 type error; throwing unexpectedly or smuggling a malformed error is treated as
 a defect and yields a sanitized `server/internal`. Configure `onInternalError`

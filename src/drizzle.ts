@@ -1,11 +1,13 @@
 /**
  * `result-rpc/drizzle` — derive entity models from Drizzle tables.
  *
- * The dual-model tax, deleted: a Drizzle table already declares columns,
- * types, nullability, and the primary key — the exact facts `defineModel`
- * asks for. `modelFromDrizzle` reads them, so the wire model cannot drift
- * from the database because it is derived from the same schema the
- * migration maintains.
+ * A Drizzle table already declares columns, types, nullability, and the
+ * primary key — the exact facts `defineModel` asks for. `modelFromDrizzle`
+ * reads them so a shared-schema wire model cannot drift from the schema the
+ * migration maintains. Because the resulting model is an executable client
+ * codec, importing it from a browser contract also imports the table module;
+ * use a server-only parity proof instead when schema metadata must stay out
+ * of client chunks.
  *
  * ```ts
  * import { hotels, tourContent } from "./schema"
@@ -133,10 +135,12 @@ export const modelFromDrizzle = <
 // --- The Result-typed query door ----------------------------------------------
 
 /**
- * The database's failure vocabulary as tagged errors — the Result-native
- * parallel of Drizzle 1.0's Effect bridge. These are SERVER-SIDE composition
- * currency, never wire errors: all are `visibility: "private"`, none should
- * appear in a procedure's `.errors()`. Handlers compose with them
+ * The database's failure vocabulary as tagged errors. Drizzle 1.0's native
+ * Effect bridge makes queries Effect values and retains an Effect Cause;
+ * this Result bridge additionally classifies common constraint failures.
+ * These are SERVER-SIDE composition currency, never wire errors: all are
+ * `visibility: "private"`, none should appear in a procedure's `.errors()`.
+ * Handlers compose with them
  * (`gen`/`yield*`/`matchError`) and collapse to declared domain tags at the
  * boundary — a unique violation becomes `titleTaken`, honestly and without
  * the race-prone pre-check SELECT. One that slips through uncollapsed hits
@@ -178,31 +182,68 @@ const constraintFrom = (message: string): string => {
 };
 
 const classify = (cause: unknown): DbError => {
-  let current: unknown = cause;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
-    const code = (current as { code?: unknown }).code;
+  const pending: unknown[] = [cause];
+  const visited = new Set<object>();
+  for (let inspected = 0; inspected < 16 && pending.length > 0; inspected += 1) {
+    const current = pending.shift();
+    if (typeof current !== "object" || current === null) continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const failure = current as {
+      readonly cause?: unknown;
+      readonly code?: unknown;
+      readonly defect?: unknown;
+      readonly errcode?: unknown;
+      readonly error?: unknown;
+      readonly failure?: unknown;
+      readonly message?: unknown;
+    };
+    const message = typeof failure.message === "string" ? failure.message : "";
+    const code = failure.code;
+    const errcode = failure.errcode;
     if (typeof code === "string") {
-      const constraint = constraintFrom(current.message);
+      const constraint = constraintFrom(message);
       if (
         code.startsWith("SQLITE_CONSTRAINT_UNIQUE") ||
         code.startsWith("SQLITE_CONSTRAINT_PRIMARYKEY") ||
         code === "23505"
       ) {
-        return dbErrors.uniqueViolation({ constraint });
+        return dbErrors.uniqueViolation({ constraint }, { cause });
       }
       if (code.startsWith("SQLITE_CONSTRAINT_FOREIGNKEY") || code === "23503") {
-        return dbErrors.foreignKeyViolation({ constraint });
+        return dbErrors.foreignKeyViolation({ constraint }, { cause });
       }
       if (code.startsWith("SQLITE_CONSTRAINT_NOTNULL") || code === "23502") {
-        return dbErrors.notNullViolation({ constraint });
+        return dbErrors.notNullViolation({ constraint }, { cause });
       }
       if (code.startsWith("SQLITE_CONSTRAINT_CHECK") || code === "23514") {
-        return dbErrors.checkViolation({ constraint });
+        return dbErrors.checkViolation({ constraint }, { cause });
       }
     }
-    current = current.cause;
+    // Node's built-in SQLite driver reports every SQLite failure with the
+    // generic ERR_SQLITE_ERROR code and puts the extended SQLite result code
+    // in `errcode`. Drizzle wraps that driver error in DrizzleQueryError.
+    // Keep the numeric checks explicit: the low byte is SQLITE_CONSTRAINT
+    // (19), while the high byte identifies the violated constraint kind.
+    const constraint = constraintFrom(message);
+    if (errcode === 2067 || errcode === 1555 || /^UNIQUE constraint failed:/i.test(message)) {
+      return dbErrors.uniqueViolation({ constraint }, { cause });
+    }
+    if (errcode === 787 || /^FOREIGN KEY constraint failed/i.test(message)) {
+      return dbErrors.foreignKeyViolation({ constraint }, { cause });
+    }
+    if (errcode === 1299 || /^NOT NULL constraint failed:/i.test(message)) {
+      return dbErrors.notNullViolation({ constraint }, { cause });
+    }
+    if (errcode === 275 || /^CHECK constraint failed:/i.test(message)) {
+      return dbErrors.checkViolation({ constraint }, { cause });
+    }
+    // Drizzle's native Effect adapter stores its underlying SqlError inside
+    // an Effect Cause. Follow both ordinary Error.cause and the small set of
+    // Cause payload slots without taking an Effect dependency.
+    pending.push(failure.cause, failure.failure, failure.error, failure.defect);
   }
-  return dbErrors.queryFailure();
+  return dbErrors.queryFailure({}, { cause });
 };
 
 /**
@@ -222,7 +263,8 @@ const classify = (cause: unknown): DbError => {
  *
  * Constraint outcomes become values a handler can branch on — attempting the
  * insert IS the uniqueness check, correct under concurrency where the
- * SELECT-first idiom races.
+ * SELECT-first idiom races. The original caught failure remains available as
+ * a non-enumerable, non-wire `Error.cause` on the private tagged error.
  */
 export const tryDb = async <T>(
   query: PromiseLike<T> | (() => PromiseLike<T> | T),

@@ -18,6 +18,15 @@ const result = await client.doc.byId({ id: "doc_123" });
 Calls issued in the same microtask share one HTTP request. Every batch item
 keeps its own status, decoder, rich-value envelope, and tagged Result. Use
 `fetchTransport` when batching is not wanted; the client API is unchanged.
+Because the batch itself is one successful protocol exchange, its outer HTTP
+status is 200; an item's domain status (for example 409) remains in that item
+and is reported by the server hooks, but browser network panels show the outer
+batch status.
+
+`batchFetchTransport` also implements the streaming path used by
+subscriptions. Use this same client instance beneath `ResultRpcProvider`; a
+separate fetch client is neither required nor compatible with that runtime's
+cache and ownership context.
 
 One deliberate carve-out from "every call resolves `Result`": input that the
 procedure's **own input codec** rejects throws a `TypeError` at the call site

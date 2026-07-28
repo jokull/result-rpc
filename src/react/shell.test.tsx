@@ -43,7 +43,17 @@ const trip = r
     if (input.id === "boom") throw new Error("handler defect");
     return ok(input.id);
   });
-const router = r.router({ trip });
+const feed = r
+  .procedure()
+  .input(wire.object({ q: wire.string }))
+  .output(wire.string)
+  .errors({ SessionExpired, TripNotFound })
+  .paginate({ cursor: wire.string }, ({ input, errors }) =>
+    input.list.q === "expired"
+      ? err(errors.SessionExpired({}))
+      : ok({ items: [input.list.q], nextCursor: null }),
+  );
+const router = r.router({ trip, feed });
 const handler = createFetchHandler({ router, createContext: () => ({}) });
 
 const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
@@ -95,6 +105,37 @@ class Boundary extends Component<
 }
 
 describe("shells", () => {
+  test("a shell paginated hook claims failures and narrows its error union", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    const AuthShell = defineShell({ name: "auth", claims: authErrors });
+
+    let state: string | undefined;
+    let affected = 0;
+    function Probe() {
+      const page = AuthShell.usePaginatedQuery(client.feed, { q: "expired" });
+      state = page.state;
+      affected = AuthShell.useHeld().affected;
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AuthShell.Provider>
+            <Probe />
+          </AuthShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(state).toBe("pending");
+    expect(affected).toBe(1);
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
   test("unclaimed domain errors stay in the component union", async () => {
     const client = clientFor(httpTransport);
     const runtime = createQueryRuntime({ client });

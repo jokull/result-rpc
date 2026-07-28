@@ -47,6 +47,15 @@ entities patch by identity. There are no heuristics and no schema walking —
 **an inline `wire.object` collects nothing, silently**; composing outputs
 from model views is the one discipline this asks of query writers.
 
+Here, **projection describes the declared wire shape, not a mapping
+operation**. Model views are strict codecs: `Doc.pick("id", "title")` accepts
+exactly those fields and rejects `{ id, title, privateNotes }`; it does not
+silently strip `privateNotes`. Select those columns in the database query or
+map the row to the exact output shape. TypeScript may accept a wider variable
+because structural assignability permits extra properties, but the runtime
+codec deliberately does not — otherwise accidental fields could cross the
+wire unnoticed.
+
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are
 subsets). Fields the mutation didn't return stay stale-until-refetch —

@@ -100,6 +100,8 @@ operation as a failure.
 
 ```tsx
 // Server
+import { createQueryRuntime } from "result-rpc/query";
+
 const runtime = createQueryRuntime({ client: serverClient });
 
 await runtime.prefetch(serverClient.doc.byId, { id });

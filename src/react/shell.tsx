@@ -19,9 +19,15 @@ import type { ErrorDefinitionMap, ErrorUnion } from "../server/contract.js";
 import type {
   MutationOptions,
   MutationState,
+  PaginatedClientCursor,
+  PaginatedClientItem,
+  PaginatedClientListInput,
+  PaginatedProcedureClientLike,
+  PaginatedState,
   ProcedureClientError,
   ProcedureClientInput,
   ProcedureClientOutput,
+  QueryOptions,
   QueryState,
   SubscriptionClientError,
   SubscriptionClientInput,
@@ -32,6 +38,7 @@ import type {
 import {
   useResultClient,
   useResultMutation,
+  useResultPaginatedQuery,
   useResultQuery,
   useResultSubscription,
   useResultSuspenseQuery,
@@ -134,6 +141,16 @@ export interface Shell<
       ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
     >,
     { readonly state: "pending" }
+  >;
+
+  usePaginatedQuery<TProcedureClient extends PaginatedProcedureClientLike>(
+    procedure: TProcedureClient,
+    input: PaginatedClientListInput<TProcedureClient>,
+    options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+  ): PaginatedState<
+    PaginatedClientItem<TProcedureClient>,
+    PaginatedClientCursor<TProcedureClient>,
+    ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
   >;
 
   useMutation<TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(
@@ -360,6 +377,10 @@ export const defineShell = <
     useSuspenseQuery: (procedure: any, input: any, queryOptions?: any) => {
       useAssertChainMounted(self);
       return useResultSuspenseQuery(procedure, ...([input, queryOptions] as [never, never]));
+    },
+    usePaginatedQuery: (procedure: any, input: any, queryOptions?: any) => {
+      useAssertChainMounted(self);
+      return useResultPaginatedQuery(procedure, input, queryOptions);
     },
     useMutation: (procedure: any, mutationOptions?: any) => {
       useAssertChainMounted(self);

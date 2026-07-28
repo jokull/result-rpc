@@ -1,16 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { Suspense, useState } from "react";
+import { StrictMode, Suspense, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire } from "../index.js";
 import { createBrowserClient } from "../client/client.js";
 import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
-import {
-  createQueryRuntime,
-  type MutationState,
-  type QueryState,
-  type SubscriptionState,
-} from "../query/runtime.js";
+import { type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../framework-errors.js";
@@ -21,6 +16,7 @@ import {
   useResultSubscription,
   useResultSuspenseQuery,
 } from "./index.js";
+import { createQueryRuntime } from "../query/runtime.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -145,12 +141,14 @@ describe("React bindings", () => {
     let renderer: ReactTestRenderer | undefined;
     await act(async () => {
       renderer = create(
-        <ResultRpcProvider runtime={runtime}>
-          <SubscriptionProbe />
-          <Suspense fallback={<span>loading</span>}>
-            <SuspenseProbe />
-          </Suspense>
-        </ResultRpcProvider>,
+        <StrictMode>
+          <ResultRpcProvider runtime={runtime}>
+            <SubscriptionProbe />
+            <Suspense fallback={<span>loading</span>}>
+              <SuspenseProbe />
+            </Suspense>
+          </ResultRpcProvider>
+        </StrictMode>,
       );
       await settle();
     });

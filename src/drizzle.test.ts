@@ -116,6 +116,49 @@ describe("tryDb", () => {
     if (!broken.ok) expect(broken.error._tag).toBe("db/query-failure");
   });
 
+  test("classifies a node:sqlite constraint through DrizzleQueryError.cause", async () => {
+    const driverError = Object.assign(new Error("UNIQUE constraint failed: things.label"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode: 2067,
+      errstr: "constraint failed",
+    });
+    const drizzleError = new Error(
+      'Failed query: insert into "things" ("id", "label") values (?, ?)',
+      { cause: driverError },
+    );
+    const duplicate = await tryDb(Promise.reject(drizzleError));
+
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) {
+      expect(duplicate.error._tag).toBe("db/unique-violation");
+      expect(duplicate.error.data).toEqual({ constraint: "things.label" });
+      expect(duplicate.error.cause).toBe(drizzleError);
+      expect(JSON.stringify(duplicate.error)).not.toContain("Failed query");
+    }
+  });
+
+  test("classifies a driver failure inside Drizzle's Effect Cause without exposing SQL", async () => {
+    const driverError = Object.assign(new Error("UNIQUE constraint failed: things.label"), {
+      code: "ERR_SQLITE_ERROR",
+      errcode: 2067,
+    });
+    const effectError = {
+      _tag: "EffectDrizzleQueryError",
+      query: 'insert into "things" ("id", "label") values (?, ?)',
+      params: ["b", "TOP-SECRET-label"],
+      cause: { _tag: "Fail", failure: driverError },
+    };
+    const duplicate = await tryDb(Promise.reject(effectError));
+
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) {
+      expect(duplicate.error._tag).toBe("db/unique-violation");
+      expect(duplicate.error.data).toEqual({ constraint: "things.label" });
+      expect(duplicate.error.cause).toBe(effectError);
+      expect(JSON.stringify(duplicate.error)).not.toContain("TOP-SECRET-label");
+    }
+  });
+
   test("db errors are private composition currency, not wire errors", () => {
     expect(dbErrors.uniqueViolation({ constraint: "x" })._tag).toBe("db/unique-violation");
     // visibility private: an uncollapsed db error crossing the boundary

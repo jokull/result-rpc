@@ -510,8 +510,22 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
       const startedAt = Date.now();
       onEvent?.({ type: "call", kind: "subscription", path });
       let last: Result<T, E> | undefined;
+      let failureObserved = false;
       for await (const result of stream()) {
         last = result;
+        // Emit terminal failure before handing the frame to the consumer.
+        // A query runtime pauses/claims by returning from the async iterator;
+        // code after `yield` would never run in that ownership path.
+        if (!result.ok) {
+          failureObserved = true;
+          onEvent?.({
+            type: "failure",
+            kind: "subscription",
+            path,
+            tag: (result.error as AnyTaggedError)._tag,
+            durationMs: Date.now() - startedAt,
+          });
+        }
         yield result;
       }
       if (last === undefined || last.ok) {
@@ -521,7 +535,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
           path,
           durationMs: Date.now() - startedAt,
         });
-      } else {
+      } else if (!failureObserved) {
         onEvent?.({
           type: "failure",
           kind: "subscription",

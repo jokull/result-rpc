@@ -520,6 +520,14 @@ describe("observability events", () => {
   const makeObservedClient = () => {
     const r = rpc.context<{}>();
     let failures = 0;
+    const deniedEventsContract = r
+      .procedure()
+      .output(wire.string)
+      .errors({ NotFound })
+      .subscription();
+    const deniedEvents = r.implement(deniedEventsContract).stream(async function* ({ errors }) {
+      yield err(errors.NotFound());
+    });
     const router = r.router({
       find: r
         .procedure()
@@ -534,6 +542,7 @@ describe("observability events", () => {
         .output(wire.string)
         .errors({ Flaky })
         .query(({ errors }) => (failures++ < 1 ? err(errors.Flaky()) : ok("recovered"))),
+      deniedEvents,
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
     const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
@@ -566,6 +575,22 @@ describe("observability events", () => {
     const retry = events[1] as Extract<ClientEvent, { type: "retry" }>;
     expect(retry.tag).toBe("obs/flaky");
     expect(retry.attempt).toBe(1);
+  });
+
+  test("a claimed-style early return still observes a subscription failure", async () => {
+    const { client, events } = makeObservedClient();
+    const stream = client.deniedEvents({});
+    const iterator = stream[Symbol.asyncIterator]();
+    const terminal = await iterator.next();
+    await iterator.return?.();
+
+    expect(terminal.done).toBe(false);
+    expect(!terminal.done && terminal.value.ok).toBe(false);
+    expect(events.map((event) => event.type)).toEqual(["call", "failure"]);
+    const failure = events[1] as Extract<ClientEvent, { type: "failure" }>;
+    expect(failure.kind).toBe("subscription");
+    expect(failure.path).toBe("deniedEvents");
+    expect(failure.tag).toBe("obs/not-found");
   });
 
   test("the stream adapts to a Sentry-shaped sink in one function", async () => {

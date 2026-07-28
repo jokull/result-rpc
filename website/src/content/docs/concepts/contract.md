@@ -94,7 +94,7 @@ const authenticated = app
     const user = await context.auth.user();
 
     if (!user) {
-      return err(errors.Unauthorized({}));
+      return err(errors.Unauthorized());
     }
 
     return next({

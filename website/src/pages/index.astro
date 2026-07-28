@@ -259,7 +259,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Is it inspired by GraphQL?</span></summary>
           <div class="faq-body">
-            <p>GraphQL and normalized clients such as Graphcache use typed unions for failures and keys for entity identity. result-rpc uses both ideas without requiring a global graph schema, selection sets, or a resolver layer. Each procedure declares the output shape needed by its consumer.</p>
+            <p>GraphQL is an influence in two narrower ways. Normalized clients inspired entity identity and the partially normalized client cache: keyed models let a returned entity patch its occurrences across cached procedure results, while those results remain the source of truth. Separately, some GraphQL schemas model expected failures as members of a returned union. That is a schema-design pattern, not behavior GraphQL or Graphcache enforces. result-rpc makes those failures explicit in each procedure's <code>Result&lt;T, E&gt;</code>.</p>
           </div>
         </details>
 

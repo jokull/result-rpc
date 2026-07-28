@@ -16,7 +16,9 @@ export interface EncodedTaggedError<
  * Tagged errors cross the wire as {@link EncodedTaggedError} values and are
  * reified by their declared ErrorDefinition on the receiving side. The
  * private brand prevents a merely shape-compatible object from entering a
- * Result's error channel without an explicit unsafe cast.
+ * Result's error channel without an explicit unsafe cast. A locally supplied
+ * standard `Error.cause` is deliberately non-enumerable and is not part of
+ * the encoded representation.
  */
 export abstract class TaggedError<
   Tag extends string = string,
@@ -30,7 +32,7 @@ export abstract class TaggedError<
   /** Transport eligibility inherited from the definition that created it. */
   readonly visibility: Visibility;
 
-  protected constructor(tag: Tag, data: Data, visibility: Visibility) {
+  protected constructor(tag: Tag, data: Data, visibility: Visibility, options?: ErrorOptions) {
     const message =
       data !== null &&
       typeof data === "object" &&
@@ -38,7 +40,7 @@ export abstract class TaggedError<
       typeof data.message === "string"
         ? data.message
         : tag;
-    super(message);
+    super(message, options);
     Object.setPrototypeOf(this, new.target.prototype);
     Object.defineProperty(this, "name", {
       value: tag,
@@ -144,8 +146,11 @@ export interface ErrorDefinition<
   Data extends WireValue,
   Visibility extends ErrorVisibility = ErrorVisibility,
 > {
+  /** The optional ErrorOptions retain a local cause; causes never cross the wire. */
   (
-    ...args: Record<never, never> extends Input ? [input?: Input] : [input: Input]
+    ...args: Record<never, never> extends Input
+      ? [input?: Input, options?: ErrorOptions]
+      : [input: Input, options?: ErrorOptions]
   ): TaggedError<Tag, Data, Visibility>;
   readonly tag: Tag;
   readonly codec: WireCodec<Input, Data>;
@@ -250,14 +255,17 @@ const createErrorDefinition = <
   }
 
   class DefinedTaggedError extends TaggedError<Tag, Data, Visibility> {
-    constructor(data: Data) {
-      super(options.tag, data, options.visibility);
+    constructor(data: Data, errorOptions?: ErrorOptions) {
+      super(options.tag, data, options.visibility, errorOptions);
       Object.freeze(this);
     }
   }
 
-  const instantiate = (data: Data): TaggedError<Tag, Data, Visibility> =>
-    new DefinedTaggedError(freezeWireValue(data));
+  const instantiate = (
+    data: Data,
+    errorOptions?: ErrorOptions,
+  ): TaggedError<Tag, Data, Visibility> =>
+    new DefinedTaggedError(freezeWireValue(data), errorOptions);
 
   const decodeUnsafe = (value: unknown): DecodeResult<TaggedError<Tag, Data, Visibility>> => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -303,7 +311,7 @@ const createErrorDefinition = <
     }
   };
 
-  const definition = ((input: Input = {} as Input) => {
+  const definition = ((input: Input = {} as Input, errorOptions?: ErrorOptions) => {
     const encoded = options.data.encode(input);
     if (!encoded.ok) {
       const details = encoded.issues
@@ -318,7 +326,7 @@ const createErrorDefinition = <
         `Invalid data for ${options.tag}: ${wireCheck.path ?? "data"} is not wire-serializable`,
       );
     }
-    return instantiate(encoded.value);
+    return instantiate(encoded.value, errorOptions);
   }) as unknown as ErrorDefinition<Tag, Input, Data, Visibility>;
 
   Object.defineProperties(definition, {

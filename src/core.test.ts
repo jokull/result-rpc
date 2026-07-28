@@ -146,6 +146,21 @@ describe("tagged errors", () => {
     if (decoded.ok) expect(NotFound.is(decoded.value)).toBe(true);
   });
 
+  test("retains a local cause without putting it on the wire", () => {
+    const cause = new Error("private database detail");
+    const value = NotFound({ id: "missing" }, { cause });
+
+    expect(value.cause).toBe(cause);
+    expect(Object.keys(value)).not.toContain("cause");
+    expect(JSON.stringify(value)).not.toContain("private database detail");
+    const encoded = serialize(value.toJSON());
+    expect(encoded.ok).toBe(true);
+    if (encoded.ok) expect(encoded.value).not.toContain("private database detail");
+    const decoded = NotFound.decode(value.toJSON());
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok) expect(decoded.value.cause).toBeUndefined();
+  });
+
   test("rejects invalid runtime input", () => {
     expect(() => NotFound({ id: 1 } as never)).toThrow("Invalid data");
   });

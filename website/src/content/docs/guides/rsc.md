@@ -41,11 +41,12 @@ imported straight into a server component, and the bundler turns it into a
 client reference rather than executing it on the server. That is the boundary
 working as designed.
 
-What you cannot do is _call_ its non-component exports on the server: a
-react-server environment will not evaluate a client module, so
-`createQueryRuntime` imported from `result-rpc/react` fails there. The cache
-runtime has no React dependency at all, so it ships as its own entry — import
-`createQueryRuntime` and its types from **`result-rpc/query`** in server code.
+The cache runtime has no React dependency, so it ships as its own entry.
+`createQueryRuntime` is intentionally **not exported** from
+`result-rpc/react`: importing it from a `"use client"` entry can compile yet
+fail when a React server evaluates the call. Import it and its types from
+**`result-rpc/query`** in server code, where the mistake is caught at the
+module boundary instead of on a production request.
 :::
 
 `cache()` (React's per-request memo) means every server component in one request

@@ -63,7 +63,6 @@ export type SubscriptionProcedureClientLike = ((
 ) => ResultSubscription<any, AnyTaggedError>) & { readonly $kind: "subscription" };
 
 import { createQueryRuntime } from "../query/runtime.js";
-export { createQueryRuntime };
 export { toResult } from "../query/runtime.js";
 export type {
   CreateQueryRuntimeOptions,
@@ -333,7 +332,8 @@ const pausePaginatedProjection = <TItem, TCursor, E extends AnyTaggedError>(
  * Observes a `.paginate()` procedure: one cache entry per list input, every
  * loaded page flattened into `rows` (deduplicated by entity identity),
  * `fetchNext()` to extend, `refetch()` to sequentially converge the whole
- * loaded window. Failures narrow and claim exactly like `useResultQuery`.
+ * loaded window. Ambient shells claim failures exactly like `useResultQuery`;
+ * use `Shell.usePaginatedQuery` when the return type should subtract them too.
  */
 export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProcedureClientLike>(
   procedure: TProcedureClient,
@@ -522,7 +522,6 @@ export const useResultSubscription = <TProcedureClient extends SubscriptionProce
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- encoded input and selected option values define observer identity
     [runtime, procedure, encodedInput.value, options.retry, options.retryDelayMs],
   );
-  useEffect(() => () => observer.close(), [observer]);
   const state = useSyncExternalStore(
     observer.subscribe,
     observer.getCurrentState,

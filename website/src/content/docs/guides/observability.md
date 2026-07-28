@@ -57,6 +57,11 @@ The wire stream is redaction-safe by construction: events carry paths, tags,
 durations, owners — never inputs or outputs — so forwarding it verbatim to a
 third-party tracker is not a data decision.
 
+`onEvent` is a synchronous observation tap, so keep adapters small and move
+expensive delivery off the call path. React subscriptions do not open during
+render: the stream starts when the observer subscribes after commit, including
+under StrictMode.
+
 For inline observation of a single Result, the tap combinators return the
 original value unchanged:
 

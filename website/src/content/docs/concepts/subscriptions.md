@@ -57,3 +57,6 @@ responses.
 
 Subscriptions currently run over the streaming HTTP transport; SSE resume
 (`Last-Event-ID`) is deliberately deferred until a real deployment demands it.
+Both `fetchTransport` and `batchFetchTransport` implement this streaming path;
+the latter batches unary calls while opening subscriptions as individual
+streams. Use the same client instance for both.

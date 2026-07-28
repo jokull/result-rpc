@@ -482,7 +482,7 @@ const authenticated = app
     const user = await context.auth.user();
 
     if (!user) {
-      return err(errors.Unauthorized({}));
+      return err(errors.Unauthorized());
     }
 
     return next({
@@ -598,7 +598,7 @@ const requireViewer = app
   .errors({ Unauthorized })
   .use(({ context, errors, next }) =>
     context.viewer === null
-      ? err(errors.Unauthorized({}))
+      ? err(errors.Unauthorized())
       : next({ context: { ...context, viewer: context.viewer } }),
   );
 ```
@@ -708,6 +708,10 @@ const result = await client.doc.byId({ id: "doc_123" });
 Calls issued in the same microtask share one HTTP request. Every batch item
 keeps its own status, decoder, rich-value envelope, and tagged Result. Use
 `fetchTransport` when batching is not wanted; the client API is unchanged.
+The outer batch response is HTTP 200; each item's domain status remains in its
+protocol entry and server observability event. `batchFetchTransport` also
+implements subscription streaming, so unary and streaming calls use the same
+client instance.
 
 The direct client is the honest base: it always resolves the complete union.
 Narrowing is a property of where a call is _rendered_, and the direct client
@@ -1263,7 +1267,7 @@ The server half derives from it:
 // server
 const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
   const user = await context.auth.user();
-  return user ? ok(user) : err(errors.Unauthorized({}));
+  return user ? ok(user) : err(errors.Unauthorized());
 });
 // Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
 
@@ -1322,7 +1326,7 @@ export const ViewerLayer = SessionLayer.require({
   name: "viewer",
   provides: UserCodec, // the narrowed value
   errors: { Unauthorized }, // the union the refinement contributes
-  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized({})) : ok(value)),
+  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized()) : ok(value)),
 });
 ```
 
@@ -1597,6 +1601,13 @@ entities patch by identity. There are no heuristics and no schema walking —
 **an inline `wire.object` collects nothing, silently**; composing outputs
 from model views is the one discipline this asks of query writers.
 
+Here, **projection names the declared wire shape, not a mapper**. Model views
+are strict codecs: `Doc.pick("id", "title")` rejects a value that also contains
+`privateNotes`; it does not silently strip that field. Select or map the exact
+shape before returning it. TypeScript can accept a wider variable through
+structural assignability, while the runtime codec intentionally rejects it so
+accidental fields cannot cross unnoticed.
+
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are
 subsets). Fields the mutation didn't return stay stale-until-refetch —
@@ -1706,7 +1717,7 @@ over-modeling is bounded by the context-free rule. Relationships are never
 declared — they live in each query's output shape, discovered per result by
 walking, so there is no relation schema to keep in sync.
 
-And when the database is Drizzle, the dual-model tax disappears entirely:
+When the database is Drizzle, a model can derive directly from its table:
 
 ```ts
 import { modelFromDrizzle } from "result-rpc/drizzle";
@@ -1728,6 +1739,14 @@ admin — reborn at the wire: table → model → `pick()` → output codec →
 client cache identity, one schema walking the whole chain through the type
 checker. (`drizzle-orm` >= 1.0,
 optional peer, imported only by the `result-rpc/drizzle` subpath.)
+
+That is a bundle tradeoff, not free code generation: a shared contract using
+this model also imports the Drizzle table metadata into the browser build.
+The `columns` allowlist protects RPC values, not bundled schema identifiers.
+For a strict client boundary, keep a manual `defineModel` in the contract and
+use `modelFromDrizzle` in a server-only module as a bidirectional type-parity
+check. The [Drizzle guide](https://result-rpc.com/guides/drizzle) shows both
+modes.
 
 `examples/08-bookings/NOTES.md` applies these rules to real-world
 shapes — a four-level relational tree, locale-variant content under a
@@ -1875,6 +1894,9 @@ responses.
 
 Subscriptions currently run over the streaming HTTP transport; SSE resume
 (`Last-Event-ID`) is deliberately deferred until a real deployment demands it.
+Both `fetchTransport` and `batchFetchTransport` implement the stream; the
+latter still opens each subscription individually. Keep one client instance
+for unary and streaming calls.
 
 ## Retry policy follows the tag
 
@@ -2045,6 +2067,8 @@ therefore absent.
 
 ```tsx
 // Server
+import { createQueryRuntime } from "result-rpc/query";
+
 const runtime = createQueryRuntime({ client: serverClient });
 
 await runtime.prefetch(serverClient.doc.byId, { id });
@@ -2166,6 +2190,10 @@ createFetchHandler({
 The wire stream is redaction-safe by construction: events carry paths, tags,
 durations, owners — never inputs or outputs — so forwarding it verbatim to a
 third-party tracker is not a data decision.
+
+`onEvent` fires synchronously, so adapters should stay small. React
+subscriptions open after commit rather than during render, including under
+StrictMode.
 
 For inline observation of a single Result, the tap combinators return the
 original value unchanged:

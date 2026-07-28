@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ok, rpc, wire } from "../index.js";
 import { createBrowserClient } from "../client/client.js";
-import { fetchTransport } from "../client/transport.js";
+import { fetchTransport, isCancelled } from "../client/transport.js";
 import { createFetchHandler } from "./index.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,8 +45,48 @@ describe("caller-lifetime signals reach handlers", () => {
     expect(seen.abortedDuring).toBe(true);
   });
 
+  test("an abort rejection is cancellation, not an internal incident", async () => {
+    const incidents: unknown[] = [];
+    const app = rpc.context<{}>();
+    const router = app.router({
+      slow: app
+        .procedure()
+        .input(wire.object({}))
+        .output(wire.string)
+        .query(async ({ signal }) => {
+          await new Promise<never>((_resolve, reject) => {
+            const rejectAbort = () => reject(new DOMException("aborted", "AbortError"));
+            if (signal.aborted) rejectAbort();
+            else signal.addEventListener("abort", rejectAbort, { once: true });
+          });
+          return ok("unreachable");
+        }),
+    });
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onInternalError: (event) => incidents.push(event),
+    });
+    const client = createBrowserClient({
+      router,
+      transport: fetchTransport({
+        url: "https://x.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          handler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const controller = new AbortController();
+    const pending = client.slow({}, { signal: controller.signal }).catch((cause) => cause);
+    await sleep(20);
+    controller.abort();
+    expect(isCancelled(await pending)).toBe(true);
+    await sleep(20);
+    expect(incidents).toEqual([]);
+  });
+
   test("a subscription generator's signal aborts and finally runs on client disconnect", async () => {
     const lifecycle: string[] = [];
+    const incidents: unknown[] = [];
     const app = rpc.context<{}>();
     const contract = app.procedure().input(wire.object({})).output(wire.string).subscription();
     const events = app.implement(contract).stream(async function* ({ signal }) {
@@ -72,7 +112,11 @@ describe("caller-lifetime signals reach handlers", () => {
       }
     });
     const router = app.router({ events });
-    const handler = createFetchHandler({ router, createContext: () => ({}) });
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onInternalError: (event) => incidents.push(event),
+    });
     const client = createBrowserClient({
       router,
       transport: fetchTransport({
@@ -91,5 +135,6 @@ describe("caller-lifetime signals reach handlers", () => {
     // the gate resolves on abort (resumed), the producer parks at its next
     // yield, and the framework closes it — finally always runs
     expect(lifecycle).toEqual(["signal-aborted", "resumed", "finally"]);
+    expect(incidents).toEqual([]);
   });
 });

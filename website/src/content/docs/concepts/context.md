@@ -75,7 +75,7 @@ const requireViewer = app
   .errors({ Unauthorized })
   .use(({ context, errors, next }) =>
     context.viewer === null
-      ? err(errors.Unauthorized({}))
+      ? err(errors.Unauthorized())
       : next({ context: { ...context, viewer: context.viewer } }),
   );
 ```

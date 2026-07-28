@@ -18,6 +18,11 @@ const PublicWithoutStatus = error({
   tag: "value/no-http-status",
 });
 
+const StreamDenied = error({
+  tag: "stream/denied",
+  httpStatus: 401,
+});
+
 const r = rpc.context<{}>();
 
 const boom = r
@@ -49,7 +54,16 @@ const noHttpStatus = r
   .errors({ PublicWithoutStatus })
   .query(() => err(PublicWithoutStatus()));
 
-const router = r.router({ boom, leakyPrivate, fine, noHttpStatus });
+const deniedStreamContract = r
+  .procedure()
+  .output(wire.string)
+  .errors({ StreamDenied })
+  .subscription();
+const deniedStream = r.implement(deniedStreamContract).stream(async function* () {
+  yield err(StreamDenied());
+});
+
+const router = r.router({ boom, leakyPrivate, fine, noHttpStatus, deniedStream });
 
 const post = (path: string, input: unknown) => {
   const encoded = serialize({ v: 1, path, input });
@@ -111,6 +125,30 @@ describe("fetch handler wire boundary", () => {
     expect(response.status).toBe(404);
     expect(text).toContain("procedure-not-found");
     expect(text).not.toContain("inc_");
+  });
+
+  test("a declared subscription error reaches onError with its projected status", async () => {
+    const observed: Array<{
+      readonly tag: string;
+      readonly path?: string;
+      readonly status: number;
+    }> = [];
+    const observedHandler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onError: ({ error: failure, procedurePath, httpStatus }) =>
+        observed.push({
+          tag: failure._tag,
+          ...(procedurePath === undefined ? {} : { path: procedurePath }),
+          status: httpStatus,
+        }),
+    });
+    const response = await observedHandler(post("deniedStream", {}));
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(text).toContain("stream/denied");
+    expect(observed).toEqual([{ tag: "stream/denied", path: "deniedStream", status: 401 }]);
   });
 });
 

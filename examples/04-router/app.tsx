@@ -24,12 +24,12 @@ import {
 import { errorCatalog } from "../../src/index.js";
 import {
   boundaryShells,
-  createQueryRuntime,
   defineShell,
   layerShell,
   ResultRpcProvider,
   useResultClient,
 } from "../../src/react/index.js";
+import { createQueryRuntime } from "../../src/query/runtime.js";
 import type { QueryRuntime } from "../../src/react/index.js";
 import {
   SessionLayer,

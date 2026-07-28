@@ -154,7 +154,7 @@ interface QueryControls<T, E extends AnyTaggedError> {
   readonly failureCount: number;
   readonly isStale: boolean;
   readonly updatedAt: number;
-  refetch(): Promise<QueryState<T, E>>;
+  readonly refetch: () => Promise<QueryState<T, E>>;
 }
 
 export type QueryState<T, E extends AnyTaggedError> =
@@ -187,10 +187,10 @@ export interface QueryOptions<E extends AnyTaggedError> {
 
 export interface ResultQueryObserver<T, E extends AnyTaggedError> {
   readonly key: ResultQueryKey;
-  getCurrentState(): QueryState<T, E>;
-  subscribe(listener: () => void): () => void;
-  refetch(): Promise<QueryState<T, E>>;
-  destroy(): void;
+  readonly getCurrentState: () => QueryState<T, E>;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly refetch: () => Promise<QueryState<T, E>>;
+  readonly destroy: () => void;
 }
 
 interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
@@ -203,9 +203,9 @@ interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
   readonly hasNext: boolean;
   readonly fetchingNext: boolean;
   /** Sequentially refetches EVERY loaded page — the whole list converges. */
-  refetch(): Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly refetch: () => Promise<PaginatedState<TItem, TCursor, E>>;
   /** Loads the next page; a no-op while already fetching or exhausted. */
-  fetchNext(): Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly fetchNext: () => Promise<PaginatedState<TItem, TCursor, E>>;
 }
 
 /**
@@ -237,18 +237,18 @@ export type PaginatedState<TItem, TCursor, E extends AnyTaggedError> =
 
 export interface ResultPaginatedObserver<TItem, TCursor, E extends AnyTaggedError> {
   readonly key: ResultQueryKey;
-  getCurrentState(): PaginatedState<TItem, TCursor, E>;
-  subscribe(listener: () => void): () => void;
-  refetch(): Promise<PaginatedState<TItem, TCursor, E>>;
-  fetchNext(): Promise<PaginatedState<TItem, TCursor, E>>;
-  destroy(): void;
+  readonly getCurrentState: () => PaginatedState<TItem, TCursor, E>;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly refetch: () => Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly fetchNext: () => Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly destroy: () => void;
 }
 
 interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
   readonly variables?: TInput;
-  mutate(input: TInput): Promise<Result<TOutput, TError>>;
-  cancel(): void;
-  reset(): void;
+  readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+  readonly cancel: () => void;
+  readonly reset: () => void;
 }
 
 export type MutationState<TInput, TOutput, TError extends AnyTaggedError> =
@@ -348,12 +348,12 @@ export interface QueryCache {
 }
 
 export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTaggedError> {
-  getCurrentState(): MutationState<TInput, TOutput, TError>;
-  subscribe(listener: () => void): () => void;
-  mutate(input: TInput): Promise<Result<TOutput, TError>>;
-  cancel(): void;
-  reset(): void;
-  destroy(): void;
+  readonly getCurrentState: () => MutationState<TInput, TOutput, TError>;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+  readonly cancel: () => void;
+  readonly reset: () => void;
+  readonly destroy: () => void;
 }
 
 export type SubscriptionConnection = "connecting" | "open" | "reconnecting" | "paused" | "closed";
@@ -367,15 +367,15 @@ export interface SubscriptionState<T, E extends AnyTaggedError> {
   readonly connection: SubscriptionConnection;
   readonly result: Result<T, E> | undefined;
   readonly eventCount: number;
-  reconnect(): void;
-  close(): void;
+  readonly reconnect: () => void;
+  readonly close: () => void;
 }
 
 export interface ResultSubscriptionObserver<T, E extends AnyTaggedError> {
-  getCurrentState(): SubscriptionState<T, E>;
-  subscribe(listener: () => void): () => void;
-  reconnect(): void;
-  close(): void;
+  readonly getCurrentState: () => SubscriptionState<T, E>;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly reconnect: () => void;
+  readonly close: () => void;
 }
 
 const definitionFor = (
@@ -1457,26 +1457,44 @@ export const createQueryRuntime = <TClient>(
       const close = () => {
         generation += 1;
         if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
         removeOnlineListener?.();
         removeOnlineListener = undefined;
         currentStream?.close();
+        currentStream = undefined;
         state = { ...state, connection: "closed" };
         notify();
       };
       const connect = (reset = true, failureCount = 0) => {
         generation += 1;
+        if (retryTimer !== undefined) clearTimeout(retryTimer);
+        retryTimer = undefined;
         removeOnlineListener?.();
         removeOnlineListener = undefined;
         const activeGeneration = generation;
         currentStream?.close();
+        currentStream = undefined;
         state = {
-          connection: "connecting",
+          connection: getOnlineSnapshot() ? "connecting" : "paused",
           result: reset ? undefined : state.result,
           eventCount: reset ? 0 : state.eventCount,
           reconnect: connect,
           close,
         };
         notify();
+        // Connectivity is cause-side information: while the browser says it
+        // is offline, opening a stream can only manufacture a known failure
+        // and burn a request. Pause before transport and resume once online.
+        if (!getOnlineSnapshot()) {
+          const unsubscribe = subscribeConnectivity((event) => {
+            if (event !== "online") return;
+            unsubscribe();
+            removeOnlineListener = undefined;
+            connect(false, failureCount);
+          });
+          removeOnlineListener = unsubscribe;
+          return;
+        }
         currentStream = procedure(input) as ResultSubscription<TOutput, TError>;
         void (async () => {
           try {
@@ -1551,12 +1569,19 @@ export const createQueryRuntime = <TClient>(
         reconnect: connect,
         close,
       };
-      connect();
       return {
         getCurrentState: () => state,
         subscribe: (listener) => {
+          const shouldConnect = listeners.size === 0;
           listeners.add(listener);
-          return () => listeners.delete(listener);
+          // Starting a network stream is an effect, not render work. This
+          // also means React StrictMode can discard a render-created observer
+          // without leaking a request from an object that never committed.
+          if (shouldConnect) connect();
+          return () => {
+            listeners.delete(listener);
+            if (listeners.size === 0) close();
+          };
         },
         reconnect: connect,
         close,

@@ -16,7 +16,11 @@ import {
 import { createBrowserClient, type ClientErrors } from "../src/client/index.js";
 import { createServerClient } from "../src/server/index.js";
 import { defineModel } from "../src/model.js";
-import { createQueryRuntime, type QueryState } from "../src/react/index.js";
+import { type PaginatedState, type QueryState } from "../src/react/index.js";
+import { createQueryRuntime } from "../src/query/runtime.js";
+// @ts-expect-error the React entry is `use client`; runtime construction belongs to result-rpc/query
+import { createQueryRuntime as unsafeReactRuntime } from "../src/react/index.js";
+void unsafeReactRuntime;
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
 import {
   defectErrors,
@@ -188,11 +192,18 @@ const subscriptionContract = r
   .output(wire.string)
   .errors({ Missing })
   .subscription();
+const paginatedContract = r
+  .procedure()
+  .input(wire.object({ q: wire.string }))
+  .output(wire.string)
+  .errors({ Missing })
+  .paginate({ cursor: wire.string });
 const contract = r.contract({
   example: {
     procedure: contractProcedure,
     mutation: mutationContract,
     subscription: subscriptionContract,
+    paginated: paginatedContract,
   },
 });
 const client = createBrowserClient({
@@ -302,6 +313,16 @@ type ShellError = Extract<ShellState, { readonly state: "failure" }>["error"];
 // the procedure declares survives into the component.
 export type _ShellSubtractsExactlyTheClaimedTags = Assert<
   Equal<ShellError, ReturnType<typeof Missing>>
+>;
+
+declare const useShellPaginated: typeof AuthShell.usePaginatedQuery;
+type ShellPaginatedState = ReturnType<typeof useShellPaginated<typeof client.example.paginated>>;
+type ShellPaginatedError = Extract<ShellPaginatedState, { readonly state: "failure" }>["error"];
+export type _PaginatedShellSubtractsExactlyTheClaimedTags = Assert<
+  Equal<ShellPaginatedState, PaginatedState<string, string, ReturnType<typeof Missing>>>
+>;
+export type _PaginatedShellErrorIsNarrow = Assert<
+  Equal<ShellPaginatedError, ReturnType<typeof Missing>>
 >;
 
 // The chain accumulates: the innermost layer sees its parents' claims too.

@@ -62,6 +62,7 @@ const streamProcedureResponse = (
   path: string,
   callerSignal: AbortSignal,
   onInternalError?: (event: InternalErrorEvent) => void,
+  onError?: (failure: AnyTaggedError, httpStatus: number) => void,
 ): Response => {
   // The generator's lifetime signal: aborts when the request aborts (client
   // disconnected) or when the response stream is cancelled — so a handler
@@ -78,10 +79,16 @@ const streamProcedureResponse = (
   })[Symbol.asyncIterator]();
   const encoder = new TextEncoder();
   let sequence = 0;
+  let settled = false;
+  const detachCaller = () => callerSignal.removeEventListener("abort", abortLifetime);
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
+      if (settled) return;
       try {
         const next = await iterator.next();
+        // cancel() may have run while the producer was awaiting upstream IO.
+        // A closed ReadableStream controller must never receive another frame.
+        if (settled || lifetime.signal.aborted) return;
         let frame;
         if (next.done) {
           frame = { v: PROTOCOL_VERSION, seq: sequence++, done: true as const };
@@ -95,6 +102,7 @@ const streamProcedureResponse = (
             response: { v: PROTOCOL_VERSION, ok: true as const, value: output.value },
           };
         } else {
+          onError?.(next.value.error, statusForError(procedure, next.value.error));
           frame = {
             v: PROTOCOL_VERSION,
             seq: sequence++,
@@ -109,8 +117,15 @@ const streamProcedureResponse = (
         const encoded = serialize(frame, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
         if (!encoded.ok) throw new TypeError("Unable to encode subscription frame");
         controller.enqueue(encoder.encode(`${encoded.value}\n`));
-        if (next.done || !next.value.ok) controller.close();
+        if (next.done || !next.value.ok) {
+          settled = true;
+          detachCaller();
+          controller.close();
+        }
       } catch (cause) {
+        if (settled || lifetime.signal.aborted) return;
+        settled = true;
+        detachCaller();
         const incidentId = `inc_${crypto.randomUUID()}`;
         onInternalError?.({ incidentId, phase: "handler", cause, procedurePath: path });
         const encoded = serialize({
@@ -128,6 +143,9 @@ const streamProcedureResponse = (
       }
     },
     async cancel() {
+      if (settled) return;
+      settled = true;
+      detachCaller();
       abortLifetime();
       await iterator.return?.(undefined as never);
     },
@@ -249,10 +267,12 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
   /**
    * Observability tap for every declared error that crosses the wire —
    * domain errors, bad requests, and sanitized internals alike. Receives the
-   * error value plus its policy and the HTTP adapter's actual response status,
+   * error value plus its policy and the operation's HTTP status projection,
    * so one hook feeds
    * metrics and logging without re-deriving anything. Defects additionally
-   * fire `onInternalError` with the full cause.
+   * fire `onInternalError` with the full cause. Batch and streaming envelopes
+   * can remain HTTP 200 while this event carries the individual operation's
+   * projected status.
    */
   readonly onError?: (event: ErrorResponseEvent) => void;
   /**
@@ -363,6 +383,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           envelope.path,
           request.signal,
           options.onInternalError,
+          (failure, status) => notify(failure, status, envelope.path),
         );
       }
     }

@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { createTodoHandler, memoryStore } from "./server.js";
 import { BoundaryProvider, makeTodoClient, TodoApp, TodoList } from "./ui.js";
-import { createQueryRuntime, ResultRpcProvider } from "../../src/react/index.js";
+import { ResultRpcProvider } from "../../src/react/index.js";
+import { createQueryRuntime } from "../../src/query/runtime.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
