@@ -56,6 +56,24 @@ because structural assignability permits extra properties, but the runtime
 codec deliberately does not — otherwise accidental fields could cross the
 wire unnoticed.
 
+When a model mirrors part of an upstream row or domain type, attach a
+compile-time drift proof without importing that source at runtime:
+
+```ts
+import type { docs } from "../server/schema.js";
+
+export const Doc = defineModel("doc", {
+  key: "id",
+  shape: { id: wire.string, title: wire.string },
+}).$satisfies<typeof docs.$inferSelect>();
+```
+
+Every model field must exist in the source with the same type and
+nullability; extra source fields are allowed and remain outside the wire
+contract. `$satisfies<Source>()` works with any source type and returns the
+same model. The type-only import is erased, so the source module does not
+enter the client graph.
+
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are
 subsets). Fields the mutation didn't return stay stale-until-refetch —
@@ -210,13 +228,12 @@ Be clear-eyed about what this buys: **selection is not authorization.** Picking
 is looking. What it guarantees is that every widening is a local, visible,
 reviewable act instead of an invisible consequence of an edit somewhere else.
 
-Two supporting properties make the guarantee hold end to end. With the
-[Drizzle bridge](/guides/drizzle/) there are two allowlists, and they answer
-different questions — `columns:` on the model asks _may this column ever leave
-the database_ (`passwordHash`: never, anywhere), while `.pick()` at the output
-asks _does this endpoint ship it_. And at the cache layer, a patch only
-overwrites keys a row **already holds**, so a mutation returning `UserSelf`
-cannot add coordinates to a cached `UserCard` row.
+Two supporting properties make the guarantee hold end to end. The explicit
+model shape asks _may this field ever cross the wire_; `.pick()` at the output
+asks _does this endpoint ship it_. An optional `$satisfies<Source>()` proof
+catches upstream type drift without widening either allowlist. At the cache
+layer, a patch only overwrites keys a row **already holds**, so a mutation
+returning `UserSelf` cannot add coordinates to a cached `UserCard` row.
 
 ## When to mint a model (and when never to)
 

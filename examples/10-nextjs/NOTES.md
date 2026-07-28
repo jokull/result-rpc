@@ -188,9 +188,9 @@ reference genuinely survives minification and the grep proves something.
 Additional greps over `.next/static/`, all **0 files**: `better-sqlite3`,
 `node:fs`, `spots.sqlite`, `INSERT INTO spots`, `tryDb`, `createFetchHandler`.
 
-One client chunk does mention `drizzle`: `modelFromDrizzle` reads table metadata
-from the `drizzle-orm/sqlite-core` _builders_, which are browser-safe by design.
-The driver is not in the graph.
+No client chunk contains Drizzle: the model checks
+`typeof spots.$inferSelect` through a type-only import, which is erased before
+bundling. The table builder and driver are not in the graph.
 
 ## FRICTION log
 

@@ -1,6 +1,6 @@
 ---
 name: result-rpc
-description: Build type-safe RPC between a server and a React app with result-rpc — one Result<T,E> and one wire-safe tagged-error union per procedure, error-owning React shells, a normalized entity cache, Drizzle-derived models, cursor pagination, and offline handling. Use when working in a project that depends on `result-rpc`, defining contracts/routers/procedures, wiring the browser client, writing hooks (useResultQuery/useResultMutation/useResultPaginatedQuery/useResultSubscription), boundaryShells, entity models, or migrating from tRPC.
+description: Build type-safe RPC between a server and a React app with result-rpc — one Result<T,E> and one wire-safe tagged-error union per procedure, error-owning React shells, a normalized entity cache, source-checked models, cursor pagination, and offline handling. Use when working in a project that depends on `result-rpc`, defining contracts/routers/procedures, wiring the browser client, writing hooks (useResultQuery/useResultMutation/useResultPaginatedQuery/useResultSubscription), boundaryShells, entity models, or migrating from tRPC.
 ---
 
 # result-rpc

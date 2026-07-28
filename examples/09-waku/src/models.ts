@@ -1,16 +1,22 @@
 /**
- * Entity models (derived from the Drizzle table) and the one-off wire
+ * Entity models (checked against the Drizzle row type) and the one-off wire
  * shapes around them. The Spot model is what makes the whole demo tick:
  * every feed row, the detail view, and the like-mutation output are the
  * SAME entity, so one mutation patches all of them in place.
  */
-import { modelFromDrizzle } from "result-rpc/drizzle";
-import { wire, type InputOf, type ModelValue } from "result-rpc";
-import { spots } from "./schema.js";
+import { defineModel, wire, type InputOf, type ModelValue } from "result-rpc";
+import type { spots } from "./schema.js";
 
-export const Spot = modelFromDrizzle("spot", spots, {
-  columns: ["id", "name", "city", "description", "likes"],
-});
+export const Spot = defineModel("spot", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    name: wire.string,
+    city: wire.string,
+    description: wire.string,
+    likes: wire.number,
+  },
+}).$satisfies<typeof spots.$inferSelect>();
 export type SpotRow = ModelValue<typeof Spot>;
 
 /**

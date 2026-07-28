@@ -155,7 +155,7 @@ const rotateSession = app
 ### Why declare it instead of just writing it
 
 The declaration is recorded in the contract, which means a transport knows
-*before dispatch* that this call's response headers cannot be sent early.
+_before dispatch_ that this call's response headers cannot be sent early.
 
 That matters because batching and streaming pull in opposite directions. A
 streamed batch sends its headers first and its results as they arrive — which

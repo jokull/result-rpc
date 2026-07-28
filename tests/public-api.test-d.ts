@@ -687,6 +687,26 @@ const ScopedUser = defineModel("scoped-user", {
   },
 });
 
+interface SourceUserRow {
+  readonly id: string;
+  readonly name: string;
+  readonly latestLat: number;
+  readonly privateMemo: string;
+}
+
+// Extra source fields are allowed; the assertion returns the same model type.
+const SatisfiedScopedUser = ScopedUser.$satisfies<SourceUserRow>();
+export type _SatisfiedModelKeepsItsDefinition = Assert<
+  Equal<typeof SatisfiedScopedUser, typeof ScopedUser>
+>;
+
+// @ts-expect-error — a model field is absent from the source.
+ScopedUser.$satisfies<Omit<SourceUserRow, "name">>();
+// @ts-expect-error — source nullability and model nullability disagree.
+ScopedUser.$satisfies<Omit<SourceUserRow, "name"> & { readonly name: string | null }>();
+// @ts-expect-error — compatibility is exact in both directions, not merely assignable.
+ScopedUser.$satisfies<Omit<SourceUserRow, "name"> & { readonly name: "Jökull" }>();
+
 // @ts-expect-error — `codec` is not on the model surface: pick/select/all only.
 const _noBlanketCodec = ScopedUser.codec;
 

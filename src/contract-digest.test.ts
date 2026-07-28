@@ -92,7 +92,10 @@ describe("contractDigest", () => {
     // Skew on this flag is exactly the failure the declaration exists to
     // prevent: a client batching a header-writing call as if it were not one.
     const without = app.router({
-      login: app.procedure().output(wire.string).mutation(() => ok("ok")),
+      login: app
+        .procedure()
+        .output(wire.string)
+        .mutation(() => ok("ok")),
     });
     const with_ = app.router({
       login: app

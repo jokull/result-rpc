@@ -796,15 +796,18 @@ offline (runtime retry default and the direct client's
 `retry: "from-error-policy"` path), and focus-triggered shell resumes have a
 5s cooldown so repeated alt-tabbing at a downed server cannot storm it.
 
-### Schema-first derivation (a pillar, not an adapter)
+### Explicit wire models with source proofs
 
-Committed direction: when the app owns its schema through Drizzle, the
-schema is the single source of truth and result-rpc derives downstream —
-Django's `models.py` move at the wire boundary. `result-rpc/drizzle` ships
-`modelFromDrizzle` (models from tables; mandatory column allowlist;
-explicit composite keys) and `tryDb` (the Result-typed query door: driver
-constraint codes as private `db/*` composition currency, collapsed to
-declared domain tags at the boundary).
+The wire contract remains an explicit, browser-safe value. A model may call
+`.$satisfies<Source>()` to prove that its selected fields exactly match any
+upstream row or domain type while allowing private source fields to remain
+absent. The source arrives through a type-only import: it catches drift but
+cannot pull a database schema into a client graph or silently widen the wire.
+
+Database failures are a separate concern. `result-rpc/db` ships `tryDb`, an
+ORM-independent Result boundary that recognizes common driver constraint
+codes as private `db/*` composition currency, collapsed to declared domain
+tags at the procedure boundary.
 
 Derivations deliberately NOT taken, evaluated against doctrine:
 
@@ -911,7 +914,7 @@ after that point would vanish.
 
 tRPC is the worked example. Its `ctx.resHeaders` and our `context.headers` are
 the same mechanism, and its non-streaming path has the same ordering we do. But
-`httpBatchStreamLink` returns `new Response(stream, { headers })` *before*
+`httpBatchStreamLink` returns `new Response(stream, { headers })` _before_
 awaiting the calls, so header writes inside a procedure mutate a `Headers` the
 response has already copied. No error, no warning — swapping the link silently
 breaks every cookie set from a mutation, which is why `responseMeta` exists and
@@ -926,7 +929,7 @@ error rather than a runtime surprise. The flag is part of the contract digest,
 because a client and server disagreeing about it would resurrect the dropped
 cookie across a deploy.
 
-What this buys: a transport can decide *before dispatch* how a call may be
+What this buys: a transport can decide _before dispatch_ how a call may be
 batched. If a streaming batch is ever added, calls declaring `writesHeaders`
 are excluded from it by a static fact instead of a convention.
 

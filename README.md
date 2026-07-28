@@ -1717,36 +1717,39 @@ over-modeling is bounded by the context-free rule. Relationships are never
 declared — they live in each query's output shape, discovered per result by
 walking, so there is no relation schema to keep in sync.
 
-When the database is Drizzle, a model can derive directly from its table:
+An explicit model can prove that it still matches any upstream row type:
 
 ```ts
-import { modelFromDrizzle } from "result-rpc/drizzle";
+import type { hotels, tourContent } from "./schema.js";
 
-export const Hotel = modelFromDrizzle("hotel", hotels, {
-  columns: ["id", "name", "phone", "city"], // mandatory allowlist
-});
-export const TourContent = modelFromDrizzle("tour-content", tourContent, {
-  columns: ["id", "locale", "title"],
-  key: ["id", "locale"], // composite PKs named explicitly
-});
+export const Hotel = defineModel("hotel", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    name: wire.string,
+    phone: wire.string,
+    city: wire.string,
+  },
+}).$satisfies<typeof hotels.$inferSelect>();
+
+export const TourContent = defineModel("tour-content", {
+  key: ["id", "locale"],
+  shape: {
+    id: wire.string,
+    locale: wire.union([wire.literal("en"), wire.literal("ja")] as const),
+    title: wire.string,
+  },
+}).$satisfies<typeof tourContent.$inferSelect>();
 ```
 
-Shape, types, and key derive from the same schema your migrations already
-maintain — the model cannot drift from the database, and `pick()` is
-Drizzle's `columns:` subset with an identity attached. This is Django's
-single-source-of-truth move — `models.py` deriving forms, serializers, and
-admin — reborn at the wire: table → model → `pick()` → output codec →
-client cache identity, one schema walking the whole chain through the type
-checker. (`drizzle-orm` >= 1.0,
-optional peer, imported only by the `result-rpc/drizzle` subpath.)
-
-That is a bundle tradeoff, not free code generation: a shared contract using
-this model also imports the Drizzle table metadata into the browser build.
-The `columns` allowlist protects RPC values, not bundled schema identifiers.
-For a strict client boundary, keep a manual `defineModel` in the contract and
-use `modelFromDrizzle` in a server-only module as a bidirectional type-parity
-check. The [Drizzle guide](https://result-rpc.com/guides/drizzle) shows both
-modes.
+`$satisfies<Source>()` allows extra source fields but requires every model
+field to exist with exactly the same TypeScript type and nullability. It
+returns the same model and performs no runtime reflection. The type-only
+schema import is erased, so Drizzle, table metadata, and private column names
+never enter the browser graph. The model remains the reviewed public wire
+allowlist; the source type only catches drift. The
+[Drizzle guide](https://result-rpc.com/guides/drizzle) applies the pattern to
+Drizzle's `$inferSelect`, but the assertion works with any source type.
 
 `examples/08-bookings/NOTES.md` applies these rules to real-world
 shapes — a four-level relational tree, locale-variant content under a
@@ -2353,9 +2356,9 @@ with its own tests:
    composite `["id","locale"]` key, `min()` aggregates that stay
    query-relative while the entity inside them patches, derived summaries
    on `.affects`, and record-key `touch` deletes — every claim pinned by
-   per-procedure request counters. Models are DERIVED from the tables via
-   `result-rpc/drizzle` (`modelFromDrizzle` — 13 lines for four models);
-   `tryDb` turns constraint violations into domain errors (the insert IS the
+   per-procedure request counters. Models are explicit client-safe contracts
+   checked against Drizzle row types with `$satisfies<Source>()`;
+   `result-rpc/db`'s `tryDb` turns constraint violations into domain errors (the insert IS the
    uniqueness check); one `users.rename` request patches four surfaces
    across two paginated feeds. Its `NOTES.md` carries the
    model-vs-pick-vs-one-off decision table and the cost ledger against

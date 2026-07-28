@@ -18,7 +18,7 @@ export const orders = sqliteTable("orders", {
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  /** Nullable on purpose: the derived model maps it to `string | null`. */
+  /** Nullable on purpose: the model proof requires `string | null`. */
   avatarUrl: text("avatar_url"),
 });
 
@@ -81,7 +81,7 @@ export const tourContent = sqliteTable(
   "tour_content",
   {
     id: text("id").notNull(),
-    /** Enum column: the derived model turns this into a literal union. */
+    /** Enum column: the model proof pins the same literal union. */
     locale: text("locale", { enum: ["en", "ja"] }).notNull(),
     title: text("title").notNull(),
     summary: text("summary").notNull(),

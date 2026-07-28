@@ -5,27 +5,27 @@ a four-level relational tree with column subsets at every level, localized
 content under composite keys, offset-paginated feeds, aggregates relative to
 the query input, and derived summaries — against a **real database** (Drizzle
 ORM 1.0 over bun:sqlite, raw DDL at seed time, no drizzle-kit). And that what
-entities buy (free client state updates) is worth what they cost — a cost
-round two collapsed further by deriving every model from the Drizzle table it
-mirrors (`result-rpc/drizzle`). Every claim is pinned by a per-procedure
-request counter, not a screenshot.
+entities buy (free client state updates) is worth what they cost. Every model
+is an explicit browser-safe wire contract checked against its Drizzle select
+type with `$satisfies<Source>()`; every runtime claim is pinned by a
+per-procedure request counter, not a screenshot.
 
 ## Every output shape, and why each node is what it is
 
 | Output node                                                    | Declared as                                              | Why                                                                                                                                                                                                                                                                                       |
 | -------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `orders.list` row wrapper `{ order, bookedBy, lineItems }`     | one-off `wire.object`                                    | The _pairing_ is query shape, not a fact about anything. Inline objects collect no identity — deliberately.                                                                                                                                                                               |
-| `order`                                                        | `Order.codec` (model, derived)                           | `id`/`email`/`note` are context-free: true in every query that mentions the order. `setNote` returns `Order.pick("id","note")` and the tree's order node patches in place.                                                                                                                |
+| `order`                                                        | `Order.all(...)` (source-checked model)                  | `id`/`email`/`note` are context-free: true in every query that mentions the order. `setNote` returns `Order.pick("id","note")` and the tree's order node patches in place.                                                                                                                |
 | `bookedBy`                                                     | `User.pick("id","name")`                                 | The booking user is an entity: `users.rename` patches this line in the tree without the tree ever being refetched.                                                                                                                                                                        |
 | line item `{ id, date, nights, destinations }`                 | one-off                                                  | It has an id but nothing ever patches it by identity here; its `date` is moved by `reschedule`, which is _declared_ freshness (`.affects`), not identity patching.                                                                                                                        |
 | destination `{ idx, nights, hotel, rooms }`                    | one-off wrapping a model                                 | `idx`/`nights` describe the itinerary position, not the hotel. The `hotel` inside is `Hotel.pick("id","name","phone")` — the entity node at depth 4 that `updatePhone` patches with zero refetches.                                                                                       |
 | room `{ description, board, occupants }`                       | one-off                                                  | Display-only composition; no mutation addresses a room.                                                                                                                                                                                                                                   |
 | occupant `{ firstName, lastName }`                             | one-off, **deliberately unkeyed**                        | The real-world leaf: display-only name pairs with no id at all. Nothing patches them; nothing should.                                                                                                                                                                                     |
-| `hotels.byId`                                                  | `Hotel.codec`                                            | Canonical entity — the front-desk panel and the tree share one identity, which is the whole flagship proof.                                                                                                                                                                               |
+| `hotels.byId`                                                  | `Hotel.all(...)`                                         | Canonical entity — the front-desk panel and the tree share one identity, which is the whole flagship proof.                                                                                                                                                                               |
 | `hotels.reviews` page `{ rows, hasMore }`                      | one-off                                                  | Page composition and the `hasMore` sentinel are query-relative by definition (they describe _this page of this feed_).                                                                                                                                                                    |
 | review row `{ review, author }`                                | one-off around a model                                   | The review object is **deliberately unmodeled** — it has an id, but nothing in the app patches reviews by identity, and an id alone does not make something an entity. The `author` is `User.pick("id","name","avatarUrl")` — that is what makes a rename cross page boundaries for free. |
 | `hotels.reviewStats` `{ count, averageRating }`                | one-off                                                  | A `count()`/`avg()` aggregate over a table is a fact about the _query_, not about any row. Freshened by `.affects`, never by patching.                                                                                                                                                    |
-| `tours.byId` / `tours.featured` rows                           | `TourContent.codec`, key `["id","locale"]` (derived)     | The locale trap, closed structurally: `(t-fuji, en)` and `(t-fuji, ja)` are _different entities_. A single-field `id` key would smear an English title edit into the Japanese cache.                                                                                                      |
+| `tours.byId` / `tours.featured` rows                           | `TourContent.all(...)`, key `["id","locale"]`            | The locale trap, closed structurally: `(t-fuji, en)` and `(t-fuji, ja)` are _different entities_. A single-field `id` key would smear an English title edit into the Japanese cache.                                                                                                      |
 | `availability.search` row `{ tour, minAvailable }`             | one-off around `TourContent.pick("id","locale","title")` | `minAvailable` is a `min()` over the **input** date range — the same tour holds different numbers in two searches. Query-relative values live in the surrounding one-off shape, immune to patching _by construction_; the `tour` node inside still patches by identity.                   |
 | `profile.nextDeparture`                                        | one-off union (`upcoming`/`none`)                        | Fully derived (earliest upcoming date + a resolved hotel name); contains **no entity**, so no identity patch can ever fresh it. Its freshness is `.affects(nextDeparture)` on `reschedule` — derived summaries are `.affects` territory.                                                  |
 | `orders.reschedule` output `{ order: Order.pick("id"), date }` | pick + one-off                                           | The pick names _who_ changed (a no-op patch, but an honest identity); the moved `date` lives in one-off shapes in two queries, so the contract declares both refetches.                                                                                                                   |
@@ -80,20 +80,12 @@ request counter, not a screenshot.
 What the freshness in tests 2 and 7 actually costs to _declare_, counted in
 real lines.
 
-**Here (result-rpc + `modelFromDrizzle`), the entire declaration:**
-
-| Model         | Lines (round two, derived)   | Lines (round one, hand-written `defineModel`) |
-| ------------- | ---------------------------- | --------------------------------------------- |
-| `Order`       | 3                            | 8                                             |
-| `Hotel`       | 3                            | 9                                             |
-| `TourContent` | 4 (explicit composite `key`) | 9                                             |
-| `User`        | 3                            | (didn't exist; would be ~8)                   |
-| **Total**     | **13**                       | **26 (~34 with User)**                        |
-
-`models.ts` overall: 114 lines before → 142 after, while _adding_ a fourth
-model and three new one-off shapes (reviews page, review row, stats). The
-model half collapsed to allowlists; the file now grows only with one-off
-query shapes, which no tool can (or should) derive.
+**Here, the model declaration is deliberately explicit.** Each public field
+names its wire codec and identity in `models.ts`; the chained
+`$satisfies<typeof table.$inferSelect>()` proves that the selected fields have
+not drifted from Drizzle. Private table columns are allowed as source extras
+and cannot silently widen the wire. The type-only table imports are erased,
+so the client bundle contains neither Drizzle nor table metadata.
 
 Per mutation, the client-freshness code is **zero lines** — `updatePhone`,
 `setNote`, `users.rename` are bare `mutate()` calls; `reviews.add` adds two
@@ -123,15 +115,15 @@ disciplined `setQueryData` version, not a strawman):**
   `useMutation` options, not to the operation. Two screens with a rename
   button = two copies, or a hand-rolled sharing convention.
 
-The trade in one sentence: result-rpc asks for an allowlist per table
-(3–4 lines, derived from the schema, cannot drift) and gives back every
+The trade in one sentence: result-rpc asks for one explicit model per shared
+entity, checked against its source type, and gives back every
 `onSuccess`/`invalidateQueries`/`setQueryData` block those mutations would
 otherwise carry, at every call site, for the life of the app.
 
 ### Addendum: the pre-check SELECT vs `tryDb`
 
 Round three replaced `reviews.add`'s validity checks with constraints +
-`tryDb` (the Result-typed query door in `result-rpc/drizzle`), and the
+`tryDb` (the ORM-independent Result boundary in `result-rpc/db`), and the
 ledger entry is stark:
 
 - **Pre-check idiom (before):** SELECT the hotel (1 round trip, 4 lines),
@@ -223,26 +215,20 @@ and `.affects` (membership) already draw the correct boundary around it.
   every nested level passes through untouched, fully typed. The same holds
   for review rows (`{ author, ...review } → { review, author }`).
 
-## `modelFromDrizzle` adapter friction (honest)
+## Source-proof friction (honest)
 
-- **Composite keys must be named.** Drizzle's table-level
-  `primaryKey({ columns })` lives in an opaque config builder the adapter
-  cannot introspect, so `TourContent` passes `key: ["id","locale"]`
-  explicitly. The failure is loud and actionable (the adapter throws
-  "pass `key` explicitly" at module load), not silent.
-- **The enum mapping surfaced a real drift.** Round one's hand-written
-  `TourContent` declared `locale` as a literal union, but the _table_ said
-  plain `text` — the derived model would have been `wire.string`, wider than
-  what we shipped by hand. The fix was to move the truth into the schema
-  (`text("locale", { enum: ["en","ja"] })`), after which the literal union
-  falls out of the derivation. That is the dual-model argument in miniature:
-  the hand model and the table had already drifted, and derivation is what
-  exposed it.
-- **Nullable mapping is live in this app**: `users.avatarUrl` is a nullable
-  column and arrives as `string | null` on the wire, no annotation.
-- No column type fought the adapter — `text`, `text+enum`, and `integer`
-  covered every model here. (`chargedAt`'s `integer({ mode: "timestamp" })`
-  never needed a model field; it would map to `wire.date` if it did.)
+- **Identity is not derivable from a TypeScript row.** Composite identity is
+  therefore explicit: `TourContent` names `key: ["id", "locale"]`.
+- **The enum check surfaced a real drift.** The wire contract declared a
+  literal locale union while the table originally said plain `text`. The
+  `$satisfies` call failed until the schema used
+  `text("locale", { enum: ["en", "ja"] })`.
+- **Nullability is checked exactly.** `users.avatarUrl` is nullable, so its
+  public codec explicitly accepts `string | null`; either side drifting is a
+  type error.
+- **Codecs remain a contract decision.** The proof checks TypeScript shape;
+  it does not infer runtime validation, refinements, identity, or database
+  constraints.
 
 ## Library friction (DX probe, honest)
 

@@ -239,9 +239,9 @@ undefined (reading 'fetch')` from inside the dev-server plugin, because
    installed — easy to miss in an example that has no Node-API code of its
    own.
 
-6. **Two drizzle-orm copies at typecheck time** (same as 09-waku):
-   `dist/drizzle.d.ts` resolves `drizzle-orm` from the repo root while the
-   example resolves its own. Pinned with tsconfig `paths`.
+6. **The Drizzle source is type-only** (same as 09-waku): the model's
+   `$satisfies<typeof spots.$inferSelect>()` proof is erased and result-rpc's
+   declarations no longer depend on Drizzle's nominal table classes.
 
 7. **`better-sqlite3` external** via `ssr.external` in `vite.config.ts`,
    plus `pnpm.onlyBuiltDependencies` so pnpm 10 runs its native

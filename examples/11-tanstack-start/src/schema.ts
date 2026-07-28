@@ -4,8 +4,8 @@
  * mutation patches one row, the aggregate GROUPs over it, and the UNIQUE
  * name constraint gives `tryDb` a real conflict to surface.
  *
- * This module is imported by models.ts (for `modelFromDrizzle`), so it must
- * stay as browser-safe as a contract: table builders only, no driver.
+ * models.ts imports its row type only; this module never enters the browser
+ * graph.
  */
 import { sqliteTable, integer, text, unique } from "drizzle-orm/sqlite-core";
 

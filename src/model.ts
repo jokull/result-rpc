@@ -33,6 +33,24 @@ export interface ModelDefinition<
   /** The identity fields, normalized. Composite keys join values in this order. */
   readonly keyFields: readonly string[];
   /**
+   * Prove that this model is an exact projection of an upstream row or
+   * domain type. Extra source fields are allowed; every model field must
+   * exist in the source with exactly the same TypeScript type.
+   *
+   * The source is type-only and this method returns the same model. It is a
+   * drift check, not runtime reflection:
+   *
+   *     import type { users } from "./schema.js"
+   *
+   *     const User = defineModel("user", { ... })
+   *       .$satisfies<typeof users.$inferSelect>()
+   */
+  $satisfies<TSource extends object>(
+    ...mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource> extends never
+      ? []
+      : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]
+  ): ModelDefinition<TName, TShape>;
+  /**
    * A strict projection codec — a subset of the shape, still
    * identity-collecting. It validates an exact view; it does not strip fields
    * from a wider runtime object.
@@ -89,6 +107,31 @@ export type SelectionInput<TShape extends CodecShape, TSelection> = {
 };
 
 export type AnyModel = ModelDefinition<string, CodecShape>;
+
+type Equal<TLeft, TRight> =
+  (<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
+    ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => T extends TLeft ? 1 : 2
+      ? true
+      : false
+    : false;
+
+type MismatchedSourceFields<TModel extends object, TSource extends object> = {
+  [TKey in keyof TModel]: TKey extends keyof TSource
+    ? Equal<TModel[TKey], TSource[TKey]> extends true
+      ? never
+      : TKey
+    : TKey;
+}[keyof TModel];
+
+type ModelSourceMismatch<TModel extends object, TSource extends object> =
+  MismatchedSourceFields<TModel, TSource> extends never
+    ? never
+    : {
+        readonly "Model fields missing or incompatible in source": MismatchedSourceFields<
+          TModel,
+          TSource
+        >;
+      };
 
 export type ModelValue<TModel> =
   TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
@@ -185,6 +228,7 @@ export const defineModel = <const TName extends string, const TShape extends Cod
     name,
     key: options.key,
     keyFields,
+    $satisfies: () => self,
     all: (reason) => {
       if (typeof reason !== "string" || reason.trim().length === 0) {
         throw new TypeError(

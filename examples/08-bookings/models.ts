@@ -1,11 +1,10 @@
 /**
  * The entity models and the one-off wire shapes around them.
  *
- * Round two: every model is now DERIVED from the Drizzle table it mirrors —
- * `modelFromDrizzle(name, table, { columns })` reads column types,
- * nullability, enums, and the inline primary key straight from the schema
- * the migrations maintain, so the dual-model tax collapses to an allowlist.
- * (Hand-written before: 8–9 lines per model; see NOTES.md's cost ledger.)
+ * Every model is an explicit public wire contract. `$satisfies<Source>()`
+ * checks it against the corresponding Drizzle select type without importing
+ * the table at runtime, so schema drift is a type error and the browser graph
+ * remains database-free.
  *
  * The doctrine is unchanged: a model declares CONTEXT-FREE fields — facts
  * about the entity that are true in every query that mentions it.
@@ -13,37 +12,47 @@
  * counts) and display-only leaves stay one-off `wire.object`s, which collect
  * no identity and are therefore immune to entity patching by construction.
  */
-import { modelFromDrizzle } from "../../src/drizzle.js";
-import { wire, type InputOf } from "../../src/index.js";
-import { hotels, orders, tourContent, users } from "./schema.js";
+import { defineModel, wire, type InputOf } from "../../src/index.js";
+import type { hotels, orders, tourContent, users } from "./schema.js";
 
 // -- models: derived from the tables, patchable by identity -----------------------
 
-export const Order = modelFromDrizzle("order", orders, {
-  columns: ["id", "email", "note"], // userId/chargedAt exist and never ship
-});
+export const Order = defineModel("order", {
+  key: "id",
+  shape: { id: wire.string, email: wire.string, note: wire.string },
+}).$satisfies<typeof orders.$inferSelect>(); // userId/chargedAt exist and never ship
 
-export const Hotel = modelFromDrizzle("hotel", hotels, {
-  columns: ["id", "name", "phone", "city"],
-});
+export const Hotel = defineModel("hotel", {
+  key: "id",
+  shape: { id: wire.string, name: wire.string, phone: wire.string, city: wire.string },
+}).$satisfies<typeof hotels.$inferSelect>();
 
 /**
  * The locale trap, closed: content that varies per locale under one id is a
  * COMPOSITE-key entity — (t1, en) and (t1, ja) are different entities, so a
  * patch to the English title can never smear into the Japanese one. The
- * composite key is the one thing the table cannot tell the adapter (it lives
- * in an opaque `primaryKey({ columns })` builder), so it is named here. The
- * enum `locale` column arrives as a literal union for free.
+ * composite key is named explicitly in the public contract. The source proof
+ * pins the locale union to the database select type.
  */
-export const TourContent = modelFromDrizzle("tour-content", tourContent, {
-  columns: ["id", "locale", "title", "summary"],
+export const TourContent = defineModel("tour-content", {
   key: ["id", "locale"],
-});
+  shape: {
+    id: wire.string,
+    locale: wire.union([wire.literal("en"), wire.literal("ja")] as const),
+    title: wire.string,
+    summary: wire.string,
+  },
+}).$satisfies<typeof tourContent.$inferSelect>();
 
-/** Nullable `avatarUrl` column → `string | null` on the wire, derived. */
-export const User = modelFromDrizzle("user", users, {
-  columns: ["id", "name", "avatarUrl"],
-});
+/** Nullable `avatarUrl` is explicit on the wire and checked against Drizzle. */
+export const User = defineModel("user", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    name: wire.string,
+    avatarUrl: wire.union([wire.string, wire.null] as const),
+  },
+}).$satisfies<typeof users.$inferSelect>();
 
 // -- views: every output names its audience ---------------------------------------
 //

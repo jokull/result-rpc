@@ -108,9 +108,9 @@ bun:sqlite, real SQL, relations v2, shaped after a census of a
 280-procedure production tRPC API. Built to answer "is what entities buy
 worth what they cost" with numbers:
 
-- **Cost**: four models in 13 lines, derived from the schema via
-  [`modelFromDrizzle`](/guides/drizzle/) — the entity contract is the
-  migration you were already writing plus a column allowlist.
+- **Cost**: four explicit wire models checked against Drizzle row types with
+  [`$satisfies<Source>()`](/guides/drizzle/) — schema drift is a type error,
+  while no database metadata enters the browser graph.
 - **Buy**: `users.rename` patches **four surfaces** — review rows on
   cached pages of two different paginated feeds, a top-reviewer card, and
   the booked-by line inside a four-level relational tree — at exactly one

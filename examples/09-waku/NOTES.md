@@ -69,10 +69,9 @@ After `waku build`:
   (the entire client output).
 - `grep -rl ... dist/server/` → `dist/server/assets/server-*.js` (present
   where it belongs).
-- Client assets also contain no `better-sqlite3` / `node:fs` / db-path
-  traces. (One `drizzle` string does ship: `modelFromDrizzle` reads table
-  metadata from `drizzle-orm/sqlite-core` builders, which are browser-safe
-  by design — the driver is not in the graph.)
+- Client assets also contain no `drizzle`, `better-sqlite3`, `node:fs`, or
+  database-path traces. The model imports the Drizzle row as a type only, so
+  the table builder and driver are not in the graph.
 
 ### 4. Kitchen-sink behaviors exercised in the browser
 
@@ -135,11 +134,10 @@ Things that fought back, in the order they bit:
    (two React copies = silent hook breakage) plus `server.fs.allow` up to
    the repo root.
 
-4. **Two drizzle-orm copies at typecheck time.** `dist/drizzle.d.ts`
-   resolves `drizzle-orm` from the repo root while the example resolves its
-   own — nominally identical rc.4s that TS rejects (protected member
-   `resolveTypes`). Fixed with tsconfig `paths` pinning `drizzle-orm` (and
-   `drizzle-orm/*`) to the example's copy for the whole program.
+4. **The Drizzle source is type-only.**
+   `$satisfies<typeof spots.$inferSelect>()` catches row drift without making
+   result-rpc declarations depend on Drizzle's nominal table classes or
+   pulling the schema into the client.
 
 5. **better-sqlite3 must stay external in EVERY server environment.**
    `ssr.external` covers dev, but `waku build`'s SSG step bundled the

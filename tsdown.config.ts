@@ -9,7 +9,7 @@ export default defineConfig({
     index: "src/index.ts",
     "server/index": "src/server/index.ts",
     "client/index": "src/client/index.ts",
-    drizzle: "src/drizzle.ts",
+    db: "src/db.ts",
     "query/runtime": "src/query/runtime.ts",
     "react/index": "src/react/index.tsx",
     "testing/index": "src/testing/index.ts",
@@ -35,7 +35,7 @@ export default defineConfig({
   },
   deps: {
     neverBundle: true,
-    onlyImport: ["@tanstack/query-core", "devalue", "drizzle-orm", "react"],
+    onlyImport: ["@tanstack/query-core", "devalue", "react"],
   },
   publint: {
     strict: true,

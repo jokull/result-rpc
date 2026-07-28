@@ -15,10 +15,8 @@
       "result-rpc/react": ["../../dist/react/index.d.ts"],
       "result-rpc/server": ["../../dist/server/index.d.ts"],
       "result-rpc/client": ["../../dist/client/index.d.ts"],
-      "result-rpc/drizzle": ["../../dist/drizzle.d.ts"],
-      "result-rpc/query": ["../../dist/query/runtime.d.ts"],
-      "drizzle-orm": ["./node_modules/drizzle-orm/index.d.ts"],
-      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"]
+      "result-rpc/db": ["../../dist/db.d.ts"],
+      "result-rpc/query": ["../../dist/query/runtime.d.ts"]
     }
   },
   "include": ["src", "waku.config.ts"]

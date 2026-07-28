@@ -7,7 +7,7 @@
  */
 import { and, avg, count, eq, gte, lte, min } from "drizzle-orm";
 import { err, matchError, ok } from "../../src/index.js";
-import { tryDb, type DbError } from "../../src/drizzle.js";
+import { tryDb, type DbError } from "../../src/db.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import {
   addReviewContract,

@@ -28,6 +28,17 @@ const Doc = defineModel("doc", {
 });
 
 describe("defineModel", () => {
+  test("$satisfies is a type-only assertion that preserves model identity", () => {
+    interface SourceUser {
+      readonly id: string;
+      readonly name: string;
+      readonly avatarUrl: string;
+      readonly privateMemo: string;
+    }
+
+    expect(User.$satisfies<SourceUser>()).toBe(User);
+  });
+
   test("the canonical codec decodes and the kind carries the model name", () => {
     expect(Doc.all("test fixture").kind).toBe("model(doc):all");
     const decoded = Doc.all("test fixture").decode({

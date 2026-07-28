@@ -9,7 +9,7 @@
 import "server-only";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
 import { err, matchError, ok } from "result-rpc";
-import { tryDb } from "result-rpc/drizzle";
+import { tryDb } from "result-rpc/db";
 import { createFetchHandler } from "result-rpc/server";
 import {
   addSpotContract,
