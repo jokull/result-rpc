@@ -224,7 +224,7 @@ const session = defineLayer({
 
 const sessionMiddleware = session.middleware(app, ({ context, errors }) =>
   gen(async function* () {
-    const token = yield* readToken(context.headers, errors); // Result<Token, SessionExpired>
+    const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
     return viewer;
   }),

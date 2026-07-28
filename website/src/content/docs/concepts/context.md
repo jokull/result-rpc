@@ -102,28 +102,15 @@ checked, not hoped for.
 
 ## Setting response headers, and logging someone in
 
-`createContext` receives a `Headers` for the response alongside the request.
-Put it on your context and a handler can append to it — a session cookie on
-login, a `cache-control`, a rate-limit hint:
-
-```ts
-export interface AppContext {
-  readonly db: Db;
-  readonly headers: Headers;
-}
-
-const handler = createFetchHandler({
-  router: appRouter,
-  createContext: ({ request, headers }) => ({ db, headers }),
-});
-```
-
-A login mutation is then ordinary code. Note it returns a `Result` like
-anything else — bad credentials are a declared failure, not an exception:
+Writing a response header is a **declared capability**. A procedure calls
+`.headers()` and receives `context.headers`, a `Headers` to append to — a
+session cookie on login, a `cache-control`, a rate-limit hint. A procedure that
+does not declare it has no `context.headers` at all.
 
 ```ts
 const login = app
   .procedure()
+  .headers()
   .input(wire.object({ email: wire.string, password: wire.string }))
   .output(wire.object({ userId: wire.string }))
   .errors({ BadCredentials })
@@ -139,26 +126,61 @@ const login = app
   });
 ```
 
-Reading cookies needs nothing new — `createContext` has the request:
+Note the mutation returns a `Result` like anything else — bad credentials are a
+declared failure, not an exception.
+
+Reading cookies needs nothing new; `createContext` has the request:
 
 ```ts
-createContext: ({ request, headers }) => ({
+createContext: ({ request }) => ({
   db,
-  headers,
   session: parseCookie(request.headers.get("cookie"))?.session,
 });
 ```
 
-Two semantics are worth knowing before you rely on this.
+A middleware that rotates a session cookie declares the same way, and then
+every procedure using it must declare `.headers()` too — the same rule that
+makes a middleware's errors part of its procedures' declared unions:
 
-**A batch shares one response.** Several procedures answered in one HTTP
-request also share its headers, so their `set-cookie`s combine rather than
-overwrite. That is usually what you want; it does mean two logins in one batch
-set two cookies.
+```ts
+const rotateSession = app
+  .middleware()
+  .headers()
+  .use(({ context, next }) => {
+    context.headers.append("set-cookie", `session=${refresh(context)}; HttpOnly; Path=/`);
+    return next({ context });
+  });
+```
 
-**A subscription can only set headers before its stream opens.** `createContext`
-runs first, so anything set there is on the response. Once the stream is on the
-wire its headers have already been sent, and a generator cannot add more.
+### Why declare it instead of just writing it
+
+The declaration is recorded in the contract, which means a transport knows
+*before dispatch* that this call's response headers cannot be sent early.
+
+That matters because batching and streaming pull in opposite directions. A
+streamed batch sends its headers first and its results as they arrive — which
+means a `set-cookie` written by a handler that has not finished yet arrives
+after the headers are already on the wire, and is silently dropped. tRPC has
+exactly this hazard: `ctx.resHeaders` works under `httpBatchLink` and silently
+stops working under `httpBatchStreamLink`, with no error and no warning. The
+usual workaround is to move the cookie into `responseMeta`, a hook that runs
+before the procedure has produced a result.
+
+Declaring the capability makes the conflict statically visible instead of
+silent, and it is why the flag is part of the [contract
+digest](/concepts/deploys/) — a client and server that disagreed about it
+would reintroduce the same dropped cookie.
+
+Two consequences follow:
+
+**A batch shares one response.** Several procedures answered in one HTTP request
+share its headers, so their `set-cookie`s combine rather than overwrite. That is
+usually what you want; it does mean two logins in one batch set two cookies.
+
+**A subscription cannot declare `.headers()` at all** — it throws. Its response
+is on the wire before the stream, and therefore before any of its middleware or
+handler code runs, so there is no moment at which a write could land. Set the
+header in the request that opens the stream instead.
 
 The response is otherwise the protocol's. Status is derived from the failing
 error's declared `httpStatus` rather than chosen by a handler — that is what

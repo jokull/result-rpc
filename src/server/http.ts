@@ -236,19 +236,14 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
   readonly endpoint?: string;
   readonly maxBatchItems?: number;
   readonly maxRequestBytes?: number;
+  /**
+   * Builds the per-request context. Note what is absent: response headers.
+   * Writing one is a declared capability — a procedure calls `.headers()` and
+   * receives `context.headers` — so that the contract records which calls
+   * cannot have their response headers sent before the handler finishes.
+   */
   readonly createContext: (options: {
     readonly request: Request;
-    /**
-     * Response headers for this request. Handlers reach it through the context
-     * they build here — appending `set-cookie` on login, a `cache-control`, a
-     * rate-limit hint. Merged into the response after the procedure settles.
-     *
-     * Two semantics worth knowing. A batched request shares one HTTP response,
-     * so headers from every procedure in the batch combine. And a subscription
-     * can only set headers before its stream opens: `createContext` runs first,
-     * but once the response is on the wire its headers are already sent.
-     */
-    readonly headers: Headers;
   }) => RouterContext<TRouter> | Promise<RouterContext<TRouter>>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
   /**
@@ -331,7 +326,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
 
     let context: RouterContext<TRouter>;
     try {
-      context = await options.createContext({ request, headers: responseHeaders });
+      context = await options.createContext({ request });
     } catch (cause) {
       const incidentId = `inc_${crypto.randomUUID()}`;
       options.onInternalError?.({
@@ -398,6 +393,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         context,
         procedurePath: item.path,
         signal: request.signal,
+        responseHeaders,
         onTouch: (key) => void touched.push(key),
         ...(options.onInternalError === undefined
           ? {}

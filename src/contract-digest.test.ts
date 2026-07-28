@@ -88,4 +88,22 @@ describe("contractDigest", () => {
     });
     expect(contractDigest(differentOutput)).not.toBe(base);
   });
+  test("a .headers() declaration changes the digest", () => {
+    // Skew on this flag is exactly the failure the declaration exists to
+    // prevent: a client batching a header-writing call as if it were not one.
+    const without = app.router({
+      login: app.procedure().output(wire.string).mutation(() => ok("ok")),
+    });
+    const with_ = app.router({
+      login: app
+        .procedure()
+        .headers()
+        .output(wire.string)
+        .mutation(({ context }) => {
+          context.headers.append("set-cookie", "s=1");
+          return ok("ok");
+        }),
+    });
+    expect(contractDigest(with_)).not.toBe(contractDigest(without));
+  });
 });

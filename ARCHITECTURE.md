@@ -901,6 +901,40 @@ for scalar outputs, cascades, and deletes. Membership remains declared via
 `.affects()`. A normalized store as source of truth is a permanent non-goal:
 it serves flexible queries and would cost exact per-procedure output types.
 
+### Response headers are a declared capability
+
+Batches do **not** stream. The handler awaits every procedure in the batch and
+only then constructs the response, so a `set-cookie` written by any of them
+lands. This is a decision, not an omission: streaming a batch would send the
+response headers before its slowest procedure finished, and any header written
+after that point would vanish.
+
+tRPC is the worked example. Its `ctx.resHeaders` and our `context.headers` are
+the same mechanism, and its non-streaming path has the same ordering we do. But
+`httpBatchStreamLink` returns `new Response(stream, { headers })` *before*
+awaiting the calls, so header writes inside a procedure mutate a `Headers` the
+response has already copied. No error, no warning — swapping the link silently
+breaks every cookie set from a mutation, which is why `responseMeta` exists and
+why real codebases end up minting cookies there, ahead of knowing the result.
+
+Rather than pick between "never stream" and "cookies are unreliable", the
+capability is declared. `.headers()` on a procedure (or a middleware, which
+then obliges its procedures to declare it, exactly as its errors do) records
+`writesHeaders` in the contract manifest and adds `context.headers`.
+Undeclared procedures have no `context.headers`, so the mistake is a type
+error rather than a runtime surprise. The flag is part of the contract digest,
+because a client and server disagreeing about it would resurrect the dropped
+cookie across a deploy.
+
+What this buys: a transport can decide *before dispatch* how a call may be
+batched. If a streaming batch is ever added, calls declaring `writesHeaders`
+are excluded from it by a static fact instead of a convention.
+
+Subscriptions reject `.headers()` outright. `executeSubscription` is an async
+generator whose body — middleware included — first runs when the stream is
+pulled, which is after the `Response` is returned. There is no window in which
+a write could land, so offering one would be a lie.
+
 ### Contract skew
 
 Every response carries the server's contract digest (`x-result-rpc-contract`),

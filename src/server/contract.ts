@@ -37,10 +37,30 @@ export interface ExecutionOptions<TRootContext> {
    * in-flight work stops with the caller.
    */
   readonly signal?: AbortSignal;
+  /**
+   * The response's headers. Reaches `context.headers` only for procedures that
+   * declared `.headers()`; every other procedure never sees it, which is what
+   * makes the declaration enforceable rather than advisory.
+   */
+  readonly responseHeaders?: Headers;
 }
 
 /** Fallback for executions with no caller lifetime (tests, jobs). */
 const neverAborted = new AbortController().signal;
+
+/**
+ * Adds `headers` to the context for procedures that declared `.headers()`.
+ * Callers with no response to write to (the direct server caller, tests) get a
+ * detached `Headers`: the writes are inert, like cache declarations there.
+ */
+const contextWithHeaders = (
+  context: unknown,
+  procedure: { readonly _def: { readonly writesHeaders?: true } },
+  options: { readonly responseHeaders?: Headers },
+): unknown =>
+  procedure._def.writesHeaders !== true
+    ? context
+    : { ...(context as object), headers: options.responseHeaders ?? new Headers() };
 
 declare const middlewareNextResult: unique symbol;
 type MiddlewareNextResult = Result<unknown, AnyTaggedError> & {
@@ -82,6 +102,8 @@ interface RuntimeMiddleware {
   readonly handler: ErasedMiddlewareHandler;
   /** Middleware this one depends on; flattened and deduped at `.use()` time. */
   readonly requires: readonly RuntimeMiddleware[];
+  /** Set by `.headers()`; forces every procedure using it to declare the same. */
+  readonly writesHeaders?: boolean;
 }
 
 /** Dependencies first, then the middleware itself; duplicates removed by reference. */
@@ -115,6 +137,7 @@ export interface Middleware<
   readonly definitions: TDefinitions;
   readonly handler: ErasedMiddlewareHandler;
   readonly requires: readonly RuntimeMiddleware[];
+  readonly writesHeaders?: boolean;
   readonly _types?: {
     /** Contravariant: a middleware needing less context works with more. */
     readonly inputContext: (context: TInputContext) => void;
@@ -132,13 +155,33 @@ export class MiddlewareBuilder<
   constructor(
     private readonly definitions: TDefinitions = {} as TDefinitions,
     private readonly dependencies: readonly RuntimeMiddleware[] = [],
+    private readonly declaresHeaders: boolean = false,
   ) {}
 
   errors<const TNewDefinitions extends ErrorDefinitionMap>(
     definitions: TNewDefinitions,
   ): MiddlewareBuilder<TInputContext, TAdded, TDefinitions & TNewDefinitions, TOuterInput> {
     assertDefinitionsCanMerge(this.definitions, definitions);
-    return new MiddlewareBuilder({ ...this.definitions, ...definitions }, this.dependencies);
+    return new MiddlewareBuilder(
+      { ...this.definitions, ...definitions },
+      this.dependencies,
+      this.declaresHeaders,
+    );
+  }
+
+  /**
+   * Declares that this middleware writes response headers — a rotated session
+   * cookie, a rate-limit header. Adds `context.headers` for the handler, and
+   * every procedure that `.use()`s it must declare `.headers()` too, exactly
+   * as it must pre-declare the middleware's errors.
+   */
+  headers(): MiddlewareBuilder<
+    TInputContext & { readonly headers: Headers },
+    TAdded,
+    TDefinitions,
+    TOuterInput
+  > {
+    return new MiddlewareBuilder(this.definitions, this.dependencies, true);
   }
 
   /**
@@ -156,10 +199,13 @@ export class MiddlewareBuilder<
     TOuterInput
   > {
     assertDefinitionsCanMerge(this.definitions, dependency.definitions);
-    return new MiddlewareBuilder({ ...this.definitions, ...dependency.definitions }, [
-      ...this.dependencies,
-      dependency as unknown as RuntimeMiddleware,
-    ]);
+    return new MiddlewareBuilder(
+      { ...this.definitions, ...dependency.definitions },
+      [...this.dependencies, dependency as unknown as RuntimeMiddleware],
+      // A dependency that writes headers makes this one a header writer too:
+      // `.use()` sites pull it in, so the obligation has to travel with it.
+      this.declaresHeaders || dependency.writesHeaders === true,
+    );
   }
 
   use(
@@ -170,6 +216,7 @@ export class MiddlewareBuilder<
       definitions: this.definitions,
       handler: handler as ErasedMiddlewareHandler,
       requires: this.dependencies,
+      ...(this.declaresHeaders ? { writesHeaders: true } : {}),
     });
   }
 }
@@ -258,6 +305,7 @@ export interface ProcedureManifest<
   readonly affects?: readonly AffectsEntry[];
   readonly writes?: readonly WritesEntry[];
   readonly pagination?: PaginationManifest;
+  readonly writesHeaders?: true;
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
     args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
@@ -279,6 +327,13 @@ export interface ProcedureContractManifest<
   readonly affects?: readonly AffectsEntry[];
   readonly writes?: readonly WritesEntry[];
   readonly pagination?: PaginationManifest;
+  /**
+   * Declared by `.headers()`. A fact about the procedure's interface, not its
+   * implementation: transports read it to decide how a call may be batched,
+   * because a response whose headers are already on the wire cannot receive
+   * a `set-cookie` from a handler that has not finished yet.
+   */
+  readonly writesHeaders?: true;
   readonly _rootContext?: TRootContext;
 }
 
@@ -345,7 +400,38 @@ export class ProcedureBuilder<
     private readonly middlewares: readonly RuntimeMiddleware[] = [],
     private readonly affectsEntries: readonly AffectsEntry[] = [],
     private readonly writesEntries: readonly WritesEntry[] = [],
+    private readonly declaresHeaders: boolean = false,
   ) {}
+
+  /**
+   * Declares that this procedure writes response headers — the login mutation
+   * setting a session cookie is the canonical case. Adds `context.headers`,
+   * a `Headers` you `append()` to; several procedures in one batch each get
+   * their `set-cookie` through without overwriting one another.
+   *
+   * The declaration is the point: it is recorded in the contract, so a
+   * transport knows before dispatch that this call's response headers cannot
+   * be sent early. Undeclared procedures have no `context.headers` at all,
+   * which turns "my cookie silently vanished under a streaming transport"
+   * into a type error.
+   */
+  headers(): ProcedureBuilder<
+    TRootContext,
+    TContext & { readonly headers: Headers },
+    TInput,
+    TOutput,
+    TDefinitions
+  > {
+    return new ProcedureBuilder(
+      this.inputCodec,
+      this.outputCodec,
+      this.definitions,
+      this.middlewares,
+      this.affectsEntries,
+      this.writesEntries,
+      true,
+    );
+  }
 
   /**
    * Declares the entity this mutation writes when the output doesn't carry
@@ -363,6 +449,7 @@ export class ProcedureBuilder<
       this.middlewares,
       this.affectsEntries,
       [...this.writesEntries, { model, map: map as WritesEntry["map"] }],
+      this.declaresHeaders,
     );
   }
 
@@ -390,6 +477,7 @@ export class ProcedureBuilder<
       this.middlewares,
       [...this.affectsEntries, entry],
       this.writesEntries,
+      this.declaresHeaders,
     );
   }
 
@@ -403,6 +491,7 @@ export class ProcedureBuilder<
       this.middlewares,
       this.affectsEntries,
       this.writesEntries,
+      this.declaresHeaders,
     );
   }
 
@@ -416,6 +505,7 @@ export class ProcedureBuilder<
       this.middlewares,
       this.affectsEntries,
       this.writesEntries,
+      this.declaresHeaders,
     );
   }
 
@@ -430,6 +520,7 @@ export class ProcedureBuilder<
       this.middlewares,
       this.affectsEntries,
       this.writesEntries,
+      this.declaresHeaders,
     );
   }
 
@@ -460,6 +551,9 @@ export class ProcedureBuilder<
       appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
       this.affectsEntries,
       this.writesEntries,
+      // A middleware that writes headers makes the procedure a header writer,
+      // the same way its errors join the procedure's declared union.
+      this.declaresHeaders || middleware.writesHeaders === true,
     );
   }
 
@@ -571,6 +665,7 @@ export class ProcedureBuilder<
       output,
       definitions: this.definitions,
       pagination,
+      ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
     };
     if (handler === undefined) {
       return Object.freeze({
@@ -609,6 +704,7 @@ export class ProcedureBuilder<
         definitions: this.definitions,
         ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
         ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
+        ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
       }),
     });
   }
@@ -621,6 +717,13 @@ export class ProcedureBuilder<
     }
     if (this.writesEntries.length > 0 && kind !== "mutation") {
       throw new TypeError("Only mutations declare .writes()");
+    }
+    if (this.declaresHeaders && kind === "subscription") {
+      throw new TypeError(
+        "A subscription cannot write response headers: its response is already on the wire " +
+          "before the stream — and therefore any middleware or handler — runs. Set the header " +
+          "in the request that opens the stream instead.",
+      );
     }
   }
 
@@ -643,6 +746,7 @@ export class ProcedureBuilder<
         definitions: this.definitions,
         ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
         ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
+        ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
         middlewares: this.middlewares,
         handler: handler as ProcedureManifest<
           TRootContext,
@@ -678,6 +782,12 @@ export class ProcedureImplementer<
     middleware: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
   ): ProcedureImplementer<TRootContext, TOutputContext, TInput, TOutput, TDefinitions, TKind> {
     assertDefinitionsAreDeclared(this.contract._def.definitions, middleware.definitions);
+    if (middleware.writesHeaders === true && this.contract._def.writesHeaders !== true) {
+      throw new TypeError(
+        "This middleware writes response headers, so the contract must declare .headers(). " +
+          "The declaration lives on the contract because transports read it before dispatch.",
+      );
+    }
     return new ProcedureImplementer(
       this.contract,
       appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
@@ -1000,7 +1110,7 @@ export const executeProcedure = async <
     }
   };
 
-  const result = await dispatch(0, options.context);
+  const result = await dispatch(0, contextWithHeaders(options.context, procedure, options));
   if (
     result === null ||
     typeof result !== "object" ||
@@ -1096,7 +1206,7 @@ export async function* executeSubscription<
     }
   };
 
-  const prepared = await prepareContext(0, options.context);
+  const prepared = await prepareContext(0, contextWithHeaders(options.context, procedure, options));
   if (!prepared.ok) {
     if (ServerInternal.is(prepared.error)) {
       yield err(prepared.error);

@@ -18,6 +18,7 @@ interface DigestibleManifest {
   readonly output: { readonly kind: string };
   readonly definitions: Readonly<Record<string, AnyErrorDefinition>>;
   readonly pagination?: unknown;
+  readonly writesHeaders?: true;
 }
 
 interface Digestible {
@@ -45,7 +46,10 @@ export const contractDigest = (routerOrContract: Digestible): string => {
         .sort()
         .join(",");
       const paginated = manifest.pagination === undefined ? "" : "|paginated";
-      return `${path}|${manifest.kind}${paginated}|in:${manifest.input.kind}|out:${manifest.output.kind}|${errors}`;
+      // In the digest because a client that disagrees about this would batch a
+      // header-writing call the wrong way and drop its `set-cookie` silently.
+      const headers = manifest.writesHeaders === true ? "|headers" : "";
+      return `${path}|${manifest.kind}${paginated}${headers}|in:${manifest.input.kind}|out:${manifest.output.kind}|${errors}`;
     })
     .sort()
     .join("\n");

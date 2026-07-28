@@ -46,7 +46,18 @@ The concept mapping is mechanical:
 | `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
 | adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
 | `createCaller`                               | `createServerClient`                                                     |
+| `ctx.resHeaders` / `responseMeta`            | `.headers()` on the procedure, then `context.headers`                    |
 | `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
+
+One row deserves a note, because it is a scar many tRPC codebases carry.
+`ctx.resHeaders` works under `httpBatchLink` and silently stops working under
+`httpBatchStreamLink` — a streamed response sends its headers before the
+procedures resolve, so a cookie set inside a mutation is dropped with no error.
+The usual workaround is to move it into `responseMeta`, which runs before the
+result exists. Here the capability is declared with `.headers()`, batches do not
+stream, and an undeclared procedure has no `context.headers` to write to — so
+the failure mode is a type error rather than a missing cookie. See [Setting
+response headers](/concepts/context/#setting-response-headers-and-logging-someone-in).
 
 Two things have no tRPC equivalent and are the actual work: every procedure
 declares its error union (this is where the two-failure-channel debt gets paid

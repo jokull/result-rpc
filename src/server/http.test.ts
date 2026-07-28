@@ -116,13 +116,16 @@ describe("fetch handler wire boundary", () => {
 
 // --- response headers --------------------------------------------------------
 
+// No `headers` in the context type: writing a response header is a declared
+// capability, not something every procedure can reach for.
 interface HeaderCtx {
-  readonly headers: Headers;
+  readonly requestId: string;
 }
 const h = rpc.context<HeaderCtx>();
 
 const login = h
   .procedure()
+  .headers()
   .input(wire.object({ email: wire.string }))
   .output(wire.object({ userId: wire.string }))
   .mutation(({ input, context }) => {
@@ -135,6 +138,7 @@ const login = h
 
 const remember = h
   .procedure()
+  .headers()
   .input(wire.object({}))
   .output(wire.boolean)
   .mutation(({ context }) => {
@@ -153,7 +157,7 @@ const headerRouter = h.router({ login, remember, plain });
 
 const headerHandler = createFetchHandler({
   router: headerRouter,
-  createContext: ({ headers }) => ({ headers }),
+  createContext: () => ({ requestId: "req_1" }),
 });
 
 const postTo = (handler: (r: Request) => Promise<Response>, body: unknown) => {
@@ -207,28 +211,70 @@ describe("response headers", () => {
   });
 });
 
-describe("response headers on a subscription", () => {
-  const s = rpc.context<HeaderCtx>();
-  const feedContract = s.procedure().input(wire.object({})).output(wire.string).subscription();
-  const feed = s.implement(feedContract).stream(async function* () {
-    yield ok("one");
-  });
-  const streamRouter = s.router({ feed });
-  const streamHandler = createFetchHandler({
-    router: streamRouter,
-    createContext: ({ headers }) => {
-      // Set before the stream opens — once the response is on the wire its
-      // headers are already sent, so this is the only window.
-      headers.append("set-cookie", "stream=open; Path=/");
-      return { headers };
-    },
+describe("the .headers() declaration", () => {
+  test("is recorded on the contract, where a transport can read it", () => {
+    // The whole point: batching decisions are made before dispatch, so the
+    // fact has to live on the contract rather than in the handler's body.
+    expect(login._def.writesHeaders).toBe(true);
+    expect(plain._def.writesHeaders).toBeUndefined();
   });
 
-  test("headers set during context creation reach the streaming response", async () => {
-    const response = await postTo(streamHandler, { v: 1, path: "feed", input: {} });
+  test("is the only way to reach response headers", () => {
+    const undeclared = h
+      .procedure()
+      .input(wire.object({}))
+      .output(wire.string)
+      .query(({ context }) => {
+        // @ts-expect-error — no .headers(), so no `headers` on the context.
+        const absent: unknown = context.headers;
+        return ok(String(absent));
+      });
+    expect(undeclared._def.writesHeaders).toBeUndefined();
+  });
+
+  test("a subscription cannot declare it — its headers are sent before it runs", () => {
+    expect(() =>
+      rpc.context<HeaderCtx>().procedure().headers().output(wire.string).subscription(),
+    ).toThrow(/subscription cannot write response headers/);
+  });
+
+  test("a header-writing middleware forces its procedures to declare it too", () => {
+    const rotate = h
+      .middleware()
+      .headers()
+      .use(({ context, next }) => {
+        context.headers.append("set-cookie", "session=rotated; Path=/");
+        return next({ context });
+      });
+
+    const contract = h.procedure().output(wire.string).query();
+    expect(() => h.implement(contract).use(rotate)).toThrow(/must declare \.headers\(\)/);
+
+    // Declared, it composes — and the middleware's write lands.
+    const declared = h.procedure().headers().output(wire.string).query();
+    expect(() => h.implement(declared).use(rotate)).not.toThrow();
+  });
+
+  test("a middleware's write reaches the response", async () => {
+    const rotate = h
+      .middleware()
+      .headers()
+      .use(({ context, next }) => {
+        context.headers.append("set-cookie", "rotated=1; Path=/");
+        return next({ context });
+      });
+    const contract = h.procedure().headers().output(wire.string).query();
+    const rotated = h
+      .implement(contract)
+      .use(rotate)
+      .handler(() => ok("ok"));
+    const router = h.router({ rotated });
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({ requestId: "req_2" }),
+    });
+    const response = await postTo(handler, { v: 1, path: "rotated", input: {} });
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("result-rpc");
-    expect(response.headers.get("set-cookie")).toContain("stream=open");
-    await response.body?.cancel();
+    expect(response.headers.get("set-cookie")).toContain("rotated=1");
   });
 });

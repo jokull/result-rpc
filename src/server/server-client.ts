@@ -56,6 +56,13 @@ export type ServerClientOf<TRouter> = BaseClientOf<
 export interface CreateServerClientOptions<TRouter extends Router<any, RouterRecord>> {
   readonly context: RouterContext<TRouter>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
+  /**
+   * Collects what `.headers()` procedures write. Pass the response's headers
+   * from a server action or route handler to make a login mutation's cookie
+   * land; omit it and the writes go to a detached `Headers` and are discarded,
+   * like cache declarations are here.
+   */
+  readonly responseHeaders?: Headers;
 }
 
 const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure =>
@@ -78,6 +85,7 @@ export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
   const executionOptions = (path: string, call: ServerCallOptions | undefined) => ({
     context: options.context,
     procedurePath: path,
+    ...(options.responseHeaders === undefined ? {} : { responseHeaders: options.responseHeaders }),
     ...(call?.signal === undefined ? {} : { signal: call.signal }),
     ...(options.onInternalError === undefined ? {} : { onInternalError: options.onInternalError }),
   });
