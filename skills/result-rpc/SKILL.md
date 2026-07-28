@@ -11,8 +11,8 @@ procedure returns one **`Result<T, E>`** against a **declared, closed tagged-err
 union**. The result-rpc wire reconstructs the Result behavior and real
 `TaggedError` instances on the client; failures are values you narrow, not
 exceptions you catch. React **shells** own failures by position, an entity cache patches by
-identity, and models can be **derived from Drizzle** so the wire contract can't
-drift from the database.
+identity, and models can be checked against **any upstream source type** without
+pulling that source's runtime graph into the client.
 
 This skill is a map. The documentation at **https://result-rpc.com** is
 the single source of truth — every page is also served as raw Markdown by
@@ -60,7 +60,8 @@ Fetch the `.md` version (append `.md`) of the page you need:
 | Layered context/auth                          | `/concepts/layers`                                   |
 | Stale clients across deploys                  | `/concepts/deploys`                                  |
 | Forms + validateStandard                      | `/guides/forms`                                      |
-| Deriving models from Drizzle                  | `/guides/drizzle`                                    |
+| Checking models against source types          | `/concepts/model-sources`                            |
+| Folding database constraint failures          | `/guides/database-errors`                            |
 | TanStack Router integration                   | `/guides/routing`                                    |
 | Testing (parity client, counter-pins)         | `/guides/testing`                                    |
 | Sentry/observability                          | `/guides/observability`                              |

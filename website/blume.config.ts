@@ -42,6 +42,7 @@ export default defineConfig({
           "/concepts/react",
           "/concepts/mutations",
           "/concepts/entities",
+          "/concepts/model-sources",
           "/concepts/pagination",
           "/concepts/subscriptions",
         ],
@@ -54,7 +55,7 @@ export default defineConfig({
         label: "Guides",
         items: [
           "/guides/forms",
-          "/guides/drizzle",
+          "/guides/database-errors",
           "/guides/rsc",
           "/guides/routing",
           "/guides/testing",

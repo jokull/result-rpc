@@ -56,6 +56,8 @@ because structural assignability permits extra properties, but the runtime
 codec deliberately does not — otherwise accidental fields could cross the
 wire unnoticed.
 
+## Source compatibility
+
 When a model mirrors part of an upstream row or domain type, attach a
 compile-time drift proof without importing that source at runtime:
 
@@ -72,7 +74,8 @@ Every model field must exist in the source with the same type and
 nullability; extra source fields are allowed and remain outside the wire
 contract. `$satisfies<Source>()` works with any source type and returns the
 same model. The type-only import is erased, so the source module does not
-enter the client graph.
+enter the client graph. See [Model source compatibility](/concepts/model-sources/)
+for exact matching rules, limitations, and non-database examples.
 
 Patches follow the **projection rule**: merge only the fields the cached
 object already has (one model, one field vocabulary; projections are

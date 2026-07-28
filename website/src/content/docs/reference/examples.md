@@ -109,7 +109,7 @@ bun:sqlite, real SQL, relations v2, shaped after a census of a
 worth what they cost" with numbers:
 
 - **Cost**: four explicit wire models checked against Drizzle row types with
-  [`$satisfies<Source>()`](/guides/drizzle/) — schema drift is a type error,
+  [`$satisfies<Source>()`](/concepts/model-sources/) — schema drift is a type error,
   while no database metadata enters the browser graph.
 - **Buy**: `users.rename` patches **four surfaces** — review rows on
   cached pages of two different paginated feeds, a top-reviewer card, and

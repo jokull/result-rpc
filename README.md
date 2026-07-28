@@ -1748,8 +1748,9 @@ returns the same model and performs no runtime reflection. The type-only
 schema import is erased, so Drizzle, table metadata, and private column names
 never enter the browser graph. The model remains the reviewed public wire
 allowlist; the source type only catches drift. The
-[Drizzle guide](https://result-rpc.com/guides/drizzle) applies the pattern to
-Drizzle's `$inferSelect`, but the assertion works with any source type.
+[model source compatibility guide](https://result-rpc.com/concepts/model-sources)
+documents the exact matching rules and limitations. The assertion works with
+any source type; Drizzle's `$inferSelect` is only one example.
 
 `examples/08-bookings/NOTES.md` applies these rules to real-world
 shapes — a four-level relational tree, locale-variant content under a
