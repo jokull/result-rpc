@@ -11,7 +11,18 @@
  * `server/internal` value the client received: one failure, correlated across
  * the wire without any request-id plumbing.
  */
-import { defectErrors, defineErrors, err, errorCatalog, ok, pickErrors, rpc, staleErrors, transportErrors, wire } from "../../src/index.js";
+import {
+  defectErrors,
+  defineErrors,
+  err,
+  errorCatalog,
+  ok,
+  pickErrors,
+  rpc,
+  staleErrors,
+  transportErrors,
+  wire,
+} from "../../src/index.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { createClient, fetchTransport, type ClientEvent } from "../../src/client/index.js";
 import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
@@ -29,7 +40,8 @@ export const billingErrors = defineErrors("billing", {
 const app = rpc.context<{}>();
 
 export const router = app.router({
-  charge: app.procedure()
+  charge: app
+    .procedure()
     .input(wire.object({ card: wire.string }))
     .output(wire.string)
     .errors(billingErrors)
@@ -79,12 +91,13 @@ export const makeObservedClient = (sentry: SentryLike, fetch: typeof globalThis.
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
     // 1. wire breadcrumbs — safe to forward verbatim: no values in the stream
-    onEvent: (event) => sentry.addBreadcrumb({
-      category: `rpc.${event.type}`,
-      message: "path" in event ? event.path : "",
-      level: levelFor(event),
-      data: event as unknown as Record<string, unknown>,
-    }),
+    onEvent: (event) =>
+      sentry.addBreadcrumb({
+        category: `rpc.${event.type}`,
+        message: "path" in event ? event.path : "",
+        level: levelFor(event),
+        data: event as unknown as Record<string, unknown>,
+      }),
   });
 export type BillingClient = ReturnType<typeof makeObservedClient>;
 
@@ -125,16 +138,16 @@ export function ChargeForm({ client, shell }: { client: BillingClient; shell: Bi
   // transport/defect tags above that
   const charge = shell.useMutation(client.charge);
   return (
-    <form onSubmit={(event) => {
-      event.preventDefault();
-      const field = event.currentTarget.elements.namedItem("card") as HTMLInputElement;
-      void charge.mutate({ card: field.value }).catch(() => undefined);
-    }}>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const field = event.currentTarget.elements.namedItem("card") as HTMLInputElement;
+        void charge.mutate({ card: field.value }).catch(() => undefined);
+      }}
+    >
       <input name="card" />
       {charge.state === "success" && <p>{charge.value}</p>}
-      {charge.state === "failure" && (
-        <p role="alert">{declinedMessage(charge.error)}</p>
-      )}
+      {charge.state === "failure" && <p role="alert">{declinedMessage(charge.error)}</p>}
     </form>
   );
 }

@@ -28,61 +28,48 @@ export type Result<T, E extends AnyTaggedError> = Ok<T> | Err<E>;
 
 function resultIterator(this: Result<unknown, AnyTaggedError>) {
   let done = false;
-  const self = this;
   return {
-    next(): IteratorResult<unknown> {
+    next: (): IteratorResult<unknown> => {
       if (done) return { done: true, value: undefined };
       done = true;
-      return self.ok
-        ? { done: true, value: self.value }
-        : { done: false, value: self };
+      return this.ok ? { done: true, value: this.value } : { done: false, value: this };
     },
   };
 }
 
 const withIterator = <T extends object>(result: T): T =>
-  Object.freeze(Object.defineProperty(result, Symbol.iterator, {
-    value: resultIterator,
-    enumerable: false,
-  }));
+  Object.freeze(
+    Object.defineProperty(result, Symbol.iterator, {
+      value: resultIterator,
+      enumerable: false,
+    }),
+  );
 
-export const ok = <T>(value: T): Ok<T> =>
-  withIterator({ ok: true, value }) as Ok<T>;
+export const ok = <T>(value: T): Ok<T> => withIterator({ ok: true, value }) as Ok<T>;
 
 export const err = <E extends AnyTaggedError>(error: E): Err<E> =>
   withIterator({ ok: false, error }) as Err<E>;
 
-export const isOk = <T, E extends AnyTaggedError>(
-  result: Result<T, E>,
-): result is Ok<T> => result.ok;
+export const isOk = <T, E extends AnyTaggedError>(result: Result<T, E>): result is Ok<T> =>
+  result.ok;
 
-export const isErr = <T, E extends AnyTaggedError>(
-  result: Result<T, E>,
-): result is Err<E> => !result.ok;
+export const isErr = <T, E extends AnyTaggedError>(result: Result<T, E>): result is Err<E> =>
+  !result.ok;
 
 export const map = <A, B, E extends AnyTaggedError>(
   result: Result<A, E>,
   fn: (value: A) => B,
-): Result<B, E> => result.ok ? ok(fn(result.value)) : result;
+): Result<B, E> => (result.ok ? ok(fn(result.value)) : result);
 
-export const andThen = <
-  A,
-  B,
-  E1 extends AnyTaggedError,
-  E2 extends AnyTaggedError,
->(
+export const andThen = <A, B, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(
   result: Result<A, E1>,
   fn: (value: A) => Result<B, E2>,
-): Result<B, E1 | E2> => result.ok ? fn(result.value) : result;
+): Result<B, E1 | E2> => (result.ok ? fn(result.value) : result);
 
-export const mapError = <
-  A,
-  E1 extends AnyTaggedError,
-  E2 extends AnyTaggedError,
->(
+export const mapError = <A, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(
   result: Result<A, E1>,
   fn: (error: E1) => E2,
-): Result<A, E2> => result.ok ? result : err(fn(result.error));
+): Result<A, E2> => (result.ok ? result : err(fn(result.error)));
 
 export const match = <T, E extends AnyTaggedError, R1, R2>(
   result: Result<T, E>,
@@ -90,14 +77,10 @@ export const match = <T, E extends AnyTaggedError, R1, R2>(
     ok: (value: T) => R1;
     error: (error: E) => R2;
   }>,
-): R1 | R2 => result.ok
-  ? handlers.ok(result.value)
-  : handlers.error(result.error);
+): R1 | R2 => (result.ok ? handlers.ok(result.value) : handlers.error(result.error));
 
 type ErrorHandlers<E extends AnyTaggedError, R> = {
-  readonly [Tag in E["_tag"]]: (
-    error: Extract<E, { readonly _tag: Tag }>,
-  ) => R;
+  readonly [Tag in E["_tag"]]: (error: Extract<E, { readonly _tag: Tag }>) => R;
 };
 
 export const matchError = <E extends AnyTaggedError, R>(
@@ -143,21 +126,16 @@ export const tapBoth = <T, E extends AnyTaggedError>(
 };
 
 /** Recover from a failure with a new Result; a success passes through. */
-export const orElse = <
-  T,
-  T2,
-  E1 extends AnyTaggedError,
-  E2 extends AnyTaggedError,
->(
+export const orElse = <T, T2, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(
   result: Result<T, E1>,
   fn: (error: E1) => Result<T2, E2>,
-): Result<T | T2, E2> => result.ok ? result : fn(result.error);
+): Result<T | T2, E2> => (result.ok ? result : fn(result.error));
 
 /** Unwrap the value or compute a fallback from the error. */
 export const getOrElse = <T, T2, E extends AnyTaggedError>(
   result: Result<T, E>,
   fallback: (error: E) => T2,
-): T | T2 => result.ok ? result.value : fallback(result.error);
+): T | T2 => (result.ok ? result.value : fallback(result.error));
 
 /**
  * Adopt a throwing function into the Result world. The catch handler must
@@ -187,21 +165,24 @@ export const tryPromise = async <T, E extends AnyTaggedError>(
   }
 };
 
-type AllValues<TShape> = { -readonly [K in keyof TShape]:
-  TShape[K] extends Result<infer T, AnyTaggedError> ? T : never };
+type AllValues<TShape> = {
+  -readonly [K in keyof TShape]: TShape[K] extends Result<infer T, AnyTaggedError> ? T : never;
+};
 type AllErrors<TShape> = (
   TShape extends readonly unknown[] ? TShape[number] : TShape[keyof TShape]
 ) extends infer TMember
-  ? TMember extends Err<infer E> ? E : never
+  ? TMember extends Err<infer E>
+    ? E
+    : never
   : never;
 
 /**
  * Combine a tuple or record of Results: all successes, or the first failure
  * encountered (tuple order / key insertion order).
  */
-export function all<
-  const TResults extends readonly Result<unknown, AnyTaggedError>[],
->(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;
+export function all<const TResults extends readonly Result<unknown, AnyTaggedError>[]>(
+  results: TResults,
+): Result<AllValues<TResults>, AllErrors<TResults>>;
 export function all<
   const TResults extends Readonly<Record<string, Result<unknown, AnyTaggedError>>>,
 >(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;

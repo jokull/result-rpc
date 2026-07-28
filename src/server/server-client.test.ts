@@ -18,10 +18,11 @@ const contract = r
   .output(wire.object({ at: wire.date, sequence: wire.bigint }))
   .errors({ Missing })
   .query();
-const procedure = r.implement(contract).handler(({ context, input, errors }) =>
-  context.found
-    ? ok({ at: input.at, sequence: 7n })
-    : err(errors.Missing({ at: input.at })));
+const procedure = r
+  .implement(contract)
+  .handler(({ context, input, errors }) =>
+    context.found ? ok({ at: input.at, sequence: 7n }) : err(errors.Missing({ at: input.at })),
+  );
 const router = r.router({ parity: { value: procedure } });
 
 describe("server client parity", () => {

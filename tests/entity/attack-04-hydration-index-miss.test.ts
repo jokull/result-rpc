@@ -27,10 +27,19 @@ const User = defineModel("a04-user", {
 });
 
 const boot = () => {
-  const app = rpc.context<{ readonly db: { user: { id: string; name: string; avatarUrl: string } } }>();
-  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-  const profile = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-  const setAvatar = app.procedure()
+  const app = rpc.context<{
+    readonly db: { user: { id: string; name: string; avatarUrl: string } };
+  }>();
+  const me = app
+    .procedure()
+    .output(User.all("test fixture"))
+    .query(({ context }) => ok(context.db.user));
+  const profile = app
+    .procedure()
+    .output(User.all("test fixture"))
+    .query(({ context }) => ok(context.db.user));
+  const setAvatar = app
+    .procedure()
     .input(wire.object({ avatarUrl: wire.string }))
     .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -61,7 +70,8 @@ describe("attack-04 hydration", () => {
     const sMe = server.observe(client.me, {}, { staleTime: 60_000 });
     await waitFor(sMe, (s) => s.state === "success");
     const dehydrated = server.dehydrate();
-    sMe.destroy(); server.clear();
+    sMe.destroy();
+    server.clear();
 
     const browser = createQueryRuntime({ client });
     browser.hydrate(dehydrated);
@@ -86,7 +96,10 @@ describe("attack-04 hydration", () => {
     // ATTACK ASSERTION: the flagship patch must land post-hydration.
     expect(headerState.value.avatarUrl).toBe("v2.png");
 
-    stopHeader(); header.destroy(); mutation.destroy(); browser.clear();
+    stopHeader();
+    header.destroy();
+    mutation.destroy();
+    browser.clear();
   });
 
   test("4b: entity patch misses a hydrated-but-not-yet-observed query; later observe serves stale as fresh", async () => {
@@ -99,7 +112,9 @@ describe("attack-04 hydration", () => {
     await waitFor(sMe, (s) => s.state === "success");
     await waitFor(sProfile, (s) => s.state === "success");
     const dehydrated = server.dehydrate();
-    sMe.destroy(); sProfile.destroy(); server.clear();
+    sMe.destroy();
+    sProfile.destroy();
+    server.clear();
 
     // Browser pass: hydrate, observe ONLY `me` (the header renders first).
     const browser = createQueryRuntime({ client });
@@ -125,7 +140,11 @@ describe("attack-04 hydration", () => {
     const refetched = requestCount() > before;
     expect(profileState.value.avatarUrl === "v2.png" || refetched).toBe(true);
 
-    stopHeader(); stopProfile();
-    header.destroy(); profile.destroy(); mutation.destroy(); browser.clear();
+    stopHeader();
+    stopProfile();
+    header.destroy();
+    profile.destroy();
+    mutation.destroy();
+    browser.clear();
   });
 });

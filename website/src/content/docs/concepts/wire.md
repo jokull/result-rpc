@@ -11,11 +11,11 @@ export const SaveConflict = error({
   tag: "doc/save-conflict",
   data: wire.object({
     docId: wire.string,
-    theirSavedAt: wire.date,      // a real Date on both sides of the wire
-    revision: wire.bigint,        // a real BigInt, not a stringified one
+    theirSavedAt: wire.date, // a real Date on both sides of the wire
+    revision: wire.bigint, // a real BigInt, not a stringified one
   }),
   httpStatus: 409,
-})
+});
 ```
 
 result-rpc uses a pinned, protocol-versioned devalue transport. Success values
@@ -39,14 +39,14 @@ const RichDoc = wire.object({
   revision: wire.bigint,
   pattern: wire.regexp,
   homepage: wire.url,
-})
+});
 ```
 
 For a recursive or otherwise richer application type, validate serializer
 support at the boundary:
 
 ```ts
-const Graph = wire.serializable<DocGraph>()
+const Graph = wire.serializable<DocGraph>();
 ```
 
 Functions, symbols, unsupported application class instances, and arbitrary
@@ -76,22 +76,24 @@ usually with a presigned URL, and let the RPC contract carry only the
 
 ```ts
 // 1. A tiny RPC to mint an upload target (or mount a plain POST route for it).
-const createUpload = app.procedure()
+const createUpload = app
+  .procedure()
   .input(wire.object({ contentType: wire.string }))
   .output(wire.object({ uploadUrl: wire.url, key: wire.string }))
-  .mutation(async ({ input, context }) =>
-    ok(await context.storage.presignPut(input.contentType)))
+  .mutation(async ({ input, context }) => ok(await context.storage.presignPut(input.contentType)));
 
 // 2. The client PUTs the file to uploadUrl directly — bytes never touch RPC.
-await fetch(uploadUrl, { method: "PUT", body: file })
+await fetch(uploadUrl, { method: "PUT", body: file });
 
 // 3. The RPC that finishes the job carries only the reference.
-const setAvatar = app.procedure()
+const setAvatar = app
+  .procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
   .output(UserCard)
   .errors({ ImageUnprocessable })
   .mutation(async ({ input, context }) =>
-    ok(await context.users.setAvatarFromKey(input.userId, input.key)))
+    ok(await context.users.setAvatarFromKey(input.userId, input.key)),
+  );
 ```
 
 The contract stays fully typed and wire-safe, uploads scale on your storage

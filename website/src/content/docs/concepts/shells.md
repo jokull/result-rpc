@@ -5,7 +5,7 @@ description: "Error boundaries for values: providers that claim failure classes,
 
 Remember the 401 interceptor. Now recall that React already solved this exact
 shape once, for a different kind of failure. Render errors used to be every
-component's private problem; error boundaries made them *positional*: throw
+component's private problem; error boundaries made them _positional_: throw
 anywhere below, and the nearest boundary that claims it takes over. Three
 properties made that design stick:
 
@@ -15,7 +15,7 @@ properties made that design stick:
 3. **Unclaimed errors fail loudly** rather than vanish.
 
 A shell is the same contract, transplanted from thrown render errors to
-failure *values*. A shell is a provider that claims a set of error tags. Any
+failure _values_. A shell is a provider that claims a set of error tags. Any
 operation rendered beneath it — no matter which hook issued it — that fails
 with a claimed tag is routed to the shell instead of surfacing as component
 state. The 401 interceptor becomes a typed declaration with a position in the
@@ -26,22 +26,22 @@ tree, and the tags it owns disappear from the unions below it.
 The tiers are nothing more than which definition map you hand to which shell —
 there is no classification field:
 
-| What failed | Example tags | Reaction | The map |
-| --- | --- | --- | --- |
-| The domain said no | `doc/not-found`, `auth/unauthorized` | the component branches, or an auth shell reacts | your `defineErrors` maps |
-| The world flaked | `client/offline`, `client/timeout`, `client/network-failure` | pause, banner, resume | `transportErrors` |
-| The contract broke | `client/protocol-violation`, `client/decode-failure`, `server/internal` | escalate to the error boundary | `defectErrors` |
-| A deploy left this client behind | `client/stale` | reload — the reload *is* the fix | `staleErrors` |
+| What failed                      | Example tags                                                            | Reaction                                        | The map                  |
+| -------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------- | ------------------------ |
+| The domain said no               | `doc/not-found`, `auth/unauthorized`                                    | the component branches, or an auth shell reacts | your `defineErrors` maps |
+| The world flaked                 | `client/offline`, `client/timeout`, `client/network-failure`            | pause, banner, resume                           | `transportErrors`        |
+| The contract broke               | `client/protocol-violation`, `client/decode-failure`, `server/internal` | escalate to the error boundary                  | `defectErrors`           |
+| A deploy left this client behind | `client/stale`                                                          | reload — the reload _is_ the fix                | `staleErrors`            |
 
 The framework contributes every non-domain row, so the framework ships their
 owners pre-assembled — assembling them by hand was the same ten lines in
 every app:
 
 ```tsx
-import { boundaryShells } from "result-rpc/react"
+import { boundaryShells } from "result-rpc/react";
 
 export const { TransportShell, DefectShell, StaleShell, BoundaryProvider, useConnectivity } =
-  boundaryShells()
+  boundaryShells();
 // TransportShell  claims transportErrors, pauses; useHeld() feeds the banner
 // DefectShell     claims defectErrors, escalates to the React error boundary
 // StaleShell      claims staleErrors; default reaction reloads the page
@@ -70,11 +70,14 @@ two-source signal, exhaustively switchable like everything else here:
 
 ```tsx
 function ConnectionBanner() {
-  const net = useConnectivity()
+  const net = useConnectivity();
   switch (net.status) {
-    case "online":   return null
-    case "offline":  return <Banner>You're offline — paused work resumes automatically.</Banner>
-    case "degraded": return <Banner action={net.resume}>Connection trouble — retrying…</Banner>
+    case "online":
+      return null;
+    case "offline":
+      return <Banner>You're offline — paused work resumes automatically.</Banner>;
+    case "degraded":
+      return <Banner action={net.resume}>Connection trouble — retrying…</Banner>;
   }
 }
 ```
@@ -88,32 +91,34 @@ transport errors are outcomes. The hint never mints or suppresses an error
 tag and never touches the cache; it only times resumes and informs the
 banner. `net.held`, `net.latest`, and `net.resume` are there for custom UX.
 
-You only ever *write* shells for what the app itself owns:
+You only ever _write_ shells for what the app itself owns:
 
 ```tsx
-import { defineShell } from "result-rpc/react"
-import { authErrors } from "../shared/errors"
+import { defineShell } from "result-rpc/react";
+import { authErrors } from "../shared/errors";
 
 export const AuthShell = defineShell({
   name: "auth",
-  from: StaleShell,                 // hang off the innermost built-in
+  from: StaleShell, // hang off the innermost built-in
   claims: authErrors,
   onError: (_error, { signOut }) => signOut(),
   provide: (props: { session: Session; signOut: () => void }) => ({
     user: props.session.user,
     signOut: props.signOut,
   }),
-})
+});
 ```
 
 Mount them as an onion:
 
 ```tsx
 <ResultRpcProvider runtime={runtime}>
-  <BoundaryProvider>            {/* transport pauses · defects escalate · stale reloads */}
+  <BoundaryProvider>
+    {" "}
+    {/* transport pauses · defects escalate · stale reloads */}
     <ErrorBoundary fallback={<AppBroken />}>
       <AuthShell.Provider session={session} signOut={signOut}>
-        <Routes />              {/* components below see ONLY their domain errors */}
+        <Routes /> {/* components below see ONLY their domain errors */}
       </AuthShell.Provider>
     </ErrorBoundary>
   </BoundaryProvider>
@@ -124,32 +129,36 @@ Inside `Routes`, an operation resolving ten possible tags presents one:
 
 ```tsx
 export function DocPage({ id }: { id: string }) {
-  const { user } = AuthShell.use()      // User, not User | null
-  const doc = AuthShell.useQuery(client.doc.byId, { id })
+  const { user } = AuthShell.use(); // User, not User | null
+  const doc = AuthShell.useQuery(client.doc.byId, { id });
 
   switch (doc.state) {
-    case "pending": return <DocSkeleton />
-    case "success": return <DocView doc={doc.value} viewer={user} />
+    case "pending":
+      return <DocSkeleton />;
+    case "success":
+      return <DocView doc={doc.value} viewer={user} />;
     case "failure":
       // DocNotFound — and adding a case for anything else is a type error
-      return <DocMissing docId={doc.error.data.docId} />
+      return <DocMissing docId={doc.error.data.docId} />;
   }
 }
 ```
 
-And when a query's domain union is *empty* — a list that declares no domain
+And when a query's domain union is _empty_ — a list that declares no domain
 errors, rendered under a complete onion — the failure branch becomes a
 compile-time certificate that the owners are mounted:
 
 ```tsx
 switch (issues.state) {
-  case "pending": return <p>Loading issues…</p>
-  case "success": return <IssueRows issues={issues.value} />
+  case "pending":
+    return <p>Loading issues…</p>;
+  case "success":
+    return <IssueRows issues={issues.value} />;
   case "failure":
     // transport, defect, stale, and auth are all claimed above; nothing
     // domain remains. This line compiles ONLY while that is true — remove
     // a provider from the tree and the build fails, right here.
-    return issues.error satisfies never
+    return issues.error satisfies never;
 }
 ```
 
@@ -161,7 +170,7 @@ Claiming is **per observer and tree-positional**. Each hook, at its render
 position, checks whether an enclosing shell claims the failure's tag. The
 cache is never rewritten: the entry still holds the real `Err`, refetch
 bookkeeping continues underneath, and an observer of the same cache entry
-rendered *outside* the shell still sees `state: "failure"`. A shell changes
+rendered _outside_ the shell still sees `state: "failure"`. A shell changes
 how a failure presents where it presents — nothing else. The innermost shell
 claiming a tag owns it.
 
@@ -170,7 +179,7 @@ The type story has two halves:
 - **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's claimed
   tags from the union — and eagerly asserts, at mount, that every shell in
   the chain is actually mounted above it. The subtraction is only honest if
-  the owners exist, so a missing provider throws on *first render*, the same
+  the owners exist, so a missing provider throws on _first render_, the same
   contract as any context hook without its provider. You find out on the
   happy path in development, not on the error path in production.
 - **Plain hooks over-approximate.** `useResultQuery` keeps the full union.
@@ -218,7 +227,7 @@ With `effect: "pause"` (the default):
 - **Mutation** — state returns to `"idle"` and the pending `mutate` promise
   rejects with a **`claimed` control signal**: the caller's continuation was
   written against the narrowed union, so an outcome owned above it must not
-  run it. The signal is the same *family* as cancellation — control flow,
+  run it. The signal is the same _family_ as cancellation — control flow,
   never part of a recoverable union — but deliberately distinguishable,
   because "you cancelled" and "a shell owns this outcome" are different
   events. `isClaimed(reason)` identifies it and carries the claimed tag and
@@ -226,16 +235,19 @@ With `effect: "pause"` (the default):
   were signed out" instead of silently resetting:
 
   ```ts
-  import { isCancelled, isClaimed } from "result-rpc/client"
+  import { isCancelled, isClaimed } from "result-rpc/client";
 
   try {
-    await rename.mutate({ id, title })
+    await rename.mutate({ id, title });
   } catch (reason) {
-    if (isClaimed(reason)) reason.data // { tag: "auth/session-expired", owner: "auth" }
-    else if (isCancelled(reason)) {}   // user cancelled; nothing happened for sure
-    else throw reason
+    if (isClaimed(reason))
+      reason.data; // { tag: "auth/session-expired", owner: "auth" }
+    else if (isCancelled(reason)) {
+    } // user cancelled; nothing happened for sure
+    else throw reason;
   }
   ```
+
 - **Subscription** — `connection` becomes `"paused"` and `result` stays
   `undefined`.
 
@@ -254,9 +266,9 @@ Held is not stuck. Every held operation carries a retry handle, and the shell
 exposes the whole set:
 
 ```tsx
-const { latest, affected, resume } = AuthShell.useHeld()
+const { latest, affected, resume } = AuthShell.useHeld();
 // after re-authenticating:
-resume() // every held query refetches; held subscriptions reconnect
+resume(); // every held query refetches; held subscriptions reconnect
 ```
 
 Held mutations reset to idle — their failure already reached the caller as the claimed rejection, and replaying a side effect is never the shell's call. Resetting ends the pause arc, so holdings (and the connection banner) drain on resume.
@@ -279,9 +291,9 @@ together:
 
 ```tsx
 function OfflineBanner() {
-  const { latest, affected } = AppShell.useHeld()
-  if (!latest) return null
-  return <Banner tag={latest._tag} count={affected} />
+  const { latest, affected } = AppShell.useHeld();
+  if (!latest) return null;
+  return <Banner tag={latest._tag} count={affected} />;
 }
 ```
 
@@ -295,13 +307,13 @@ the error and produces context. They are inverses over the same declaration:
 
 ```ts
 // shared/errors.ts
-export const authErrors = { Unauthorized, SessionExpired }
+export const authErrors = { Unauthorized, SessionExpired };
 
 // server
-const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */)
+const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
 
 // client
-const AuthShell = defineShell({ name: "auth", claims: authErrors, /* ... */ })
+const AuthShell = defineShell({ name: "auth", claims: authErrors /* ... */ });
 ```
 
 Add an error to `authErrors` and every derived shell absorbs it; no component

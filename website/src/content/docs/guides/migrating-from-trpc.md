@@ -9,18 +9,18 @@ side by side for as long as the migration takes:
 
 ```ts
 // server: two handlers, two routes
-app.all("/api/trpc/*", trpcHandler)     // existing routers stay
-app.post("/rpc", resultRpcHandler)      // migrated routers move here
+app.all("/api/trpc/*", trpcHandler); // existing routers stay
+app.post("/rpc", resultRpcHandler); // migrated routers move here
 
 // client: two clients during the transition
-export const trpc = createTRPCReact<LegacyRouter>()
-export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) })
+export const trpc = createTRPCReact<LegacyRouter>();
+export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) });
 ```
 
 One difference to internalize before your first slice: tRPC ships its router to
 the client **as a type** (`createTRPCReact<LegacyRouter>`), erased at build.
-result-rpc ships a **real client value** built from your `contract` — so *what
-you import decides what bundles*. Pass the contract, never the server router, or
+result-rpc ships a **real client value** built from your `contract` — so _what
+you import decides what bundles_. Pass the contract, never the server router, or
 handlers and secrets ship to the browser. This is the one migration mistake that
 is a security bug; read [The client boundary](/concepts/client-boundary/) first.
 
@@ -31,19 +31,19 @@ instead of at the end.
 
 The concept mapping is mechanical:
 
-| tRPC | result-rpc |
-| --- | --- |
-| `initTRPC.context<Ctx>().create()` | `rpc.context<Ctx>()` |
-| `t.procedure.input(z...).query(fn)` | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
-| `throw new TRPCError({ code })` | `return err(errors.SomeError({...}))` |
-| `t.middleware` + `ctx` spread | `app.middleware<Added>().errors({...}).use(...)` |
-| `protectedProcedure` | `app.procedure().use(authenticated)` — same pattern |
-| `httpBatchLink` | `batchFetchTransport` |
-| `@trpc/react-query` hooks | `useResultQuery` / shell hooks |
-| `errorFormatter` | gone — error data is a wire codec, not a formatted shape |
-| adapter `onError` | `onError` + `onInternalError` on `createFetchHandler` |
-| `createCaller` | `createServerClient` (parity mode) |
-| `queryClient.setDefaultOptions({ onError })` | a shell |
+| tRPC                                         | result-rpc                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `initTRPC.context<Ctx>().create()`           | `rpc.context<Ctx>()`                                                     |
+| `t.procedure.input(z...).query(fn)`          | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                    |
+| `t.middleware` + `ctx` spread                | `app.middleware<Added>().errors({...}).use(...)`                         |
+| `protectedProcedure`                         | `app.procedure().use(authenticated)` — same pattern                      |
+| `httpBatchLink`                              | `batchFetchTransport`                                                    |
+| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
+| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
+| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
+| `createCaller`                               | `createServerClient` (parity mode)                                       |
+| `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
 
 Two things have no tRPC equivalent and are the actual work: every procedure
 declares its error union (this is where the two-failure-channel debt gets paid

@@ -33,10 +33,12 @@ type Row = { id: string; status: string; closedAt: string | null };
 
 const boot = () => {
   const app = rpc.context<{ readonly db: Map<string, Row> }>();
-  const list = app.procedure()
+  const list = app
+    .procedure()
     .output(wire.array(Ticket.all("test fixture")))
     .query(({ context }) => ok([...context.db.values()]));
-  const close = app.procedure()
+  const close = app
+    .procedure()
     .input(wire.object({ id: wire.string }))
     // output is a PROJECTION: id + status only
     .output(Ticket.pick("id", "status"))
@@ -85,7 +87,10 @@ describe("attack-01 projection merge", () => {
     // fields), or `touch` the entity so containing queries refetch.
     expect(row.closedAt).toBeNull();
 
-    stop(); list.destroy(); close.destroy(); runtime.clear();
+    stop();
+    list.destroy();
+    close.destroy();
+    runtime.clear();
   });
 
   test("1b hardening: a narrower fresh object never wipes keys the cache has", async () => {
@@ -106,6 +111,9 @@ describe("attack-01 projection merge", () => {
     expect(Object.keys(row).sort()).toEqual(["closedAt", "id", "status"]);
     expect(row.id).toBe("t1");
 
-    stop(); list.destroy(); close.destroy(); runtime.clear();
+    stop();
+    list.destroy();
+    close.destroy();
+    runtime.clear();
   });
 });

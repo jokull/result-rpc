@@ -40,7 +40,7 @@ component. Three consequences shape the whole integration:
 ```tsx
 // src/routes/index.tsx
 export const Route = createFileRoute("/")({
-  loader: () => prefetchHome(),          // returns runtime.dehydrate()
+  loader: () => prefetchHome(), // returns runtime.dehydrate()
   component: Home,
 });
 
@@ -48,7 +48,9 @@ function Home() {
   const state = Route.useLoaderData();
   return (
     <ResultRpcHydrationBoundary state={state}>
-      <StatsBar /><AddSpotForm /><Feed />
+      <StatsBar />
+      <AddSpotForm />
+      <Feed />
     </ResultRpcHydrationBoundary>
   );
 }
@@ -73,7 +75,7 @@ So the boundary is `createServerFn` (`src/ssr.ts`):
 
 ```ts
 export const prefetchHome = createServerFn({ method: "GET" }).handler(async () => {
-  const { runtime, serverClient } = buildRuntime();   // parity server client
+  const { runtime, serverClient } = buildRuntime(); // parity server client
   await Promise.all([
     runtime.prefetchPaginated(serverClient.spots.feed, {}),
     runtime.prefetch(serverClient.stats.overview, {}),
@@ -87,7 +89,7 @@ build, so `rpc-server.ts` (and the canary inside it) never reaches the
 browser graph — see the grep below. During SSR the function is invoked
 in-process, with no HTTP hop.
 
-The net behaviour is *better* than it sounds: on a client-side navigation
+The net behaviour is _better_ than it sounds: on a client-side navigation
 the loader makes one server-function call that returns a **whole warm
 cache**, instead of the destination's components each firing their own RPC
 on mount. Same no-flash property as RSC prefetch, same one-round-trip cost.
@@ -173,11 +175,11 @@ if (input.id === SERVER_SECRET) return err(errors.notFound({ spotId: SERVER_SECR
 
 After `pnpm build`:
 
-| grep target | result |
-| --- | --- |
-| `grep -rl TSS_SECRET_marker_do_not_ship dist/client/` | **no matches** ✅ |
-| `grep -rl TSS_SECRET_marker_do_not_ship dist/server/` | `dist/server/assets/rpc-server-*.js` (where it belongs) |
-| `grep -rlE "better-sqlite3\|node:fs\|spots.sqlite\|drizzle-orm/better-sqlite3" dist/client/` | **no matches** ✅ |
+| grep target                                                                                  | result                                                  |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `grep -rl TSS_SECRET_marker_do_not_ship dist/client/`                                        | **no matches** ✅                                       |
+| `grep -rl TSS_SECRET_marker_do_not_ship dist/server/`                                        | `dist/server/assets/rpc-server-*.js` (where it belongs) |
+| `grep -rlE "better-sqlite3\|node:fs\|spots.sqlite\|drizzle-orm/better-sqlite3" dist/client/` | **no matches** ✅                                       |
 
 Both boundaries hold: the `/api/rpc` server route and the `createServerFn`
 prefetchers are the only importers of `rpc-server.ts`, and Start strips
@@ -187,15 +189,15 @@ both from the client build.
 
 Against `pnpm dev` on port 4311, via `agent-browser`:
 
-| check | result |
-| --- | --- |
-| cold load of `/` | 8 rows + stats in the SSR HTML, `.skeleton-card` count 0, and `performance.getEntriesByType('resource')` shows **0** `/api/rpc` requests |
-| "Load more" | rows 8 → 16, meta `16 spots loaded · 2 pages`, exactly **1** `/api/rpc` call |
-| like row 1 | `♥ 0 → ♥ 1` patched in place, row count stays 16 (no list refetch); the `.affects()` aggregate goes `331 → 332` |
-| navigate to `/spots/spot-01` | detail renders `♥ 1` — the entity patch crossed the query boundary — with **no extra** `/api/rpc` call |
-| hard load of `/spots/spot-01` | SSR'd detail, **0** `/api/rpc` calls |
-| duplicate name | `spot/name-taken` → `"Fushimi Inari at dawn" already exists` (from `db/unique-violation` via `tryDb`) |
-| fresh name | inserts; `.affects(feedContract)` resets the window to page one and the aggregate goes 30 → 31 spots |
+| check                         | result                                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| cold load of `/`              | 8 rows + stats in the SSR HTML, `.skeleton-card` count 0, and `performance.getEntriesByType('resource')` shows **0** `/api/rpc` requests |
+| "Load more"                   | rows 8 → 16, meta `16 spots loaded · 2 pages`, exactly **1** `/api/rpc` call                                                             |
+| like row 1                    | `♥ 0 → ♥ 1` patched in place, row count stays 16 (no list refetch); the `.affects()` aggregate goes `331 → 332`                          |
+| navigate to `/spots/spot-01`  | detail renders `♥ 1` — the entity patch crossed the query boundary — with **no extra** `/api/rpc` call                                   |
+| hard load of `/spots/spot-01` | SSR'd detail, **0** `/api/rpc` calls                                                                                                     |
+| duplicate name                | `spot/name-taken` → `"Fushimi Inari at dawn" already exists` (from `db/unique-violation` via `tryDb`)                                    |
+| fresh name                    | inserts; `.affects(feedContract)` resets the window to page one and the aggregate goes 30 → 31 spots                                     |
 
 Screenshots in `./screenshots/`: `01-home-ssr-prefetched.png`,
 `02-load-more.png`, `03-like-patched.png`, `04-detail-route.png`,
@@ -211,10 +213,10 @@ Screenshots in `./screenshots/`: `01-home-ssr-prefetched.png`,
    (`src/server.ts` = router + handlers, `src/client.ts` = browser client,
    used verbatim in every other example) silently hijacked both entries.
    The failure mode is opaque: `TypeError: Cannot read properties of
-   undefined (reading 'fetch')` from inside the dev-server plugin, because
+undefined (reading 'fetch')` from inside the dev-server plugin, because
    `src/server.ts` has no default export with a `fetch`. Renamed to
    `rpc-server.ts` / `rpc-client.ts`. Also reserved: `src/start.ts`, and
-   `src/router.tsx` is *required* (must export `getRouter`).
+   `src/router.tsx` is _required_ (must export `getRouter`).
 
 2. **The entry plan is cached across restarts.** After the rename the dev
    server still resolved `virtual:tanstack-start-server-entry` to the
@@ -222,7 +224,7 @@ Screenshots in `./screenshots/`: `01-home-ssr-prefetched.png`,
 
 3. **Isomorphic loaders are a live client-boundary hazard.** This is the
    one thing an RSC-trained reflex gets wrong. `loader: async () => { const
-   { db } = await import("../db"); ... }` typechecks, works in dev SSR, and
+{ db } = await import("../db"); ... }` typechecks, works in dev SSR, and
    ships your database to the browser on the first client-side navigation.
    `createServerFn` is not optional decoration here — it is the wall.
 

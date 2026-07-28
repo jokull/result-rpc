@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  createElement,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { createElement, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import {
   defectErrors,
   staleErrors,
@@ -73,9 +67,24 @@ export interface Connectivity {
 }
 
 export interface BoundaryShells {
-  readonly TransportShell: Shell<TagsOf<typeof transportErrors>, Record<never, never>, void, ErrorUnion<typeof transportErrors>>;
-  readonly DefectShell: Shell<TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors>, Record<never, never>, void, ErrorUnion<typeof defectErrors>>;
-  readonly StaleShell: Shell<TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors> | TagsOf<typeof staleErrors>, Record<never, never>, void, ErrorUnion<typeof staleErrors>>;
+  readonly TransportShell: Shell<
+    TagsOf<typeof transportErrors>,
+    Record<never, never>,
+    void,
+    ErrorUnion<typeof transportErrors>
+  >;
+  readonly DefectShell: Shell<
+    TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors>,
+    Record<never, never>,
+    void,
+    ErrorUnion<typeof defectErrors>
+  >;
+  readonly StaleShell: Shell<
+    TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors> | TagsOf<typeof staleErrors>,
+    Record<never, never>,
+    void,
+    ErrorUnion<typeof staleErrors>
+  >;
   /** Mounts all three in order. Place the React error boundary just inside it. */
   readonly BoundaryProvider: (props: { readonly children?: ReactNode }) => ReactNode;
   /** The offline-banner signal. Must be used under `BoundaryProvider`. */
@@ -128,13 +137,17 @@ export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShe
     const resumeRef = useRef(held.resume);
     resumeRef.current = held.resume;
     const lastResumeAt = useRef(0);
-    useEffect(() => subscribeConnectivity((event) => {
-      if (event === "offline" || heldRef.current === 0) return;
-      const now = Date.now();
-      if (event === "focus" && now - lastResumeAt.current < FOCUS_RESUME_COOLDOWN_MS) return;
-      lastResumeAt.current = now;
-      resumeRef.current();
-    }), []);
+    useEffect(
+      () =>
+        subscribeConnectivity((event) => {
+          if (event === "offline" || heldRef.current === 0) return;
+          const now = Date.now();
+          if (event === "focus" && now - lastResumeAt.current < FOCUS_RESUME_COOLDOWN_MS) return;
+          lastResumeAt.current = now;
+          resumeRef.current();
+        }),
+      [],
+    );
     return children;
   };
 
@@ -148,19 +161,13 @@ export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShe
         createElement(
           StaleShell.Provider,
           undefined,
-          options.autoResume === false
-            ? children
-            : createElement(AutoResume, undefined, children),
+          options.autoResume === false ? children : createElement(AutoResume, undefined, children),
         ),
       ),
     );
 
   const useConnectivity = (): Connectivity => {
-    const online = useSyncExternalStore(
-      subscribeOnline,
-      getOnlineSnapshot,
-      serverOnlineSnapshot,
-    );
+    const online = useSyncExternalStore(subscribeOnline, getOnlineSnapshot, serverOnlineSnapshot);
     const held = TransportShell.useHeld();
     return {
       status: !online ? "offline" : held.affected > 0 ? "degraded" : "online",

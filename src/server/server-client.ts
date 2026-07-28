@@ -16,9 +16,7 @@ export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
   const handler = createFetchHandler({
     router,
     createContext: () => options.context,
-    ...(options.onInternalError === undefined
-      ? {}
-      : { onInternalError: options.onInternalError }),
+    ...(options.onInternalError === undefined ? {} : { onInternalError: options.onInternalError }),
   });
   const localFetch = (async (input: string | URL | Request, init?: RequestInit) =>
     handler(new Request(input, init))) as typeof globalThis.fetch;

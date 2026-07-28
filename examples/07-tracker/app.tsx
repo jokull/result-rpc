@@ -113,8 +113,7 @@ const issueFailureMessage = errorCatalog(
   { notFound: issueErrors.notFound, forbidden: projectErrors.forbidden },
   {
     "issue/not-found": (error) => `Issue ${error.data.issueId} was not found.`,
-    "project/forbidden": (error) =>
-      `You do not have access to project ${error.data.projectId}.`,
+    "project/forbidden": (error) => `You do not have access to project ${error.data.projectId}.`,
   },
 );
 
@@ -125,11 +124,7 @@ export function IssueDetail({ id }: { id: string }) {
 
   switch (issue.state) {
     case "pending":
-      return issue.fetch === "paused" ? (
-        <p>Waiting for a connection…</p>
-      ) : (
-        <p>Loading issue…</p>
-      );
+      return issue.fetch === "paused" ? <p>Waiting for a connection…</p> : <p>Loading issue…</p>;
     case "success":
       return (
         <article>
@@ -167,8 +162,7 @@ export function AssignControls({ issue }: { issue: IssueView }) {
       return (
         <p role="alert">
           {matchError(people.error, {
-            "directory/unavailable": () =>
-              "The people directory is unavailable right now.",
+            "directory/unavailable": () => "The people directory is unavailable right now.",
           })}
         </p>
       );
@@ -197,9 +191,7 @@ export function AssignControls({ issue }: { issue: IssueView }) {
               ))}
             </select>
           </label>
-          {assign.state === "failure" && (
-            <p role="alert">{assignMessages(assign.error)}</p>
-          )}
+          {assign.state === "failure" && <p role="alert">{assignMessages(assign.error)}</p>}
         </div>
       );
   }
@@ -260,7 +252,12 @@ export function ActivityFeed({ issueId }: { issueId: string }) {
   // Subscriptions keep the Result envelope (connection is orthogonal to the
   // latest outcome), so this reads as a Result, not a state switch.
   if (feed.result === undefined) {
-    return <section><p>No activity yet.</p>{ended}</section>;
+    return (
+      <section>
+        <p>No activity yet.</p>
+        {ended}
+      </section>
+    );
   }
   if (!feed.result.ok) {
     return (
@@ -304,18 +301,21 @@ export function NewIssueForm({ projectId }: { projectId: string }) {
 
   const create = ViewerShell.useMutation(client.issues.create, {
     optimistic: (input, cache) => ({
-      rollback: cache.update(client.issues.list, {}, (issues) =>
-        issues && [
-          ...issues,
-          {
-            id: input.id,
-            projectId: input.projectId,
-            title: input.title,
-            status: "open" as const,
-            assigneeId: null,
-            closedAt: null,
-          },
-        ],
+      rollback: cache.update(
+        client.issues.list,
+        {},
+        (issues) =>
+          issues && [
+            ...issues,
+            {
+              id: input.id,
+              projectId: input.projectId,
+              title: input.title,
+              status: "open" as const,
+              assigneeId: null,
+              closedAt: null,
+            },
+          ],
       ),
     }),
     onFailure: (_error, _input, context) => context?.rollback(),

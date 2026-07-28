@@ -1,6 +1,10 @@
-import type { AnyTaggedError , ErrorPolicy } from "../error.js";
+import type { AnyTaggedError, ErrorPolicy } from "../error.js";
 import { frameworkError as error } from "../error.js";
-import { badRequestFromIssues, frameworkErrorDefinitions, ServerInternal } from "../framework-errors.js";
+import {
+  badRequestFromIssues,
+  frameworkErrorDefinitions,
+  ServerInternal,
+} from "../framework-errors.js";
 import { contractDigest } from "../contract-digest.js";
 import {
   CONTRACT_HEADER,
@@ -15,11 +19,7 @@ import {
   type ResponseEnvelope,
 } from "../protocol.js";
 import type { Result } from "../result.js";
-import {
-  DEFAULT_MAX_WIRE_BYTES,
-  deserialize,
-  serialize,
-} from "../serializer.js";
+import { DEFAULT_MAX_WIRE_BYTES, deserialize, serialize } from "../serializer.js";
 import { wire } from "../wire.js";
 import {
   executeProcedure,
@@ -33,10 +33,7 @@ import {
   type RouterRecord,
 } from "./contract.js";
 
-const readRequestBody = async (
-  request: Request,
-  maxBytes: number,
-): Promise<string | undefined> => {
+const readRequestBody = async (request: Request, maxBytes: number): Promise<string | undefined> => {
   if (!request.body) return "";
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
@@ -112,7 +109,7 @@ const streamProcedureResponse = (
         const encoded = serialize(frame, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
         if (!encoded.ok) throw new TypeError("Unable to encode subscription frame");
         controller.enqueue(encoder.encode(`${encoded.value}\n`));
-        if (next.done || (!next.value.ok)) controller.close();
+        if (next.done || !next.value.ok) controller.close();
       } catch (cause) {
         const incidentId = `inc_${crypto.randomUUID()}`;
         onInternalError?.({ incidentId, phase: "handler", cause, procedurePath: path });
@@ -181,24 +178,20 @@ const wireResponse = (
   });
 };
 
-const failureResponse = (
-  failure: AnyTaggedError,
-  status: number,
-): Response => wireResponse({ v: PROTOCOL_VERSION, ok: false, error: failure.toJSON() }, status);
+const failureResponse = (failure: AnyTaggedError, status: number): Response =>
+  wireResponse({ v: PROTOCOL_VERSION, ok: false, error: failure.toJSON() }, status);
 
 const statusForError = (procedure: AnyProcedure, failure: AnyTaggedError): number => {
   if (ServerInternal.is(failure)) return ServerInternal.policy.httpStatus ?? 500;
   const definitions = procedure._def.definitions as ErrorDefinitionMap;
-  const definition = Object.values(definitions).find(
-    (candidate) => candidate.tag === failure._tag,
-  );
+  const definition = Object.values(definitions).find((candidate) => candidate.tag === failure._tag);
   if (!definition) return 500;
   return definition.policy.httpStatus ?? 200;
 };
 
 const frameworkPolicyFor = (failure: AnyTaggedError): ErrorPolicy | undefined =>
-  Object.values(frameworkErrorDefinitions)
-    .find((definition) => definition.tag === failure._tag)?.policy;
+  Object.values(frameworkErrorDefinitions).find((definition) => definition.tag === failure._tag)
+    ?.policy;
 
 const definitionPolicyFor = (
   router: Router<unknown, RouterRecord>,
@@ -207,8 +200,9 @@ const definitionPolicyFor = (
 ): ErrorPolicy | undefined => {
   const procedure = router.procedures.get(procedurePath);
   if (!procedure) return undefined;
-  return Object.values(procedure._def.definitions as ErrorDefinitionMap)
-    .find((definition) => definition.tag === failure._tag)?.policy;
+  return Object.values(procedure._def.definitions as ErrorDefinitionMap).find(
+    (definition) => definition.tag === failure._tag,
+  )?.policy;
 };
 
 const encodeProcedureResult = (
@@ -231,7 +225,10 @@ const encodeProcedureResult = (
     const fallback = ServerInternal({ incidentId: `inc_${crypto.randomUUID()}` });
     return failureResponse(fallback, 500);
   }
-  return wireResponse({ v: PROTOCOL_VERSION, ok: true, value: encoded.value, ...touchedField }, 200);
+  return wireResponse(
+    { v: PROTOCOL_VERSION, ok: true, value: encoded.value, ...touchedField },
+    200,
+  );
 };
 
 export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> {
@@ -281,8 +278,9 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
   const contractVersion = options.contractVersion ?? contractDigest(options.router);
   const handle = async (request: Request): Promise<Response> => {
     const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
-      const policy = frameworkPolicyFor(failure)
-        ?? (procedurePath === undefined
+      const policy =
+        frameworkPolicyFor(failure) ??
+        (procedurePath === undefined
           ? undefined
           : definitionPolicyFor(options.router, procedurePath, failure));
       options.onError?.({
@@ -350,7 +348,8 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           });
           return failureResponse(ServerInternal({ incidentId }), 500);
         }
-        if (!decodedInput.ok) return failWith(badRequestFromIssues(decodedInput.issues), 400, envelope.path);
+        if (!decodedInput.ok)
+          return failWith(badRequestFromIssues(decodedInput.issues), 400, envelope.path);
         return streamProcedureResponse(
           subscription,
           decodedInput.value,
@@ -381,7 +380,8 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         });
         return failureResponse(ServerInternal({ incidentId }), 500);
       }
-      if (!decodedInput.ok) return failWith(badRequestFromIssues(decodedInput.issues), 400, item.path);
+      if (!decodedInput.ok)
+        return failWith(badRequestFromIssues(decodedInput.issues), 400, item.path);
       const touched: string[] = [];
       const result = await executeProcedure(procedure, decodedInput.value, {
         context,
@@ -393,8 +393,12 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           : { onInternalError: options.onInternalError }),
       });
       try {
-        return encodeProcedureResult(procedure, result, (failure, status) =>
-          notify(failure, status, item.path), touched);
+        return encodeProcedureResult(
+          procedure,
+          result,
+          (failure, status) => notify(failure, status, item.path),
+          touched,
+        );
       } catch (cause) {
         const incidentId = `inc_${crypto.randomUUID()}`;
         options.onInternalError?.({
@@ -409,16 +413,18 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
 
     if (envelope) return dispatch(envelope);
 
-    const items = await Promise.all(batch!.batch.map(async (item) => {
-      const response = await dispatch(item);
-      const decoded = deserialize(await response.text(), { maxBytes: DEFAULT_MAX_WIRE_BYTES });
-      if (!decoded.ok) throw new TypeError("Unable to decode an internal batch item");
-      return {
-        id: item.id,
-        status: response.status,
-        response: decoded.value as ResponseEnvelope,
-      };
-    }));
+    const items = await Promise.all(
+      batch!.batch.map(async (item) => {
+        const response = await dispatch(item);
+        const decoded = deserialize(await response.text(), { maxBytes: DEFAULT_MAX_WIRE_BYTES });
+        if (!decoded.ok) throw new TypeError("Unable to decode an internal batch item");
+        return {
+          id: item.id,
+          status: response.status,
+          response: decoded.value as ResponseEnvelope,
+        };
+      }),
+    );
     return wireResponse({ v: PROTOCOL_VERSION, batch: items }, 200);
   };
   return async (request) => {

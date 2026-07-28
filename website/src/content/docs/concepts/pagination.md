@@ -19,9 +19,9 @@ cursor:
 ```ts
 const feed = rpc
   .procedure()
-  .input(wire.object({ q: wire.string }))   // the list identity
-  .output(MessageRow)                        // ONE row's view
-  .paginate({ cursor: wire.string })         // cursor codec
+  .input(wire.object({ q: wire.string })) // the list identity
+  .output(MessageRow) // ONE row's view
+  .paginate({ cursor: wire.string }); // cursor codec
 ```
 
 On the wire the input becomes `{ list: { q }, cursor: string | null }` and the
@@ -34,13 +34,13 @@ const feed = rpc
   .input(wire.object({ q: wire.string }))
   .output(MessageRow)
   .paginate({ cursor: wire.string }, async ({ input, context }) => {
-    const after = input.cursor ?? undefined
-    const rows = await context.db.messages.page({ q: input.list.q, after, limit: 20 })
+    const after = input.cursor ?? undefined;
+    const rows = await context.db.messages.page({ q: input.list.q, after, limit: 20 });
     return ok({
       items: rows.slice(0, 20),
       nextCursor: rows.length > 20 ? rows[19].id : null,
-    })
-  })
+    });
+  });
 ```
 
 The cursor is opaque to the framework — a row id, an offset, a keyset tuple,
@@ -50,21 +50,23 @@ whatever your storage wants. It only has to survive the codec you declared.
 
 ```tsx
 function Feed({ q }: { q: string }) {
-  const feed = useResultPaginatedQuery(client.feed, { q })
+  const feed = useResultPaginatedQuery(client.feed, { q });
 
-  if (feed.state === "pending") return <Spinner />
-  if (feed.state === "failure") return null   // a shell owns it — see below
+  if (feed.state === "pending") return <Spinner />;
+  if (feed.state === "failure") return null; // a shell owns it — see below
 
   return (
     <>
-      {feed.rows.map((message) => <Row key={message.id} message={message} />)}
+      {feed.rows.map((message) => (
+        <Row key={message.id} message={message} />
+      ))}
       {feed.hasNext && (
         <button onClick={feed.fetchNext} disabled={feed.fetchingNext}>
           Load more
         </button>
       )}
     </>
-  )
+  );
 }
 ```
 
@@ -107,7 +109,7 @@ more than you want for a scroll position the user is reading. Give long-lived
 lists a `staleTime`:
 
 ```tsx
-useResultPaginatedQuery(client.feed, { q }, { staleTime: 60_000 })
+useResultPaginatedQuery(client.feed, { q }, { staleTime: 60_000 });
 ```
 
 With a stale window, a mutation that patches a visible row does so in place at

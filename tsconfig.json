@@ -17,7 +17,13 @@
     "allowImportingTsExtensions": true,
     "types": ["bun"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "examples/**/*.ts", "examples/**/*.tsx"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "examples/**/*.ts",
+    "examples/**/*.tsx"
+  ],
   // The framework examples (09/10/11) are real installable apps: each imports
   // the package by name, and brings its own tsconfig, node_modules, and
   // framework-generated types. They typecheck in their own directories.

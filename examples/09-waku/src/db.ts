@@ -12,14 +12,7 @@ import { DDL, spots } from "./schema.js";
 
 const DB_PATH = fileURLToPath(new URL("../spots.sqlite", import.meta.url));
 
-const CITIES = [
-  "Kyoto",
-  "Tokyo",
-  "Osaka",
-  "Nara",
-  "Kanazawa",
-  "Hakone",
-] as const;
+const CITIES = ["Kyoto", "Tokyo", "Osaka", "Nara", "Kanazawa", "Hakone"] as const;
 
 const NAMES = [
   "Fushimi Inari at dawn",

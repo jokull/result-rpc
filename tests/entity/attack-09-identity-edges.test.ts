@@ -37,7 +37,8 @@ describe("attack-09 identity edges", () => {
     // ATTACK ASSERTION: key-position entities should be seen.
     expect(collectEntities(container).length).toBe(1);
     const { changed } = patchEntity(container, User as never, "u1", (c) =>
-      mergeByExistingKeys(c, { name: "new" }));
+      mergeByExistingKeys(c, { name: "new" }),
+    );
     expect(changed).toBe(true);
   });
 
@@ -46,7 +47,8 @@ describe("attack-09 identity edges", () => {
     const container = new Set([user]);
     expect(collectEntities(container).length).toBe(1);
     const { value, changed } = patchEntity(container, User as never, "u1", (c) =>
-      mergeByExistingKeys(c, { name: "new" }));
+      mergeByExistingKeys(c, { name: "new" }),
+    );
     expect(changed).toBe(true);
     expect([...(value as Set<{ name: string }>)][0]!.name).toBe("new");
   });
@@ -57,12 +59,15 @@ describe("attack-09 identity edges", () => {
     if (!teamDecoded.ok) throw new Error("decode failed");
     const root = [user, teamDecoded.value];
     const { value } = patchEntity(root, User as never, "x1", (c) =>
-      mergeByExistingKeys(c, { name: "patched" }));
+      mergeByExistingKeys(c, { name: "patched" }),
+    );
     const [u, t] = value as [{ name: string }, { name: string }];
     expect(u.name).toBe("patched");
     expect(t.name).toBe("team-name"); // untouched
     // and the index keys differ
-    const keys = collectEntities(root).map((e) => `${e.model.name}:${e.id}`).sort();
+    const keys = collectEntities(root)
+      .map((e) => `${e.model.name}:${e.id}`)
+      .sort();
     expect(keys).toEqual(["a09-team:x1", "a09-user:x1"]);
   });
 
@@ -78,7 +83,8 @@ describe("attack-09 identity edges", () => {
     if (!full.ok || !brief.ok) throw new Error("decode failed");
     const root = { detail: full.value, row: brief.value };
     const { value } = patchEntity(root, Full as never, "u1", (c) =>
-      mergeByExistingKeys(c, { name: "new", email: "n@b.c" }));
+      mergeByExistingKeys(c, { name: "new", email: "n@b.c" }),
+    );
     const patched = value as { detail: Record<string, unknown>; row: Record<string, unknown> };
     expect(patched.detail).toEqual({ id: "u1", name: "new", email: "n@b.c" });
     expect(patched.row).toEqual({ id: "u1", name: "new" }); // narrow, no email leak

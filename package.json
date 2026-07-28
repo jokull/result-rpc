@@ -2,8 +2,24 @@
   "name": "result-rpc",
   "version": "0.1.0",
   "description": "One Result and one wire-safe error union per procedure",
-  "type": "module",
-  "sideEffects": false,
+  "keywords": [
+    "query-cache",
+    "react",
+    "result",
+    "rpc",
+    "tagged-errors",
+    "trpc-alternative",
+    "type-safe",
+    "typescript"
+  ],
+  "homepage": "https://result-rpc.com",
+  "bugs": "https://github.com/jokull/result-rpc/issues",
+  "license": "MIT",
+  "author": "Jökull Sólberg <jokull@solberg.is>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jokull/result-rpc.git"
+  },
   "files": [
     "dist",
     "skills",
@@ -11,6 +27,8 @@
     "ARCHITECTURE.md",
     "DESIGN.md"
   ],
+  "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -42,52 +60,39 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsdown",
     "check": "tsc -p tsconfig.json --noEmit",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix --deny-warnings .",
     "test": "bun test",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
-    "verify": "pnpm check && pnpm test:types && pnpm test && pnpm build",
+    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test && pnpm build",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run verify",
     "bench:types": "node bench/types.mjs"
   },
+  "dependencies": {
+    "@tanstack/query-core": "^5.101.4",
+    "devalue": "5.8.2"
+  },
   "devDependencies": {
+    "@arethetypeswrong/core": "0.18.5",
     "@tanstack/react-router": "^1.170.18",
     "@types/bun": "^1.3.14",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
     "drizzle-orm": "1.0.0-rc.4",
+    "oxfmt": "0.61.0",
+    "oxlint": "1.76.0",
+    "publint": "0.3.22",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-test-renderer": "^19.2.8",
+    "tsdown": "0.22.14",
     "typescript": "^7.0.2"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
-  "author": "J\u00f6kull S\u00f3lberg <jokull@solberg.is>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jokull/result-rpc.git"
-  },
-  "homepage": "https://result-rpc.com",
-  "bugs": "https://github.com/jokull/result-rpc/issues",
-  "keywords": [
-    "rpc",
-    "typescript",
-    "react",
-    "result",
-    "tagged-errors",
-    "trpc-alternative",
-    "query-cache",
-    "type-safe"
-  ],
-  "packageManager": "pnpm@11.9.0",
-  "dependencies": {
-    "@tanstack/query-core": "^5.101.4",
-    "devalue": "5.8.2"
   },
   "peerDependencies": {
     "drizzle-orm": ">=1.0.0-rc",
@@ -97,5 +102,9 @@
     "drizzle-orm": {
       "optional": true
     }
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.9.0"
 }

@@ -110,18 +110,16 @@ const setNote = app.implement(setNoteContract).handler(async ({ input, errors, c
   return ok(row);
 });
 
-const reschedule = app
-  .implement(rescheduleContract)
-  .handler(async ({ input, errors, context }) => {
-    const updated = await context.db
-      .update(lineItems)
-      .set({ date: input.date })
-      .where(eq(lineItems.id, input.lineItemId))
-      .returning({ orderId: lineItems.orderId, date: lineItems.date });
-    const row = updated[0];
-    if (!row) return err(errors.lineItemNotFound({ lineItemId: input.lineItemId }));
-    return ok({ order: { id: row.orderId }, date: row.date });
-  });
+const reschedule = app.implement(rescheduleContract).handler(async ({ input, errors, context }) => {
+  const updated = await context.db
+    .update(lineItems)
+    .set({ date: input.date })
+    .where(eq(lineItems.id, input.lineItemId))
+    .returning({ orderId: lineItems.orderId, date: lineItems.date });
+  const row = updated[0];
+  if (!row) return err(errors.lineItemNotFound({ lineItemId: input.lineItemId }));
+  return ok({ order: { id: row.orderId }, date: row.date });
+});
 
 // -- hotels -------------------------------------------------------------------------
 
@@ -273,19 +271,17 @@ const editTitle = app.implement(editTitleContract).handler(async ({ input, error
   return ok({ ...row, locale: input.locale });
 });
 
-const retireTour = app
-  .implement(retireTourContract)
-  .handler(async ({ input, context, touch }) => {
-    const removed = await context.db
-      .delete(tourContent)
-      .where(eq(tourContent.id, input.id))
-      .returning({ id: tourContent.id });
-    // Deleted entities cannot be returned — and the composite key means both
-    // locale variants must be touched BY RECORD KEY, one per entity.
-    touch(TourContent, { id: input.id, locale: "en" });
-    touch(TourContent, { id: input.id, locale: "ja" });
-    return ok({ removed: removed.length });
-  });
+const retireTour = app.implement(retireTourContract).handler(async ({ input, context, touch }) => {
+  const removed = await context.db
+    .delete(tourContent)
+    .where(eq(tourContent.id, input.id))
+    .returning({ id: tourContent.id });
+  // Deleted entities cannot be returned — and the composite key means both
+  // locale variants must be touched BY RECORD KEY, one per entity.
+  touch(TourContent, { id: input.id, locale: "en" });
+  touch(TourContent, { id: input.id, locale: "ja" });
+  return ok({ removed: removed.length });
+});
 
 // -- availability: query-relative aggregate ---------------------------------------------
 
@@ -307,7 +303,10 @@ const availabilitySearch = app
     });
     const titleByTourId = new Map(contents.map((content) => [content.id, content.title]));
 
-    const rows: { tour: { id: string; locale: typeof input.locale; title: string }; minAvailable: number }[] = [];
+    const rows: {
+      tour: { id: string; locale: typeof input.locale; title: string };
+      minAvailable: number;
+    }[] = [];
     for (const entry of mins) {
       const title = titleByTourId.get(entry.tourId);
       if (title === undefined || entry.minAvailable === null) continue;

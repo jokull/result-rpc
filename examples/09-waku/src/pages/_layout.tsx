@@ -19,8 +19,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </header>
       <main>{children}</main>
       <footer className="site-footer">
-        Server-prefetched, hydrated by <code>ResultRpcHydrationBoundary</code>, patched by
-        entity identity.
+        Server-prefetched, hydrated by <code>ResultRpcHydrationBoundary</code>, patched by entity
+        identity.
       </footer>
     </Providers>
   );

@@ -27,9 +27,15 @@ const User = defineModel("a03-user", {
 });
 
 const boot = () => {
-  const app = rpc.context<{ readonly db: { user: { id: string; name: string; avatarUrl: string } } }>();
-  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-  const setAvatar = app.procedure()
+  const app = rpc.context<{
+    readonly db: { user: { id: string; name: string; avatarUrl: string } };
+  }>();
+  const me = app
+    .procedure()
+    .output(User.all("test fixture"))
+    .query(({ context }) => ok(context.db.user));
+  const setAvatar = app
+    .procedure()
     .input(wire.object({ avatarUrl: wire.string }))
     .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -60,7 +66,8 @@ describe("attack-03 unbranded copies", () => {
 
     // The idiomatic optimistic update an app would write:
     runtime.cache.update(client.me, {}, (current) =>
-      current === undefined ? undefined : { ...current, name: "Optimistic" });
+      current === undefined ? undefined : { ...current, name: "Optimistic" },
+    );
 
     // Mutation succeeds and returns the fresh User entity...
     const mutation = runtime.mutation(client.setAvatar);
@@ -75,7 +82,10 @@ describe("attack-03 unbranded copies", () => {
     if (state.state !== "success") throw new Error("unreachable");
     expect(state.value.avatarUrl).toBe("v2.png");
 
-    stop(); header.destroy(); mutation.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    mutation.destroy();
+    runtime.clear();
   });
 
   test("3a-control: without the spread the patch lands", async () => {
@@ -93,7 +103,10 @@ describe("attack-03 unbranded copies", () => {
     if (state.state !== "success") throw new Error("unreachable");
     expect(state.value.avatarUrl).toBe("v2.png");
 
-    stop(); header.destroy(); mutation.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    mutation.destroy();
+    runtime.clear();
   });
 
   test("3b: structuredClone strips the brand — the clone collects nothing", () => {

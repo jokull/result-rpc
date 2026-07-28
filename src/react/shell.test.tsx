@@ -9,8 +9,9 @@ import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { ResultRpcProvider, defineShell, useResultQuery } from "./index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SessionExpired = error({
   tag: "auth/session-expired",
@@ -31,7 +32,8 @@ const TripNotFound = error({
 const authErrors = { SessionExpired } as const;
 
 const r = rpc.context<{}>();
-const trip = r.procedure()
+const trip = r
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .errors({ SessionExpired, TripNotFound })
@@ -116,7 +118,9 @@ describe("shells", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+              <AuthShell.Provider userId="u_1">
+                <Probe />
+              </AuthShell.Provider>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -159,7 +163,9 @@ describe("shells", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+              <AuthShell.Provider userId="u_1">
+                <Probe />
+              </AuthShell.Provider>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -195,7 +201,9 @@ describe("shells", () => {
     await act(async () => {
       renderer = create(
         <ResultRpcProvider runtime={runtime}>
-          <AppShell.Provider><Probe /></AppShell.Provider>
+          <AppShell.Provider>
+            <Probe />
+          </AppShell.Provider>
         </ResultRpcProvider>,
       );
       await settle();
@@ -222,7 +230,9 @@ describe("shells", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <Boundary><Probe /></Boundary>
+              <Boundary>
+                <Probe />
+              </Boundary>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -235,11 +245,13 @@ describe("shells", () => {
   });
 
   test("a tag can only be claimed once per chain", () => {
-    expect(() => defineShell({
-      name: "duplicate",
-      from: AppShell,
-      claims: transportErrors,
-    })).toThrow(/already claimed by app/);
+    expect(() =>
+      defineShell({
+        name: "duplicate",
+        from: AppShell,
+        claims: transportErrors,
+      }),
+    ).toThrow(/already claimed by app/);
   });
 
   test("a shell must be mounted inside its parent", async () => {
@@ -250,8 +262,14 @@ describe("shells", () => {
     await act(async () => {
       renderer = create(
         <ResultRpcProvider runtime={runtime}>
-          <Boundary onCaught={(value) => { caught = value; }}>
-            <DefectShell.Provider><span>mounted</span></DefectShell.Provider>
+          <Boundary
+            onCaught={(value) => {
+              caught = value;
+            }}
+          >
+            <DefectShell.Provider>
+              <span>mounted</span>
+            </DefectShell.Provider>
           </Boundary>
         </ResultRpcProvider>,
       );
@@ -293,7 +311,9 @@ describe("ambient claiming", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <AuthShell.Provider userId="u_9"><Probe /></AuthShell.Provider>
+              <AuthShell.Provider userId="u_9">
+                <Probe />
+              </AuthShell.Provider>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -321,7 +341,9 @@ describe("ambient claiming", () => {
     let renderer: ReactTestRenderer | undefined;
     await act(async () => {
       renderer = create(
-        <ResultRpcProvider runtime={runtime}><Probe /></ResultRpcProvider>,
+        <ResultRpcProvider runtime={runtime}>
+          <Probe />
+        </ResultRpcProvider>,
       );
       await settle();
     });
@@ -342,7 +364,13 @@ describe("ambient claiming", () => {
     await act(async () => {
       renderer = create(
         <ResultRpcProvider runtime={runtime}>
-          <Boundary onCaught={(value) => { caught = value; }}><Probe /></Boundary>
+          <Boundary
+            onCaught={(value) => {
+              caught = value;
+            }}
+          >
+            <Probe />
+          </Boundary>
         </ResultRpcProvider>,
       );
       await settle();
@@ -380,7 +408,9 @@ describe("claim breadcrumbs", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+              <AuthShell.Provider userId="u_1">
+                <Probe />
+              </AuthShell.Provider>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -390,13 +420,15 @@ describe("claim breadcrumbs", () => {
     const claimed = events.filter(
       (event): event is Extract<ClientEvent, { type: "claimed" }> => event.type === "claimed",
     );
-    expect(claimed).toEqual([{
-      type: "claimed",
-      path: "trip",
-      tag: "auth/session-expired",
-      owner: "crumb-auth",
-      effect: "pause",
-    }]);
+    expect(claimed).toEqual([
+      {
+        type: "claimed",
+        path: "trip",
+        tag: "auth/session-expired",
+        owner: "crumb-auth",
+        effect: "pause",
+      },
+    ]);
     // the wire failure precedes the claim in the trail
     expect(events.map((event) => event.type)).toEqual(["call", "failure", "claimed"]);
     await act(async () => renderer?.unmount());
@@ -409,12 +441,14 @@ describe("resume lifecycle", () => {
     // a server whose session validity is mutable mid-flight
     let sessionValid = false;
     const r2 = rpc.context<{}>();
-    const guarded = r2.procedure()
+    const guarded = r2
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.string)
       .errors({ SessionExpired })
       .query(({ input, errors }) =>
-        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})));
+        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})),
+      );
     const router2 = r2.router({ guarded });
     const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
     const client2 = createClient({
@@ -453,7 +487,9 @@ describe("resume lifecycle", () => {
         <ResultRpcProvider runtime={runtime}>
           <AppShell.Provider>
             <DefectShell.Provider>
-              <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+              <AuthShell.Provider userId="u_1">
+                <Probe />
+              </AuthShell.Provider>
             </DefectShell.Provider>
           </AppShell.Provider>
         </ResultRpcProvider>,
@@ -497,7 +533,9 @@ describe("resume lifecycle", () => {
       <ResultRpcProvider runtime={runtime}>
         <AppShell.Provider>
           <DefectShell.Provider>
-            <AuthShell.Provider userId="u_1"><Probe /></AuthShell.Provider>
+            <AuthShell.Provider userId="u_1">
+              <Probe />
+            </AuthShell.Provider>
           </DefectShell.Provider>
         </AppShell.Provider>
       </ResultRpcProvider>

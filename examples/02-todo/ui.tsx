@@ -16,7 +16,10 @@ import { todoContract, todoErrors } from "./contract.js";
 export const makeTodoClient = (fetch?: typeof globalThis.fetch) =>
   createClient({
     contract: todoContract,
-    transport: batchFetchTransport({ url: "https://example.test/rpc", ...(fetch ? { fetch } : {}) }),
+    transport: batchFetchTransport({
+      url: "https://example.test/rpc",
+      ...(fetch ? { fetch } : {}),
+    }),
   });
 
 export type TodoClient = ReturnType<typeof makeTodoClient>;
@@ -70,7 +73,13 @@ export function TodoList({ client }: { client: TodoClient }) {
       return (
         <ul>
           {todos.value.map((todo) => (
-            <TodoRow key={todo.id} client={client} id={todo.id} title={todo.title} done={todo.done} />
+            <TodoRow
+              key={todo.id}
+              client={client}
+              id={todo.id}
+              title={todo.title}
+              done={todo.done}
+            />
           ))}
         </ul>
       );
@@ -80,7 +89,12 @@ export function TodoList({ client }: { client: TodoClient }) {
   }
 }
 
-function TodoRow({ client, id, title, done }: {
+function TodoRow({
+  client,
+  id,
+  title,
+  done,
+}: {
   client: TodoClient;
   id: string;
   title: string;
@@ -91,7 +105,8 @@ function TodoRow({ client, id, title, done }: {
   const toggle = StaleShell.useMutation(client.toggle, {
     optimistic: (input, cache) => ({
       rollback: cache.update(client.list, {}, (todos) =>
-        todos?.map((todo) => (todo.id === input.id ? { ...todo, done: !todo.done } : todo))),
+        todos?.map((todo) => (todo.id === input.id ? { ...todo, done: !todo.done } : todo)),
+      ),
     }),
     onFailure: (_error, _input, context) => context?.rollback(),
   });
@@ -99,7 +114,11 @@ function TodoRow({ client, id, title, done }: {
   return (
     <li>
       <label>
-        <input type="checkbox" checked={done} onChange={() => void toggle.mutate({ id }).catch(() => undefined)} />
+        <input
+          type="checkbox"
+          checked={done}
+          onChange={() => void toggle.mutate({ id }).catch(() => undefined)}
+        />
         {title}
       </label>
       {toggle.state === "failure" && (
@@ -124,11 +143,13 @@ export function AddTodo({ client }: { client: TodoClient }) {
   }
 
   return (
-    <form onSubmit={(event) => {
-      event.preventDefault();
-      const input = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
-      void submit(input.value);
-    }}>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        const input = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
+        void submit(input.value);
+      }}
+    >
       <input name="title" disabled={add.state === "pending"} />
       {add.state === "failure" && <p role="alert">{catalog(add.error)}</p>}
     </form>
@@ -137,7 +158,10 @@ export function AddTodo({ client }: { client: TodoClient }) {
 
 /** One catalog per concern, keyed by the same definition map the contract uses. */
 const { titleTaken, listFull } = todoErrors;
-const catalog = errorCatalog({ titleTaken, listFull }, {
-  "todo/title-taken": (failure) => `"${failure.data.title}" already exists`,
-  "todo/list-full": (failure) => `The list is full (max ${failure.data.limit})`,
-});
+const catalog = errorCatalog(
+  { titleTaken, listFull },
+  {
+    "todo/title-taken": (failure) => `"${failure.data.title}" already exists`,
+    "todo/list-full": (failure) => `The list is full (max ${failure.data.limit})`,
+  },
+);

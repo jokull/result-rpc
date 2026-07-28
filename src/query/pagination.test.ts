@@ -42,8 +42,9 @@ const feed = r
   .paginate({ cursor: wire.string }, ({ input, context }) => {
     pageRequests += 1;
     const offset = input.cursor === null ? 0 : Number(input.cursor);
-    const filtered = context.items.filter((item) =>
-      input.list.q === "" || item.label.includes(input.list.q));
+    const filtered = context.items.filter(
+      (item) => input.list.q === "" || item.label.includes(input.list.q),
+    );
     const slice = filtered.slice(offset, offset + 2);
     const nextOffset = offset + 2;
     return ok({
@@ -81,27 +82,31 @@ const makeRuntime = () => {
 const waitFor = <TItem, TCursor, E extends AnyTaggedError>(
   observer: ResultPaginatedObserver<TItem, TCursor, E>,
   predicate: (state: PaginatedState<TItem, TCursor, E>) => boolean,
-): Promise<PaginatedState<TItem, TCursor, E>> => new Promise((resolve, reject) => {
-  let unsubscribe: () => void = () => undefined;
-  const timeout = setTimeout(() => {
-    unsubscribe();
-    reject(new Error("Timed out waiting for paginated state"));
-  }, 6_000);
-  const check = () => {
-    const state = observer.getCurrentState();
-    if (!predicate(state)) return;
-    clearTimeout(timeout);
-    unsubscribe();
-    resolve(state);
-  };
-  unsubscribe = observer.subscribe(check);
-  check();
-});
+): Promise<PaginatedState<TItem, TCursor, E>> =>
+  new Promise((resolve, reject) => {
+    let unsubscribe: () => void = () => undefined;
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for paginated state"));
+    }, 6_000);
+    const check = () => {
+      const state = observer.getCurrentState();
+      if (!predicate(state)) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve(state);
+    };
+    unsubscribe = observer.subscribe(check);
+    check();
+  });
 
 describe("paginated query runtime", () => {
   test("first page loads two rows and reports a next cursor", async () => {
     const { runtime, client } = makeRuntime();
-    const observer = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" });
+    const observer = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" },
+    );
     await observer.refetch();
     const state = observer.getCurrentState();
     expect(state.state).toBe("success");
@@ -115,7 +120,10 @@ describe("paginated query runtime", () => {
 
   test("fetchNext appends the next page under one cache entry", async () => {
     const { runtime, client, requestCount } = makeRuntime();
-    const observer = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" });
+    const observer = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" },
+    );
     await observer.refetch();
     const afterFirst = requestCount();
     await observer.fetchNext();
@@ -123,9 +131,7 @@ describe("paginated query runtime", () => {
     const state = observer.getCurrentState();
     if (state.state !== "success") throw new Error("expected success");
     // Five items across three pages of size 2.
-    expect(state.rows.map((row) => (row as { id: string }).id)).toEqual([
-      "1", "2", "3", "4", "5",
-    ]);
+    expect(state.rows.map((row) => (row as { id: string }).id)).toEqual(["1", "2", "3", "4", "5"]);
     expect(state.hasNext).toBe(false);
     expect(state.pageCount).toBe(3);
     // One HTTP request per page loaded past the first.
@@ -134,7 +140,10 @@ describe("paginated query runtime", () => {
     const runtimeCache = runtime as unknown as {
       cache: { key: (p: unknown, i: unknown) => readonly [string, string] };
     };
-    const key = runtimeCache.cache.key(client.feed as unknown as PaginatedProcedureClientLike, { q: "" } as never);
+    const key = runtimeCache.cache.key(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" } as never,
+    );
     expect(key[0]).toBe("feed");
     observer.destroy();
     runtime.clear();
@@ -142,7 +151,10 @@ describe("paginated query runtime", () => {
 
   test("fetchNext past the last page is a no-op with no request", async () => {
     const { runtime, client, requestCount } = makeRuntime();
-    const observer = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" });
+    const observer = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" },
+    );
     await observer.refetch();
     await observer.fetchNext();
     await observer.fetchNext();
@@ -158,9 +170,13 @@ describe("paginated query runtime", () => {
     // A real infinite list sets a staleTime — otherwise an active list
     // re-verifies its loaded pages whenever the cache is written, which is
     // correct convergence but not what this claim isolates.
-    const observer = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" }, {
-      staleTime: 60_000,
-    });
+    const observer = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" },
+      {
+        staleTime: 60_000,
+      },
+    );
     const stop = observer.subscribe(() => undefined);
     await observer.refetch();
     await observer.fetchNext(); // rows 1..4 loaded across two pages
@@ -170,9 +186,12 @@ describe("paginated query runtime", () => {
     const result = await mutation.mutate({ id: "3", label: "THREE" });
     expect(result.ok).toBe(true);
 
-    const state = await waitFor(observer, (s) =>
-      s.state === "success"
-      && s.rows.some((row) => (row as { id: string; label: string }).label === "THREE"));
+    const state = await waitFor(
+      observer,
+      (s) =>
+        s.state === "success" &&
+        s.rows.some((row) => (row as { id: string; label: string }).label === "THREE"),
+    );
     if (state.state !== "success") throw new Error("expected success");
     const renamed = state.rows.find((row) => (row as { id: string }).id === "3");
     expect((renamed as { label: string } | undefined)?.label).toBe("THREE");
@@ -186,7 +205,10 @@ describe("paginated query runtime", () => {
 
   test("rows are deduplicated by entity identity across page boundaries", async () => {
     const { runtime, client } = makeRuntime();
-    const observer = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" });
+    const observer = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "" },
+    );
     await observer.refetch();
     await observer.fetchNext();
     await observer.fetchNext();
@@ -200,22 +222,30 @@ describe("paginated query runtime", () => {
 
   test("observe() rejects a paginated procedure with a directing message", () => {
     const { runtime, client } = makeRuntime();
-    expect(() => runtime.observe(client.feed as unknown as PaginatedProcedureClientLike, { q: "" } as never))
-      .toThrow("paginated");
+    expect(() =>
+      runtime.observe(client.feed as unknown as PaginatedProcedureClientLike, { q: "" } as never),
+    ).toThrow("paginated");
     runtime.clear();
   });
 
   test("filtered list keys a distinct cache entry", async () => {
     const { runtime, client } = makeRuntime();
-    const all = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "" });
-    const filtered = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, { q: "t" });
+    const all = runtime.observePaginated(client.feed as unknown as PaginatedProcedureClientLike, {
+      q: "",
+    });
+    const filtered = runtime.observePaginated(
+      client.feed as unknown as PaginatedProcedureClientLike,
+      { q: "t" },
+    );
     await all.refetch();
     await filtered.refetch();
     const filteredState = filtered.getCurrentState();
     if (filteredState.state !== "success") throw new Error("expected success");
     // "two" and "three" contain "t".
-    expect(filteredState.rows.map((row) => (row as { label: string }).label))
-      .toEqual(["two", "three"]);
+    expect(filteredState.rows.map((row) => (row as { label: string }).label)).toEqual([
+      "two",
+      "three",
+    ]);
     expect(all.key[1]).not.toBe(filtered.key[1]);
     all.destroy();
     filtered.destroy();

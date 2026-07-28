@@ -22,14 +22,16 @@ export const GreetingNotFound = error({
 const app = rpc.context<{}>();
 
 export const router = app.router({
-  greet: app.procedure()
+  greet: app
+    .procedure()
     .input(wire.object({ name: wire.string }))
     .output(wire.string)
     .errors({ GreetingNotFound })
     .query(({ input, errors }) =>
       input.name === "nobody"
         ? err(errors.GreetingNotFound({ name: input.name }))
-        : ok(`Hello, ${input.name}!`)),
+        : ok(`Hello, ${input.name}!`),
+    ),
 });
 
 export const handler = createFetchHandler({

@@ -30,9 +30,7 @@ const find = (id: string): Result<string, NotFoundError> =>
   id === "missing" ? err(NotFound({ id })) : ok(`doc:${id}`);
 
 const parse = (raw: string): Result<number, ParseError> =>
-  raw.includes("bad")
-    ? err(ParseFailure({ reason: raw }))
-    : ok(raw.length);
+  raw.includes("bad") ? err(ParseFailure({ reason: raw })) : ok(raw.length);
 
 describe("result composition", () => {
   test("results stay plain wire shapes: the iterator is non-enumerable", () => {
@@ -122,18 +120,20 @@ describe("result composition", () => {
       () => ParseFailure({ reason: "threw" }),
     );
     expect(thrown).toEqual(err(ParseFailure({ reason: "threw" })));
-    const good = await tryPromise(async () => 3, () => ParseFailure({ reason: "" }));
+    const good = await tryPromise(
+      async () => 3,
+      () => ParseFailure({ reason: "" }),
+    );
     expect(good).toEqual(ok(3));
   });
 
   test("all combines tuples and records, first failure wins", () => {
     expect(all([find("a"), parse("xy")] as const)).toEqual(ok(["doc:a", 2]));
-    expect(all([find("missing"), parse("bad")] as const))
-      .toEqual(err(NotFound({ id: "missing" })));
-    expect(all({ doc: find("a"), size: parse("xy") }))
-      .toEqual(ok({ doc: "doc:a", size: 2 }));
-    expect(all({ doc: find("a"), size: parse("bad") }))
-      .toEqual(err(ParseFailure({ reason: "bad" })));
+    expect(all([find("missing"), parse("bad")] as const)).toEqual(err(NotFound({ id: "missing" })));
+    expect(all({ doc: find("a"), size: parse("xy") })).toEqual(ok({ doc: "doc:a", size: 2 }));
+    expect(all({ doc: find("a"), size: parse("bad") })).toEqual(
+      err(ParseFailure({ reason: "bad" })),
+    );
   });
 
   test("orElse recovers a failure; getOrElse unwraps with fallback", () => {

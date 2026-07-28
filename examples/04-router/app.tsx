@@ -31,7 +31,13 @@ import {
   useResultClient,
 } from "../../src/react/index.js";
 import type { QueryRuntime } from "../../src/react/index.js";
-import { SessionLayer, DocForbidden, DocLocked, DocNotFound, ViewerLayer } from "../03-docs/domain.js";
+import {
+  SessionLayer,
+  DocForbidden,
+  DocLocked,
+  DocNotFound,
+  ViewerLayer,
+} from "../03-docs/domain.js";
 import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: module level, no client instance needed --------------------------------
@@ -66,8 +72,8 @@ interface RouterContext {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <BoundaryProvider>
-        <ConnectionBanner />
-        <Outlet />
+      <ConnectionBanner />
+      <Outlet />
     </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
@@ -193,10 +199,13 @@ function DocMissing() {
   return latest ? <p role="alert">No doc named {latest.data.docId}.</p> : null;
 }
 
-const renameMessages = errorCatalog({ DocLocked, DocForbidden }, {
-  "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
-  "doc/forbidden": () => "Only the owner can rename this doc",
-});
+const renameMessages = errorCatalog(
+  { DocLocked, DocForbidden },
+  {
+    "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+    "doc/forbidden": () => "Only the owner can rename this doc",
+  },
+);
 
 function DocDetail({ docId }: { docId: string }) {
   const client = useResultClient<DocClient>();
@@ -209,12 +218,8 @@ function DocDetail({ docId }: { docId: string }) {
     <article>
       <h1>{doc.value.title}</h1>
       <p>Viewer: {viewer.name}</p>
-      <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>
-        Rename
-      </button>
-      {rename.state === "failure" && (
-        <p role="alert">{renameMessages(rename.error)}</p>
-      )}
+      <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>Rename</button>
+      {rename.state === "failure" && <p role="alert">{renameMessages(rename.error)}</p>}
     </article>
   );
 }

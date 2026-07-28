@@ -135,8 +135,7 @@ export type ResultRpcProviderProps = (
  * needs the instance elsewhere (SSR prefetch, imperative cache access).
  */
 export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
-  const [owned] = useState(() =>
-    props.runtime ?? createQueryRuntime({ client: props.client }));
+  const [owned] = useState(() => props.runtime ?? createQueryRuntime({ client: props.client }));
   const runtime = props.runtime ?? owned;
   const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
   if (props.hydrate !== undefined && hydrated.current !== props.hydrate) {
@@ -159,17 +158,18 @@ const useRuntime = (): QueryRuntime => {
 let hydrationSkewWarned = false;
 const warnHydrationSkew = (cause: unknown) => {
   const isProduction =
-    (globalThis as { process?: { env?: Record<string, string | undefined> } })
-      .process?.env?.["NODE_ENV"] === "production";
+    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
+      "NODE_ENV"
+    ] === "production";
   if (isProduction || hydrationSkewWarned) return;
   hydrationSkewWarned = true;
   // eslint-disable-next-line no-console
   console.warn(
-    "[result-rpc] skipped hydrating a dehydrated cache — its serializer/contract "
-      + "version did not match this client (a server and client bundle briefly "
-      + "skewed across a deploy). The client will fetch fresh instead of "
-      + "rendering stale server data. Original error: "
-      + (cause instanceof Error ? cause.message : String(cause)),
+    "[result-rpc] skipped hydrating a dehydrated cache — its serializer/contract " +
+      "version did not match this client (a server and client bundle briefly " +
+      "skewed across a deploy). The client will fetch fresh instead of " +
+      "rendering stale server data. Original error: " +
+      (cause instanceof Error ? cause.message : String(cause)),
   );
 };
 
@@ -229,13 +229,14 @@ const useClaimNotifier = (procedure: Function) => {
     return (
       entry: { readonly name: string; readonly effect: "pause" | "escalate" },
       error: AnyTaggedError,
-    ) => listener({
-      type: "claimed",
-      path,
-      tag: error._tag,
-      owner: entry.name,
-      effect: entry.effect,
-    });
+    ) =>
+      listener({
+        type: "claimed",
+        path,
+        tag: error._tag,
+        owner: entry.name,
+        effect: entry.effect,
+      });
   }, [listener, path]);
 };
 
@@ -243,10 +244,7 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   procedure: TProcedureClient,
   ...rest: QueryHookArgs<TProcedureClient>
 ): [
-  QueryState<
-    ProcedureClientOutput<TProcedureClient>,
-    ProcedureClientError<TProcedureClient>
-  >,
+  QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>,
   AmbientClaim | undefined,
 ] => {
   const [input, options = {}] = rest as [
@@ -260,20 +258,17 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   const queryOptionsRef = useRef(options);
   queryOptionsRef.current = options;
   const observer = useMemo(
-    () => runtime.observe(procedure, input, {
-      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
-      ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
-      ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
-      get retry() { return queryOptionsRef.current.retry; },
-    } as QueryOptions<ProcedureClientError<TProcedureClient>>),
-    [
-      runtime,
-      procedure,
-      inputKey,
-      options.enabled,
-      options.staleTime,
-      options.gcTime,
-    ],
+    () =>
+      runtime.observe(procedure, input, {
+        ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+        ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
+        ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
+        get retry() {
+          return queryOptionsRef.current.retry;
+        },
+      } as QueryOptions<ProcedureClientError<TProcedureClient>>),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
+    [runtime, procedure, inputKey, options.enabled, options.staleTime, options.gcTime],
   );
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(
@@ -306,10 +301,8 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
 export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
   procedure: TProcedureClient,
   ...rest: QueryHookArgs<TProcedureClient>
-): QueryState<
-  ProcedureClientOutput<TProcedureClient>,
-  ProcedureClientError<TProcedureClient>
-> => useResultQueryWithClaim(procedure, ...rest)[0];
+): QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>> =>
+  useResultQueryWithClaim(procedure, ...rest)[0];
 
 /**
  * A claim-paused paginated projection: an enclosing shell owns the failure,
@@ -359,20 +352,17 @@ export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProced
   const queryOptionsRef = useRef(options);
   queryOptionsRef.current = options;
   const observer = useMemo(
-    () => runtime.observePaginated(procedure, input, {
-      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
-      ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
-      ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
-      get retry() { return queryOptionsRef.current.retry; },
-    } as QueryOptions<ProcedureClientError<TProcedureClient>>),
-    [
-      runtime,
-      procedure,
-      inputKey,
-      options.enabled,
-      options.staleTime,
-      options.gcTime,
-    ],
+    () =>
+      runtime.observePaginated(procedure, input, {
+        ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
+        ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
+        ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
+        get retry() {
+          return queryOptionsRef.current.retry;
+        },
+      } as QueryOptions<ProcedureClientError<TProcedureClient>>),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
+    [runtime, procedure, inputKey, options.enabled, options.staleTime, options.gcTime],
   );
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(
@@ -426,7 +416,10 @@ export const useResultSuspenseQuery = <TProcedureClient extends QueryProcedureCl
   return state;
 };
 
-export const useResultMutation = <TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(
+export const useResultMutation = <
+  TProcedureClient extends MutationProcedureClientLike,
+  TContext = undefined,
+>(
   procedure: TProcedureClient,
   options: MutationOptions<
     ProcedureClientInput<TProcedureClient>,
@@ -446,25 +439,27 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const observer = useMemo(
-    () => runtime.mutation(procedure, {
-      get retry() { return optionsRef.current.retry; },
-      optimistic: (input, cache) =>
-        (optionsRef.current.optimistic
-          ? optionsRef.current.optimistic(input, cache)
-          : undefined) as TContext,
-      onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
-      onFailure: (error, input, context, cache) =>
-        optionsRef.current.onFailure?.(error, input, context, cache),
-      onCancel: (input, context, cache) =>
-        optionsRef.current.onCancel?.(input, context, cache),
-      onSettled: (result, input, context, cache) =>
-        optionsRef.current.onSettled?.(result, input, context, cache),
-    } as MutationOptions<
-      ProcedureClientInput<TProcedureClient>,
-      ProcedureClientOutput<TProcedureClient>,
-      ProcedureClientError<TProcedureClient>,
-      TContext
-    >),
+    () =>
+      runtime.mutation(procedure, {
+        get retry() {
+          return optionsRef.current.retry;
+        },
+        optimistic: (input, cache) =>
+          (optionsRef.current.optimistic
+            ? optionsRef.current.optimistic(input, cache)
+            : undefined) as TContext,
+        onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
+        onFailure: (error, input, context, cache) =>
+          optionsRef.current.onFailure?.(error, input, context, cache),
+        onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
+        onSettled: (result, input, context, cache) =>
+          optionsRef.current.onSettled?.(result, input, context, cache),
+      } as MutationOptions<
+        ProcedureClientInput<TProcedureClient>,
+        ProcedureClientOutput<TProcedureClient>,
+        ProcedureClientError<TProcedureClient>,
+        TContext
+      >),
     [runtime, procedure],
   );
   useEffect(() => () => observer.destroy(), [observer]);
@@ -511,9 +506,7 @@ export const useResultMutation = <TProcedureClient extends MutationProcedureClie
   };
 };
 
-export const useResultSubscription = <
-  TProcedureClient extends SubscriptionProcedureClientLike,
->(
+export const useResultSubscription = <TProcedureClient extends SubscriptionProcedureClientLike>(
   procedure: TProcedureClient,
   input: SubscriptionClientInput<TProcedureClient>,
   options: SubscriptionOptions<SubscriptionClientError<TProcedureClient>> = {},
@@ -526,6 +519,7 @@ export const useResultSubscription = <
   if (!encodedInput.ok) throw new TypeError("Subscription input is not wire-serializable");
   const observer = useMemo(
     () => runtime.subscription(procedure, input, options),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- encoded input and selected option values define observer identity
     [runtime, procedure, encodedInput.value, options.retry, options.retryDelayMs],
   );
   useEffect(() => () => observer.close(), [observer]);
@@ -534,9 +528,8 @@ export const useResultSubscription = <
     observer.getCurrentState,
     observer.getCurrentState,
   );
-  const failure = state.result && !state.result.ok
-    ? (state.result.error as AnyTaggedError)
-    : undefined;
+  const failure =
+    state.result && !state.result.ok ? (state.result.error as AnyTaggedError) : undefined;
   const notifyClaim = useClaimNotifier(procedure);
   const reconnectRef = useRef(state.reconnect);
   reconnectRef.current = state.reconnect;

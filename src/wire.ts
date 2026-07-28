@@ -45,13 +45,10 @@ export interface WireCodec<Input, Encoded extends WireValue = WireValue> {
   decode(value: unknown): DecodeResult<Input>;
 }
 
-export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, WireValue>
-  ? TInput
-  : never;
+export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, WireValue> ? TInput : never;
 
-export type EncodedOf<TCodec> = TCodec extends WireCodec<unknown, infer TEncoded>
-  ? TEncoded
-  : never;
+export type EncodedOf<TCodec> =
+  TCodec extends WireCodec<unknown, infer TEncoded> ? TEncoded : never;
 
 const success = <T>(value: T): DecodeResult<T> => ({ ok: true, value });
 
@@ -60,82 +57,84 @@ const failure = (
   path: readonly (string | number)[] = [],
 ): DecodeResult<never> => ({ ok: false, issues: [{ path, message }] });
 
-const atPath = (
-  issue: CodecIssue,
-  segment: string | number,
-): CodecIssue => ({ ...issue, path: [segment, ...issue.path] });
+const atPath = (issue: CodecIssue, segment: string | number): CodecIssue => ({
+  ...issue,
+  path: [segment, ...issue.path],
+});
 
 const stringCodec: WireCodec<string, string> = {
   kind: "string",
-  encode: (input) =>
-    typeof input === "string" ? success(input) : failure("Expected a string"),
-  decode: (value) =>
-    typeof value === "string" ? success(value) : failure("Expected a string"),
+  encode: (input) => (typeof input === "string" ? success(input) : failure("Expected a string")),
+  decode: (value) => (typeof value === "string" ? success(value) : failure("Expected a string")),
 };
 
 const booleanCodec: WireCodec<boolean, boolean> = {
   kind: "boolean",
-  encode: (input) =>
-    typeof input === "boolean" ? success(input) : failure("Expected a boolean"),
-  decode: (value) =>
-    typeof value === "boolean" ? success(value) : failure("Expected a boolean"),
+  encode: (input) => (typeof input === "boolean" ? success(input) : failure("Expected a boolean")),
+  decode: (value) => (typeof value === "boolean" ? success(value) : failure("Expected a boolean")),
 };
 
 const numberCodec: WireCodec<number, number> = {
   kind: "number",
-  encode: (input) => typeof input === "number" ? success(input) : failure("Expected a number"),
-  decode: (value) =>
-    typeof value === "number" ? success(value) : failure("Expected a number"),
+  encode: (input) => (typeof input === "number" ? success(input) : failure("Expected a number")),
+  decode: (value) => (typeof value === "number" ? success(value) : failure("Expected a number")),
 };
 
 const finiteNumberCodec: WireCodec<number, number> = {
   kind: "finite-number",
-  encode: (input) => Number.isFinite(input) ? success(input) : failure("Expected a finite number"),
-  decode: (value) => typeof value === "number" && Number.isFinite(value)
-    ? success(value)
-    : failure("Expected a finite number"),
+  encode: (input) =>
+    Number.isFinite(input) ? success(input) : failure("Expected a finite number"),
+  decode: (value) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? success(value)
+      : failure("Expected a finite number"),
 };
 
 const bigintCodec: WireCodec<bigint, bigint> = {
   kind: "bigint",
-  encode: (input) => typeof input === "bigint" ? success(input) : failure("Expected a bigint"),
-  decode: (value) => typeof value === "bigint" ? success(value) : failure("Expected a bigint"),
+  encode: (input) => (typeof input === "bigint" ? success(input) : failure("Expected a bigint")),
+  decode: (value) => (typeof value === "bigint" ? success(value) : failure("Expected a bigint")),
 };
 
 const undefinedCodec: WireCodec<undefined, undefined> = {
   kind: "undefined",
-  encode: (input) => input === undefined ? success(undefined) : failure("Expected undefined"),
-  decode: (value) => value === undefined ? success(undefined) : failure("Expected undefined"),
+  encode: (input) => (input === undefined ? success(undefined) : failure("Expected undefined")),
+  decode: (value) => (value === undefined ? success(undefined) : failure("Expected undefined")),
 };
 
 const dateCodec: WireCodec<Date, Date> = {
   kind: "date",
-  encode: (input) => input instanceof Date && !Number.isNaN(input.getTime())
-    ? success(new Date(input))
-    : failure("Expected a valid Date"),
-  decode: (value) => value instanceof Date && !Number.isNaN(value.getTime())
-    ? success(new Date(value))
-    : failure("Expected a valid Date"),
+  encode: (input) =>
+    input instanceof Date && !Number.isNaN(input.getTime())
+      ? success(new Date(input))
+      : failure("Expected a valid Date"),
+  decode: (value) =>
+    value instanceof Date && !Number.isNaN(value.getTime())
+      ? success(new Date(value))
+      : failure("Expected a valid Date"),
 };
 
 const regexpCodec: WireCodec<RegExp, RegExp> = {
   kind: "regexp",
-  encode: (input) => input instanceof RegExp
-    ? success(new RegExp(input.source, input.flags))
-    : failure("Expected a RegExp"),
-  decode: (value) => value instanceof RegExp
-    ? success(new RegExp(value.source, value.flags))
-    : failure("Expected a RegExp"),
+  encode: (input) =>
+    input instanceof RegExp
+      ? success(new RegExp(input.source, input.flags))
+      : failure("Expected a RegExp"),
+  decode: (value) =>
+    value instanceof RegExp
+      ? success(new RegExp(value.source, value.flags))
+      : failure("Expected a RegExp"),
 };
 
 const urlCodec: WireCodec<URL, URL> = {
   kind: "url",
-  encode: (input) => input instanceof URL ? success(new URL(input)) : failure("Expected a URL"),
-  decode: (value) => value instanceof URL ? success(new URL(value)) : failure("Expected a URL"),
+  encode: (input) => (input instanceof URL ? success(new URL(input)) : failure("Expected a URL")),
+  decode: (value) => (value instanceof URL ? success(new URL(value)) : failure("Expected a URL")),
 };
 
-type StandardOutput<TSchema extends StandardSchemaV1<any, unknown>> =
-  NonNullable<TSchema["~standard"]["types"]>["output"];
+type StandardOutput<TSchema extends StandardSchemaV1<any, unknown>> = NonNullable<
+  TSchema["~standard"]["types"]
+>["output"];
 
 const toPathKey = (key: PropertyKey): string | number =>
   typeof key === "number" ? key : String(key);
@@ -172,7 +171,8 @@ const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
           path: (issue.path ?? []).map((segment) =>
             typeof segment === "object" && segment !== null && "key" in segment
               ? toPathKey(segment.key)
-              : toPathKey(segment)),
+              : toPathKey(segment),
+          ),
           message: issue.message,
         })),
       };
@@ -191,12 +191,14 @@ const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
 
 const serializable = <T>(): WireCodec<T, T & WireValue> => ({
   kind: "serializable",
-  encode: (input) => isSerializable(input)
-    ? success(input as T & WireValue)
-    : failure("Expected a value supported by the wire serializer"),
-  decode: (value) => isSerializable(value)
-    ? success(value as T)
-    : failure("Expected a value supported by the wire serializer"),
+  encode: (input) =>
+    isSerializable(input)
+      ? success(input as T & WireValue)
+      : failure("Expected a value supported by the wire serializer"),
+  decode: (value) =>
+    isSerializable(value)
+      ? success(value as T)
+      : failure("Expected a value supported by the wire serializer"),
 });
 
 const nullCodec: WireCodec<null, null> = {
@@ -216,10 +218,7 @@ const integer = (options: IntegerOptions = {}): WireCodec<number, number> => ({
   decode: (value) => validateInteger(value, options),
 });
 
-const validateInteger = (
-  value: unknown,
-  options: IntegerOptions,
-): DecodeResult<number> => {
+const validateInteger = (value: unknown, options: IntegerOptions): DecodeResult<number> => {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     return failure("Expected a safe integer");
   }
@@ -232,9 +231,7 @@ const validateInteger = (
   return success(value);
 };
 
-const literal = <const TValue extends WireScalar>(
-  expected: TValue,
-): WireCodec<TValue, TValue> => ({
+const literal = <const TValue extends WireScalar>(expected: TValue): WireCodec<TValue, TValue> => ({
   kind: "literal",
   encode: (input) =>
     Object.is(input, expected) ? success(input) : failure(`Expected ${String(expected)}`),
@@ -270,11 +267,13 @@ const array = <TInput, TEncoded extends WireValue>(
   },
 });
 
-type CodecInputUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> =
-  InputOf<TCodecs[number]>;
+type CodecInputUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> = InputOf<
+  TCodecs[number]
+>;
 
-type CodecEncodedUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> =
-  EncodedOf<TCodecs[number]>;
+type CodecEncodedUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> = EncodedOf<
+  TCodecs[number]
+>;
 
 const union = <const TCodecs extends readonly WireCodec<unknown, WireValue>[]>(
   codecs: TCodecs,
@@ -298,31 +297,36 @@ const union = <const TCodecs extends readonly WireCodec<unknown, WireValue>[]>(
 
 export type CodecShape = Readonly<Record<string, WireCodec<unknown, WireValue>>>;
 
-interface OptionalWireCodec<TInput, TEncoded extends WireValue>
-  extends WireCodec<TInput | undefined, TEncoded | undefined> {
+interface OptionalWireCodec<TInput, TEncoded extends WireValue> extends WireCodec<
+  TInput | undefined,
+  TEncoded | undefined
+> {
   readonly optional: true;
 }
 
 type OptionalShapeKeys<TShape extends CodecShape> = {
   [TKey in keyof TShape]: TShape[TKey] extends { readonly optional: true } ? TKey : never;
 }[keyof TShape];
-type RequiredShapeKeys<TShape extends CodecShape> = Exclude<keyof TShape, OptionalShapeKeys<TShape>>;
+type RequiredShapeKeys<TShape extends CodecShape> = Exclude<
+  keyof TShape,
+  OptionalShapeKeys<TShape>
+>;
 
-export type ShapeInput<TShape extends CodecShape> =
-  & { readonly [TKey in RequiredShapeKeys<TShape>]: InputOf<TShape[TKey]> }
-  & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<InputOf<TShape[TKey]>, undefined> };
+export type ShapeInput<TShape extends CodecShape> = {
+  readonly [TKey in RequiredShapeKeys<TShape>]: InputOf<TShape[TKey]>;
+} & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<InputOf<TShape[TKey]>, undefined> };
 
-export type ShapeEncoded<TShape extends CodecShape> =
-  & { readonly [TKey in RequiredShapeKeys<TShape>]: EncodedOf<TShape[TKey]> }
-  & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<EncodedOf<TShape[TKey]>, undefined> };
+export type ShapeEncoded<TShape extends CodecShape> = {
+  readonly [TKey in RequiredShapeKeys<TShape>]: EncodedOf<TShape[TKey]>;
+} & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<EncodedOf<TShape[TKey]>, undefined> };
 
 const optional = <TInput, TEncoded extends WireValue>(
   codec: WireCodec<TInput, TEncoded>,
 ): OptionalWireCodec<TInput, TEncoded> => ({
   kind: `optional(${codec.kind})`,
   optional: true,
-  encode: (input) => input === undefined ? success(undefined) : codec.encode(input),
-  decode: (value) => value === undefined ? success(undefined) : codec.decode(value),
+  encode: (input) => (input === undefined ? success(undefined) : codec.encode(input)),
+  decode: (value) => (value === undefined ? success(undefined) : codec.decode(value)),
 });
 
 const record = <TInput, TEncoded extends WireValue>(
@@ -399,9 +403,7 @@ const processObject = <const TShape extends CodecShape>(
   const issues: CodecIssue[] = [];
   for (const [key, codec] of Object.entries(shape)) {
     if (!(key in value) && "optional" in codec && codec.optional === true) continue;
-    const result = direction === "encode"
-      ? codec.encode(value[key])
-      : codec.decode(value[key]);
+    const result = direction === "encode" ? codec.encode(value[key]) : codec.decode(value[key]);
     if (result.ok) {
       Object.defineProperty(output, key, {
         value: result.value,

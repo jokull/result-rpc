@@ -1,16 +1,11 @@
 import { expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { createDocHandler } from "./server.js";
-import {
-  DocsApp,
-  makeDocClient,
-  signInReactions,
-  ViewerShell,
-  type DocClient,
-} from "./ui.js";
+import { DocsApp, makeDocClient, signInReactions, ViewerShell, type DocClient } from "./ui.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -41,10 +36,10 @@ test("03-docs: signed-in flow renders through every layer", async () => {
   const client = await boot("tok_1");
   const renderer = await mount(client, "doc_1");
   const html = JSON.stringify(renderer.toJSON());
-  expect(html).toContain("Welcome back, ");        // SessionShell value
-  expect(html).toContain("Roadmap");                // page query
-  expect(html).toContain("Planned by ");            // ViewerShell guarantee
-  expect(html).toContain("Last activity: ");       // rendered subscription
+  expect(html).toContain("Welcome back, "); // SessionShell value
+  expect(html).toContain("Roadmap"); // page query
+  expect(html).toContain("Planned by "); // ViewerShell guarantee
+  expect(html).toContain("Last activity: "); // rendered subscription
   expect(html).toContain("renamed");
   await act(async () => renderer.unmount());
 });
@@ -68,10 +63,10 @@ test("03-docs: signed-out visitors see the public shell and the sign-in reaction
   const client = await boot(undefined);
   const renderer = await mount(client, "doc_1");
   const html = JSON.stringify(renderer.toJSON());
-  expect(html).toContain("Welcome, guest");     // SessionShell provides null
-  expect(html).toContain("signing in…");        // ViewerShell fallback
-  expect(html).not.toContain("Planned by");     // authed subtree never rendered
-  expect(signInReactions.count).toBe(1);        // onError fired once
+  expect(html).toContain("Welcome, guest"); // SessionShell provides null
+  expect(html).toContain("signing in…"); // ViewerShell fallback
+  expect(html).not.toContain("Planned by"); // authed subtree never rendered
+  expect(signInReactions.count).toBe(1); // onError fired once
   await act(async () => renderer.unmount());
 });
 
@@ -118,7 +113,7 @@ test("03-docs: the avatar patches the header by identity — zero refetches", as
 // -- compile-time: the narrowed unions are exactly what the prose claims -------------
 
 type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 
 declare const probeClient: DocClient;

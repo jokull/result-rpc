@@ -41,32 +41,32 @@ footgun.
 
 Fetch the `.md` version (append `.md`) of the page you need:
 
-| When you're… | Read |
-| --- | --- |
-| Getting the mental model | `/start/introduction` · `/start/quickstart` |
-| Installing / project layout | `/start/installation` |
+| When you're…                                  | Read                                                 |
+| --------------------------------------------- | ---------------------------------------------------- |
+| Getting the mental model                      | `/start/introduction` · `/start/quickstart`          |
+| Installing / project layout                   | `/start/installation`                                |
 | **Wiring the browser client (do this right)** | **`/concepts/client-boundary`** · `/concepts/client` |
-| Declaring errors + visibility | `/concepts/errors` |
-| Working with Result values (gen, all, match) | `/concepts/results` |
-| Defining procedures/routers/contracts | `/concepts/contract` |
-| Passing request context | `/concepts/context` |
-| Wire codecs (input/output shapes) | `/concepts/wire` |
-| React hooks + provider | `/concepts/react` |
-| Mutations, optimistic updates, `.affects()` | `/concepts/mutations` |
-| Entity models + normalized cache | `/concepts/entities` |
-| Cursor pagination | `/concepts/pagination` |
-| Subscriptions | `/concepts/subscriptions` |
-| Error-owning shells (boundaryShells) | `/concepts/shells` |
-| Layered context/auth | `/concepts/layers` |
-| Stale clients across deploys | `/concepts/deploys` |
-| Forms + validateStandard | `/guides/forms` |
-| Deriving models from Drizzle | `/guides/drizzle` |
-| TanStack Router integration | `/guides/routing` |
-| Testing (parity client, counter-pins) | `/guides/testing` |
-| Sentry/observability | `/guides/observability` |
-| Coming from tRPC | `/guides/migrating-from-trpc` |
-| Worked examples (01–08) | `/reference/examples` |
-| Known sharp edges | `/reference/sharp-edges` |
+| Declaring errors + visibility                 | `/concepts/errors`                                   |
+| Working with Result values (gen, all, match)  | `/concepts/results`                                  |
+| Defining procedures/routers/contracts         | `/concepts/contract`                                 |
+| Passing request context                       | `/concepts/context`                                  |
+| Wire codecs (input/output shapes)             | `/concepts/wire`                                     |
+| React hooks + provider                        | `/concepts/react`                                    |
+| Mutations, optimistic updates, `.affects()`   | `/concepts/mutations`                                |
+| Entity models + normalized cache              | `/concepts/entities`                                 |
+| Cursor pagination                             | `/concepts/pagination`                               |
+| Subscriptions                                 | `/concepts/subscriptions`                            |
+| Error-owning shells (boundaryShells)          | `/concepts/shells`                                   |
+| Layered context/auth                          | `/concepts/layers`                                   |
+| Stale clients across deploys                  | `/concepts/deploys`                                  |
+| Forms + validateStandard                      | `/guides/forms`                                      |
+| Deriving models from Drizzle                  | `/guides/drizzle`                                    |
+| TanStack Router integration                   | `/guides/routing`                                    |
+| Testing (parity client, counter-pins)         | `/guides/testing`                                    |
+| Sentry/observability                          | `/guides/observability`                              |
+| Coming from tRPC                              | `/guides/migrating-from-trpc`                        |
+| Worked examples (01–08)                       | `/reference/examples`                                |
+| Known sharp edges                             | `/reference/sharp-edges`                             |
 
 ## Non-negotiables when writing result-rpc code
 

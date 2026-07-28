@@ -5,13 +5,7 @@
  * boundary in any route's component merges into the same runtime — the
  * direct analogue of the RSC examples' root layout.
  */
-import {
-  HeadContent,
-  Link,
-  Outlet,
-  Scripts,
-  createRootRoute,
-} from "@tanstack/react-router";
+import { HeadContent, Link, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { ResultRpcProvider } from "result-rpc/react";
 import { client } from "../rpc-client.js";
@@ -56,9 +50,7 @@ function RootLayout() {
         <Link to="/" className="brand">
           ⛩️ Spots
         </Link>
-        <span className="subtitle">
-          result-rpc kitchen sink on TanStack Start SSR
-        </span>
+        <span className="subtitle">result-rpc kitchen sink on TanStack Start SSR</span>
       </header>
       <main>
         <Outlet />

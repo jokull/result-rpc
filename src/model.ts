@@ -88,9 +88,8 @@ export type SelectionInput<TShape extends CodecShape, TSelection> = {
 
 export type AnyModel = ModelDefinition<string, CodecShape>;
 
-export type ModelValue<TModel> = TModel extends ModelDefinition<string, infer TShape>
-  ? ShapeInput<TShape>
-  : never;
+export type ModelValue<TModel> =
+  TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
 
 export interface DefineModelOptions<TShape extends CodecShape> {
   /**
@@ -110,8 +109,7 @@ export type ModelKeyInput = string | number | Readonly<Record<string, string | n
 const entityBrands = new WeakMap<object, AnyModel>();
 
 /** Internal: read a decoded object's model, if any. */
-export const entityBrandOf = (value: object): AnyModel | undefined =>
-  entityBrands.get(value);
+export const entityBrandOf = (value: object): AnyModel | undefined => entityBrands.get(value);
 
 /** Internal: brand a value produced outside decode (patched/merged objects). */
 export const brandEntity = (value: object, model: AnyModel): void => {
@@ -133,10 +131,7 @@ const entityIdOf = (value: object, model: AnyModel): string | undefined => {
  * carry every key field; a bare string/number addresses single-field keys
  * (or is taken as a pre-joined composite id).
  */
-export const entityIdFor = (
-  model: AnyModel,
-  id: ModelKeyInput,
-): string | undefined => {
+export const entityIdFor = (model: AnyModel, id: ModelKeyInput): string | undefined => {
   if (typeof id === "string" || typeof id === "number") return String(id);
   return entityIdOf(id as object, model);
 };
@@ -159,16 +154,12 @@ const brandingCodec = <TValue>(
   },
 });
 
-export const defineModel = <
-  const TName extends string,
-  const TShape extends CodecShape,
->(
+export const defineModel = <const TName extends string, const TShape extends CodecShape>(
   name: TName,
   options: DefineModelOptions<TShape>,
 ): ModelDefinition<TName, TShape> => {
-  const keyFields: readonly string[] = typeof options.key === "string"
-    ? [options.key]
-    : options.key;
+  const keyFields: readonly string[] =
+    typeof options.key === "string" ? [options.key] : options.key;
   if (keyFields.length === 0) {
     throw new TypeError(`Model ${name} declares an empty key`);
   }
@@ -235,7 +226,10 @@ export const defineModel = <
       const subset: Record<string, WireCodec<unknown, WireValue>> = {};
       for (const key of keys) subset[key] = options.shape[key]!;
       return brandingCodec(
-        wire.object(subset) as WireCodec<ShapeInput<Pick<TShape, (typeof keys)[number]>>, WireValue>,
+        wire.object(subset) as WireCodec<
+          ShapeInput<Pick<TShape, (typeof keys)[number]>>,
+          WireValue
+        >,
         `model(${name}):${[...keys].sort().join(",")}`,
         () => self as AnyModel,
       );
@@ -437,22 +431,22 @@ export const shareStructural = (previous: unknown, next: unknown): unknown => {
       visiting.add(b);
       const aArray = a as readonly unknown[];
       const bArray = b as readonly unknown[];
-      const copy: unknown[] = new Array(bArray.length);
+      const copy: unknown[] = Array.from({ length: bArray.length });
       let equal = 0;
       for (let index = 0; index < bArray.length; index += 1) {
         copy[index] = share(aArray[index], bArray[index]);
         if (index < aArray.length && Object.is(copy[index], aArray[index])) equal += 1;
       }
       visiting.delete(b);
-      return finish(
-        aArray.length === bArray.length && equal === bArray.length ? a : copy,
-      );
+      return finish(aArray.length === bArray.length && equal === bArray.length ? a : copy);
     }
     if (
-      !aIsArray && !bIsArray
-      && a !== null && typeof a === "object"
-      && Object.getPrototypeOf(a) === Object.prototype
-      && Object.getPrototypeOf(b) === Object.prototype
+      !aIsArray &&
+      !bIsArray &&
+      a !== null &&
+      typeof a === "object" &&
+      Object.getPrototypeOf(a) === Object.prototype &&
+      Object.getPrototypeOf(b) === Object.prototype
     ) {
       if (visiting.has(b)) return b;
       visiting.add(b);
@@ -467,9 +461,7 @@ export const shareStructural = (previous: unknown, next: unknown): unknown => {
       }
       visiting.delete(b);
       return finish(
-        Object.keys(aObject).length === bKeys.length && equal === bKeys.length
-          ? a
-          : copy,
+        Object.keys(aObject).length === bKeys.length && equal === bKeys.length ? a : copy,
       );
     }
     // Rich values (Date, Map, Set, URL, ...), type mismatches, and fresh

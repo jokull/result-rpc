@@ -40,7 +40,14 @@ describe("wire codecs", () => {
     });
     expect(codec.decode({ id: "a", count: -1 }).ok).toBe(false);
     expect(codec.decode({ id: "a", count: 1, extra: true }).ok).toBe(false);
-    expect(codec.decode(new (class Value { id = "a"; count = 1; })()).ok).toBe(false);
+    expect(
+      codec.decode(
+        new (class Value {
+          id = "a";
+          count = 1;
+        })(),
+      ).ok,
+    ).toBe(false);
   });
 
   test("supports non-finite numbers unless a finite codec is requested", () => {
@@ -113,9 +120,7 @@ describe("wire codecs", () => {
     expect(roundTrip.count).toBe(42n);
     expect(roundTrip.values).toEqual(new Set([1, 2]));
     expect(roundTrip.params).toEqual(new URLSearchParams({ region: "north" }));
-    expect(roundTrip.map).toEqual(new Map([
-      ["created", new Date("2026-01-02T00:00:00.000Z")],
-    ]));
+    expect(roundTrip.map).toEqual(new Map([["created", new Date("2026-01-02T00:00:00.000Z")]]));
     expect(new Uint8Array(roundTrip.buffer)).toEqual(new Uint8Array([1, 2, 3]));
     expect(roundTrip.bytes).toEqual(new Uint16Array([500, 1_000]));
   });
@@ -165,7 +170,9 @@ describe("tagged errors", () => {
     const throwingCodec = {
       kind: "throwing",
       encode: (value: string) => ({ ok: true as const, value }),
-      decode: () => { throw new Error("decoder defect"); },
+      decode: () => {
+        throw new Error("decoder defect");
+      },
     } satisfies WireCodec<string, string>;
     const Throwing = error({
       tag: "test/throwing-decoder",
@@ -190,19 +197,23 @@ describe("tagged errors", () => {
   });
 
   test("reserves framework error namespaces", () => {
-    expect(() => error({
-      tag: "client/impostor",
-      data: wire.object({}),
-      httpStatus: 500,
-      retry: "never",
-      visibility: "public",
-    })).toThrow("reserved framework namespace");
+    expect(() =>
+      error({
+        tag: "client/impostor",
+        data: wire.object({}),
+        httpStatus: 500,
+        retry: "never",
+        visibility: "public",
+      }),
+    ).toThrow("reserved framework namespace");
   });
 });
 
 describe("Result", () => {
   test("accumulates and matches tagged failures", () => {
-    const first = ok(1) as ReturnType<typeof ok<number>> | ReturnType<typeof err<ReturnType<typeof Offline>>>;
+    const first = ok(1) as
+      | ReturnType<typeof ok<number>>
+      | ReturnType<typeof err<ReturnType<typeof Offline>>>;
     const result = andThen(first, () => err(NotFound({ id: "missing" })));
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -219,22 +230,31 @@ describe("error registry", () => {
   test("the router rejects one tag with two definitions", () => {
     const r = rpc.context<{}>();
     const A = error({ tag: "acct/limit", httpStatus: 409 });
-    const B = error({ tag: "acct/limit", data: wire.object({ max: wire.number }), httpStatus: 409 });
-    const make = (definition: typeof A | typeof B) => r.procedure()
-      .output(wire.string)
-      .errors({ Limit: definition })
-      .query(() => ok(""));
-    expect(() => r.router({ one: make(A), two: make(B) }))
-      .toThrow(/acct\/limit has conflicting definitions in one and two/);
+    const B = error({
+      tag: "acct/limit",
+      data: wire.object({ max: wire.number }),
+      httpStatus: 409,
+    });
+    const make = (definition: typeof A | typeof B) =>
+      r
+        .procedure()
+        .output(wire.string)
+        .errors({ Limit: definition })
+        .query(() => ok(""));
+    expect(() => r.router({ one: make(A), two: make(B) })).toThrow(
+      /acct\/limit has conflicting definitions in one and two/,
+    );
   });
 
   test("two procedures sharing one definition reference are canonical", () => {
     const r = rpc.context<{}>();
     const Limit = error({ tag: "acct2/limit", httpStatus: 409 });
-    const make = () => r.procedure()
-      .output(wire.string)
-      .errors({ Limit })
-      .query(() => ok(""));
+    const make = () =>
+      r
+        .procedure()
+        .output(wire.string)
+        .errors({ Limit })
+        .query(() => ok(""));
     const router = r.router({ one: make(), two: make() });
     expect(router.errors.get("acct2/limit")).toBe(Limit);
     expect([...router.errors.keys()]).toEqual(["acct2/limit"]);
@@ -251,9 +271,9 @@ describe("error registry", () => {
     });
     expect(docErrors.titleTaken().toJSON()).toEqual({ _tag: "trip2/title-taken", data: {} });
     expect(docErrors.notFound.policy.retry).toBe("never");
-    expect(() => defineErrors("client", { x: { httpStatus: 400 } }))
-      .toThrow(/reserved framework namespace/);
-    expect(() => defineErrors("a/b", { x: { httpStatus: 400 } }))
-      .toThrow(/must not contain/);
+    expect(() => defineErrors("client", { x: { httpStatus: 400 } })).toThrow(
+      /reserved framework namespace/,
+    );
+    expect(() => defineErrors("a/b", { x: { httpStatus: 400 } })).toThrow(/must not contain/);
   });
 });

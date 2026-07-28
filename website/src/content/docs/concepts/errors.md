@@ -13,18 +13,18 @@ and its policy (HTTP status, retry, visibility) — declared once, shared by
 both sides:
 
 ```ts
-import { error, wire } from "result-rpc"
+import { error, wire } from "result-rpc";
 
 export const DocNotFound = error({
   tag: "doc/not-found",
   data: wire.object({ docId: wire.string }),
   httpStatus: 404,
-})
+});
 
-export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 })
+export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 });
 
-export type DocNotFound = ReturnType<typeof DocNotFound>
-export type Unauthorized = ReturnType<typeof Unauthorized>
+export type DocNotFound = ReturnType<typeof DocNotFound>;
+export type Unauthorized = ReturnType<typeof Unauthorized>;
 ```
 
 Or declare a whole namespace at once — keys become tags, so the tag string is
@@ -34,9 +34,9 @@ never written twice and cannot drift from the name:
 export const docErrors = defineErrors("doc", {
   notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
   locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
-})
+});
 
-docErrors.notFound({ docId })  // TaggedError<"doc/not-found", { docId: string }>
+docErrors.notFound({ docId }); // TaggedError<"doc/not-found", { docId: string }>
 ```
 
 The key→tag rule is mechanical: camelCase keys become kebab-case tag
@@ -63,21 +63,21 @@ envelope. When supplied, it accepts the common vocabulary by name —
 Calling a definition creates the complete error value:
 
 ```ts
-const failure = DocNotFound({ docId: "doc_123" })
+const failure = DocNotFound({ docId: "doc_123" });
 
-failure instanceof Error       // true
-DocNotFound.is(failure)         // true
-failure.name                    // "doc/not-found"
-failure.data.docId              // "doc_123"
-failure.visibility              // "public"
-failure.toJSON()                // { _tag: "doc/not-found", data: { docId: "doc_123" } }
+failure instanceof Error; // true
+DocNotFound.is(failure); // true
+failure.name; // "doc/not-found"
+failure.data.docId; // "doc_123"
+failure.visibility; // "public"
+failure.toJSON(); // { _tag: "doc/not-found", data: { docId: "doc_123" } }
 ```
 
 The definition is the runtime identity and the namespaced tag is its portable
 wire identity. A shape-compatible object is intentionally insufficient:
 
 ```ts
-err({ _tag: "doc/not-found", data: { docId: "doc_123" } })
+err({ _tag: "doc/not-found", data: { docId: "doc_123" } });
 //  ^ type error — not a reified TaggedError
 ```
 
@@ -88,11 +88,11 @@ form, validates the tag against the procedure registry, decodes `data`, and
 constructs a fresh instance from the same definition on the client:
 
 ```ts
-const result = await client.doc.byId({ id: "missing" })
+const result = await client.doc.byId({ id: "missing" });
 
 if (!result.ok && DocNotFound.is(result.error)) {
-  result.error instanceof Error // true, after the wire
-  result.error.data.docId        // string
+  result.error instanceof Error; // true, after the wire
+  result.error.data.docId; // string
 }
 ```
 
@@ -113,9 +113,9 @@ const UniqueConstraint = error({
   tag: "db/unique-constraint",
   data: wire.object({ constraint: wire.string }),
   visibility: "private",
-})
+});
 
-r.procedure().errors({ UniqueConstraint })
+r.procedure().errors({ UniqueConstraint });
 //                    ^ type error: private errors cannot enter an RPC contract
 ```
 
@@ -134,16 +134,16 @@ Every client carries a flattened, `_tag`-discriminated union of all public
 domain and framework errors in its contract:
 
 ```ts
-import type { ClientErrors } from "result-rpc/client"
+import type { ClientErrors } from "result-rpc/client";
 
-type AppError = ClientErrors<typeof client>
+type AppError = ClientErrors<typeof client>;
 
 if (client.$errors.is(unknownFailure)) {
-  unknownFailure satisfies AppError
-  unknownFailure.visibility // "public"
+  unknownFailure satisfies AppError;
+  unknownFailure.visibility; // "public"
 }
 
-client.$errors.definitions // runtime registry of the same public definitions
+client.$errors.definitions; // runtime registry of the same public definitions
 ```
 
 This is derived from the contract. Private definitions are absent by type, and
@@ -161,7 +161,7 @@ component-prop serializers that know nothing about the result-rpc contract.
 unavailable." That is deliberate. GraphQL spent a decade with nullable
 fields as ambient partial failure and is now retrofitting field-level error
 semantics (Relay's `@catch`/`@throwOnFieldError`) — a directive on the
-*query*, deciding per call site how much failure to tolerate.
+_query_, deciding per call site how much failure to tolerate.
 
 Here the same fact is modeled where every other fact lives: in the output
 type. If a field can be independently unavailable, say so in the schema —
@@ -177,7 +177,7 @@ type. If a field can be independently unavailable, say so in the schema —
 ```
 
 — and the component branches on a value, exhaustively, like everything
-else. The operation still resolves one Result: the *call* succeeded, and
+else. The operation still resolves one Result: the _call_ succeeded, and
 "the author service was down" is part of what it successfully learned. No
 directive vocabulary, no per-call-site tolerance policy, no nullable-means-
 maybe-failed ambiguity: a partial outcome is a declared shape on the wire,
@@ -193,7 +193,7 @@ tag alone, so a tag can never mean two different things in one app. The
 registry is inspectable:
 
 ```ts
-appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
+appRouter.errors; // ReadonlyMap<string, ErrorDefinition> — every declared tag
 ```
 
 ## Retry policy follows the tag
@@ -206,7 +206,7 @@ export const ServiceUnavailable = error({
   tag: "search/service-unavailable",
   httpStatus: 503,
   retry: "transient",
-})
+});
 
 export const RateLimited = error({
   tag: "search/rate-limited",
@@ -215,13 +215,12 @@ export const RateLimited = error({
   }),
   httpStatus: 429,
   retry: "after",
-})
+});
 ```
-
 
 **Mutations are stricter by default.** A query retries `transient` and
 `after` tags freely — reads are idempotent. A mutation whose connection
-died mid-flight is *ambiguous*: the server may have processed it, and a
+died mid-flight is _ambiguous_: the server may have processed it, and a
 blind retry is the double-side-effect bug. So by default a mutation retries
 only two failures: `client/offline` (the transport short-circuits before
 sending — the request provably never left the client) and policy
@@ -239,5 +238,5 @@ run underneath it. Direct calls can opt into the same policy:
 ```ts
 const result = await client.search.run(input, {
   retry: "from-error-policy",
-})
+});
 ```

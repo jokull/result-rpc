@@ -13,15 +13,19 @@ const Missing = error({
 
 const app = rpc.context<{}>();
 
-const build = () => app.router({
-  thing: {
-    byId: app.procedure()
-      .input(wire.object({ id: wire.string }))
-      .output(wire.string)
-      .errors({ Missing })
-      .query(({ input, errors }) => input.id === "x" ? err(errors.Missing({ id: input.id })) : ok(input.id)),
-  },
-});
+const build = () =>
+  app.router({
+    thing: {
+      byId: app
+        .procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .errors({ Missing })
+        .query(({ input, errors }) =>
+          input.id === "x" ? err(errors.Missing({ id: input.id })) : ok(input.id),
+        ),
+    },
+  });
 
 describe("contractDigest", () => {
   test("is stable across identical builds", () => {
@@ -29,7 +33,8 @@ describe("contractDigest", () => {
   });
 
   test("a router and the contract it implements digest identically", () => {
-    const contractEntry = app.procedure()
+    const contractEntry = app
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.string)
       .errors({ Missing })
@@ -49,7 +54,8 @@ describe("contractDigest", () => {
 
     const moreErrors = app.router({
       thing: {
-        byId: app.procedure()
+        byId: app
+          .procedure()
           .input(wire.object({ id: wire.string }))
           .output(wire.string)
           .errors({ Missing, Extra })
@@ -60,7 +66,8 @@ describe("contractDigest", () => {
 
     const renamed = app.router({
       thing: {
-        byName: app.procedure()
+        byName: app
+          .procedure()
           .input(wire.object({ id: wire.string }))
           .output(wire.string)
           .errors({ Missing })
@@ -71,7 +78,8 @@ describe("contractDigest", () => {
 
     const differentOutput = app.router({
       thing: {
-        byId: app.procedure()
+        byId: app
+          .procedure()
           .input(wire.object({ id: wire.string }))
           .output(wire.date)
           .errors({ Missing })

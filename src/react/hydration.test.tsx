@@ -16,8 +16,9 @@ import {
   useResultMutation,
 } from "./index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const User = defineModel("user", {
   key: "id",
@@ -26,7 +27,10 @@ const User = defineModel("user", {
 
 // A shared world: an in-memory store the server reads and writes.
 const makeWorld = () => {
-  const store = new Map<string, string>([["u_1", "Ada"], ["u_2", "Grace"]]);
+  const store = new Map<string, string>([
+    ["u_1", "Ada"],
+    ["u_2", "Grace"],
+  ]);
   const r = rpc.context<{ store: Map<string, string> }>();
   const getUser = r
     .procedure()
@@ -55,7 +59,15 @@ const makeWorld = () => {
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });
-  return { store, router, client, requestCount: () => calls, resetCount: () => { calls = 0; } };
+  return {
+    store,
+    router,
+    client,
+    requestCount: () => calls,
+    resetCount: () => {
+      calls = 0;
+    },
+  };
 };
 
 // The RSC server phase: a fresh runtime over an in-process server client,
@@ -96,11 +108,7 @@ describe("RSC hydration boundary", () => {
         createElement(
           ResultRpcProvider,
           { client: world.client },
-          createElement(
-            ResultRpcHydrationBoundary,
-            { state },
-            createElement(Detail),
-          ),
+          createElement(ResultRpcHydrationBoundary, { state }, createElement(Detail)),
         ),
       );
     });
@@ -185,11 +193,7 @@ describe("RSC hydration boundary", () => {
             ResultRpcHydrationBoundary,
             { state: outer },
             createElement(One),
-            createElement(
-              ResultRpcHydrationBoundary,
-              { state: inner },
-              createElement(Two),
-            ),
+            createElement(ResultRpcHydrationBoundary, { state: inner }, createElement(Two)),
           ),
         ),
       );

@@ -26,19 +26,19 @@ export interface TodoStore {
 
 export const app = rpc.context<{ todos: TodoStore }>();
 
-const list = app.procedure()
-  .output(wire.array(TodoCodec))
-  .query();
+const list = app.procedure().output(wire.array(TodoCodec)).query();
 
 export const todoContract = app.contract({
   list,
-  add: app.procedure()
+  add: app
+    .procedure()
     .input(wire.object({ title: wire.string }))
     .output(TodoCodec)
     .errors(pickErrors(todoErrors, "titleTaken", "listFull"))
-    .affects(list)                     // declared blast radius: no onSettled at call sites
+    .affects(list) // declared blast radius: no onSettled at call sites
     .mutation(),
-  toggle: app.procedure()
+  toggle: app
+    .procedure()
     .input(wire.object({ id: wire.string }))
     .output(TodoCodec)
     .errors(pickErrors(todoErrors, "notFound"))

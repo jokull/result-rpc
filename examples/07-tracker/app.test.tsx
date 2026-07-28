@@ -1,12 +1,7 @@
 import { goOffline, goOnline } from "./test-setup.js";
 import { afterEach, expect, test } from "bun:test";
 import { useState } from "react";
-import {
-  act,
-  create,
-  type ReactTestInstance,
-  type ReactTestRenderer,
-} from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { err, fieldIssues, ok, pickErrors, rpc, wire } from "../../src/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
 import {
@@ -18,13 +13,7 @@ import {
 import { makeClient, type AppClient } from "./client.js";
 import { CLOSED_AT, seedDb } from "./world.js";
 import { makeHandler, type AppContext } from "./server.js";
-import {
-  App,
-  BoundaryProvider,
-  ConnectionBanner,
-  signInReactions,
-  ViewerShell,
-} from "./app.tsx";
+import { App, BoundaryProvider, ConnectionBanner, signInReactions, ViewerShell } from "./app.tsx";
 import { authErrors, directoryErrors, issueErrors } from "./errors.js";
 import { Issue } from "./models.js";
 
@@ -174,9 +163,7 @@ test("direct client round-trips success, domain failure, and a Date inside error
 
   // Assigning a closed issue fails with a real Date on the other side of the wire.
   const closed = await client.issues.assign({ issueId: "issue-2", assigneeId: "user-bob" });
-  expect(closed).toEqual(
-    err(issueErrors.closed({ issueId: "issue-2", closedAt: CLOSED_AT })),
-  );
+  expect(closed).toEqual(err(issueErrors.closed({ issueId: "issue-2", closedAt: CLOSED_AT })));
   if (!closed.ok && closed.error._tag === "issue/closed") {
     expect(closed.error.data.closedAt).toBeInstanceOf(Date);
   }
@@ -190,14 +177,10 @@ test("users.list collapses upstream unreachable/malformed to directory/unavailab
       throw new TypeError("connect ECONNREFUSED");
     },
   });
-  expect(await unreachable.client.users.list({})).toEqual(
-    err(directoryErrors.unavailable()),
-  );
+  expect(await unreachable.client.users.list({})).toEqual(err(directoryErrors.unavailable()));
 
   const malformed = createWorld({ fetchDirectory: async () => ({ nonsense: true }) });
-  expect(await malformed.client.users.list({})).toEqual(
-    err(directoryErrors.unavailable()),
-  );
+  expect(await malformed.client.users.list({})).toEqual(err(directoryErrors.unavailable()));
 
   const healthy = createWorld();
   expect(await healthy.client.users.list({})).toEqual(
@@ -234,8 +217,7 @@ test("assign updates the list row and detail by entity identity with zero refetc
   await chooseAssignee(renderer, "user-alice");
   await waitForText(
     renderer,
-    (text) =>
-      text.includes("Fix login bug · open · Alice") && text.includes("Assignee: Alice."),
+    (text) => text.includes("Fix login bug · open · Alice") && text.includes("Assignee: Alice."),
     "assignee patched in both list and detail",
   );
 
@@ -345,8 +327,7 @@ test("create invalidates the issues list via .affects and touches the project", 
   await waitForText(
     renderer,
     (text) =>
-      text.includes("Ship dark mode · open · unassigned") &&
-      text.includes("Main App — 2 open"),
+      text.includes("Ship dark mode · open · unassigned") && text.includes("Main App — 2 open"),
     "created row in the list and bumped project count",
   );
   await act(settle);
@@ -365,7 +346,11 @@ test("optimistic create shows the row immediately and rolls back on domain failu
   });
   const { client, counts } = createWorld({ gate: () => gatePromise });
   const renderer = await render(<App client={client} />);
-  await waitForText(renderer, (text) => text.includes("Fix login bug · open · Bob"), "initial list");
+  await waitForText(
+    renderer,
+    (text) => text.includes("Fix login bug · open · Bob"),
+    "initial list",
+  );
 
   // "Fix login bug" already exists — the server will reject with issue/title-taken,
   // but the optimistic row (born under its final, client-minted id) appears at once.
@@ -417,9 +402,9 @@ test("codec-rejected input on the same-version client is a caller bug: mutate re
 
   // The contract: the client-side codec preflight treats schema-invalid input
   // as a programmer error and throws — it never becomes an operation Result.
-  await expect(client.issues.create({ id: "x", projectId: "proj-main", title: "no" })).rejects.toThrow(
-    /Title must be at least 3 characters/,
-  );
+  await expect(
+    client.issues.create({ id: "x", projectId: "proj-main", title: "no" }),
+  ).rejects.toThrow(/Title must be at least 3 characters/);
 
   // Through the hook, the same rejection travels out of mutate() cleanly and
   // the mutation returns to idle (library behavior pinned after the fix).
@@ -567,11 +552,7 @@ test("activity feed renders streamed events and settles closed", async () => {
     (text) => text.includes("Latest activity: assigned to bob"),
     "latest streamed activity event",
   );
-  await waitForText(
-    renderer,
-    (text) => text.includes("Activity feed ended."),
-    "stream completed",
-  );
+  await waitForText(renderer, (text) => text.includes("Activity feed ended."), "stream completed");
 });
 
 // -- 12. the auth arc: a signed-out world reaches the shell, not the components --------
@@ -580,11 +561,7 @@ test("a signed-out visitor sees the fallback and the sign-in reaction fires once
   const { client, counts } = createWorld({ userId: null });
   const renderer = await render(<App client={client} />);
 
-  await waitForText(
-    renderer,
-    (text) => text.includes("Signing you in…"),
-    "viewer shell fallback",
-  );
+  await waitForText(renderer, (text) => text.includes("Signing you in…"), "viewer shell fallback");
   await act(settle);
 
   expect(signInReactions.count).toBe(1); // onError fired once

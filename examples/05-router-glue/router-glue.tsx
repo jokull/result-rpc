@@ -36,7 +36,10 @@ export interface ShellRouteFragment {
   readonly loader?: (args: { readonly context: ResultRouterContext }) => Promise<unknown>;
 }
 
-export const routeShell = (shell: AnyShell, options: RouteShellOptions = {}): ShellRouteFragment => {
+export const routeShell = (
+  shell: AnyShell,
+  options: RouteShellOptions = {},
+): ShellRouteFragment => {
   const content = () => {
     const inner: ReactNode = options.component
       ? createElement(options.component)
@@ -66,11 +69,21 @@ export const createResultRouter = <TClient extends object, TRouter extends AnyRo
   readonly router: (context: ResultRouterContext<TClient>) => TRouter;
 }) => {
   const runtime = createQueryRuntime({ client: options.client });
-  return { client: options.client, runtime, router: options.router({ client: options.client, runtime }) };
+  return {
+    client: options.client,
+    runtime,
+    router: options.router({ client: options.client, runtime }),
+  };
 };
 
-export const ResultRouterProvider = <TClient, TRouter extends AnyRouter>({ world }: {
-  readonly world: { readonly runtime: QueryRuntime; readonly router: TRouter; readonly client: TClient };
+export const ResultRouterProvider = <TClient, TRouter extends AnyRouter>({
+  world,
+}: {
+  readonly world: {
+    readonly runtime: QueryRuntime;
+    readonly router: TRouter;
+    readonly client: TClient;
+  };
 }): ReactNode =>
   createElement(
     ResultRpcProvider,

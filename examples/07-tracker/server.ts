@@ -109,9 +109,7 @@ const assignIssue = app
     const issue = context.db.issues.get(input.issueId);
     if (!issue) return err(errors.notFound({ issueId: input.issueId }));
     if (issue.status === "closed") {
-      return err(
-        errors.closed({ issueId: issue.id, closedAt: issue.closedAt ?? new Date() }),
-      );
+      return err(errors.closed({ issueId: issue.id, closedAt: issue.closedAt ?? new Date() }));
     }
     issue.assigneeId = input.assigneeId;
     return ok(issue);
@@ -157,9 +155,8 @@ const listUsers = app
   .handler(({ errors, context }) =>
     gen(async function* () {
       // Granular upstream union collapses to one declared tag here.
-      const memberIds = yield* mapError(
-        await fetchMemberIds(context.fetchDirectory),
-        () => errors.unavailable(),
+      const memberIds = yield* mapError(await fetchMemberIds(context.fetchDirectory), () =>
+        errors.unavailable(),
       );
       return memberIds.flatMap((id) => {
         const user = context.db.users.get(id);

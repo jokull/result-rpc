@@ -9,23 +9,23 @@ already declares columns, types, nullability, and the primary key — the
 exact facts `defineModel` asks for — and `result-rpc/drizzle` reads them:
 
 ```ts
-import { modelFromDrizzle } from "result-rpc/drizzle"
-import { hotels, tourContent, users } from "@app/db/schema"
+import { modelFromDrizzle } from "result-rpc/drizzle";
+import { hotels, tourContent, users } from "@app/db/schema";
 
 export const Hotel = modelFromDrizzle("hotel", hotels, {
   columns: ["id", "name", "phone", "city"],
-})
+});
 export const User = modelFromDrizzle("user", users, {
   columns: ["id", "name", "avatarUrl"],
-})
+});
 export const TourContent = modelFromDrizzle("tour-content", tourContent, {
   columns: ["id", "locale", "title", "summary"],
-  key: ["id", "locale"],       // table-level composite PKs are named explicitly
-})
+  key: ["id", "locale"], // table-level composite PKs are named explicitly
+});
 ```
 
 This is Django's oldest, best move — `models.py` as the single source of
-truth, with forms, serializers, and admin all *derived* — reborn at the wire
+truth, with forms, serializers, and admin all _derived_ — reborn at the wire
 boundary. The schema owns the facts; everything downstream is a projection
 of it: table → model → `pick()` → output codec → client cache identity. One
 `ALTER TABLE`-shaped change in one file, and the type checker walks it
@@ -52,7 +52,7 @@ Two frictions are kept on purpose:
 - **`columns` is a mandatory allowlist.** A wire contract that silently
   grows when a migration adds a column is a security bug, not a
   convenience — `passwordHash` never ships because nobody named it. When a
-  migration adds a column you *want* on the wire, adding its name to the
+  migration adds a column you _want_ on the wire, adding its name to the
   allowlist is the whole change.
 - **Composite primary keys are named explicitly** (`key: ["id", "locale"]`).
   Single inline `.primaryKey()` columns are derived; table-level
@@ -69,9 +69,9 @@ from real driver codes — SQLite's `SQLITE_CONSTRAINT_*`, Postgres's
 `23505`-family:
 
 ```ts
-import { tryDb } from "result-rpc/drizzle"
+import { tryDb } from "result-rpc/drizzle";
 
-const inserted = await tryDb(db.insert(reviews).values(row).returning())
+const inserted = await tryDb(db.insert(reviews).values(row).returning());
 if (!inserted.ok) {
   return matchError(inserted.error, {
     "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId })),
@@ -79,7 +79,7 @@ if (!inserted.ok) {
     "db/not-null-violation": () => err(errors.invalid({})),
     "db/check-violation": () => err(errors.invalid({})),
     "db/query-failure": () => err(errors.unavailable({})),
-  })
+  });
 }
 ```
 

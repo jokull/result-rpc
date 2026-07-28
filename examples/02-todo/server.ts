@@ -8,29 +8,28 @@ import { app, todoContract, type Todo, type TodoStore } from "./contract.js";
 const LIMIT = 5;
 
 export const todoRouter = app.router({
-  list: app.implement(todoContract.list)
+  list: app
+    .implement(todoContract.list)
     .handler(async ({ context }) => ok(await context.todos.all())),
 
-  add: app.implement(todoContract.add)
-    .handler(async ({ input, errors, context }) => {
-      const existing = await context.todos.all();
-      if (existing.length >= LIMIT) return err(errors.listFull({ limit: LIMIT }));
-      if (existing.some((todo) => todo.title === input.title)) {
-        return err(errors.titleTaken({ title: input.title }));
-      }
-      const todo: Todo = { id: `todo_${existing.length + 1}`, title: input.title, done: false };
-      await context.todos.save(todo);
-      return ok(todo);
-    }),
+  add: app.implement(todoContract.add).handler(async ({ input, errors, context }) => {
+    const existing = await context.todos.all();
+    if (existing.length >= LIMIT) return err(errors.listFull({ limit: LIMIT }));
+    if (existing.some((todo) => todo.title === input.title)) {
+      return err(errors.titleTaken({ title: input.title }));
+    }
+    const todo: Todo = { id: `todo_${existing.length + 1}`, title: input.title, done: false };
+    await context.todos.save(todo);
+    return ok(todo);
+  }),
 
-  toggle: app.implement(todoContract.toggle)
-    .handler(async ({ input, errors, context }) => {
-      const todo = await context.todos.find(input.id);
-      if (!todo) return err(errors.notFound({ todoId: input.id }));
-      const toggled = { ...todo, done: !todo.done };
-      await context.todos.save(toggled);
-      return ok(toggled);
-    }),
+  toggle: app.implement(todoContract.toggle).handler(async ({ input, errors, context }) => {
+    const todo = await context.todos.find(input.id);
+    if (!todo) return err(errors.notFound({ todoId: input.id }));
+    const toggled = { ...todo, done: !todo.done };
+    await context.todos.save(toggled);
+    return ok(toggled);
+  }),
 });
 
 export const memoryStore = (): TodoStore => {

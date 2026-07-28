@@ -31,12 +31,13 @@ export abstract class TaggedError<
   readonly visibility: Visibility;
 
   protected constructor(tag: Tag, data: Data, visibility: Visibility) {
-    const message = data !== null
-      && typeof data === "object"
-      && "message" in data
-      && typeof data.message === "string"
-      ? data.message
-      : tag;
+    const message =
+      data !== null &&
+      typeof data === "object" &&
+      "message" in data &&
+      typeof data.message === "string"
+        ? data.message
+        : tag;
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
     Object.defineProperty(this, "name", {
@@ -70,8 +71,7 @@ export type AnyTaggedError = TaggedError<string, WireValue, ErrorVisibility>;
 export type AnyPublicTaggedError = TaggedError<string, WireValue, "public">;
 
 /** Type guard for any reified result-rpc TaggedError. */
-export const isTaggedError = (value: unknown): value is AnyTaggedError =>
-  TaggedError.is(value);
+export const isTaggedError = (value: unknown): value is AnyTaggedError => TaggedError.is(value);
 
 export type RetryPolicy = "never" | "transient" | "after";
 
@@ -99,26 +99,19 @@ export type HttpStatusName = keyof typeof httpStatusNames;
 export type ErrorVisibility = "public" | "private";
 export type ErrorSeverity = "debug" | "info" | "warning" | "error";
 
-interface ErrorPolicyBase<
-  Visibility extends ErrorVisibility = ErrorVisibility,
-> {
+interface ErrorPolicyBase<Visibility extends ErrorVisibility = ErrorVisibility> {
   readonly retry: RetryPolicy;
   readonly visibility: Visibility;
   readonly severity?: ErrorSeverity;
 }
 
-export type ErrorPolicy<
-  Visibility extends ErrorVisibility = ErrorVisibility,
-> = ErrorPolicyBase<Visibility> & (Visibility extends "public"
-  ? { readonly httpStatus?: number }
-  : { readonly httpStatus?: never });
+export type ErrorPolicy<Visibility extends ErrorVisibility = ErrorVisibility> =
+  ErrorPolicyBase<Visibility> &
+    (Visibility extends "public"
+      ? { readonly httpStatus?: number }
+      : { readonly httpStatus?: never });
 
-interface ErrorDefinitionOptionsBase<
-  Tag extends string,
-  Input,
-  Data extends WireValue,
-  Visibility extends ErrorVisibility,
-> {
+interface ErrorDefinitionOptionsBase<Tag extends string, Input, Data extends WireValue> {
   readonly tag: Tag;
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
@@ -132,18 +125,18 @@ export type ErrorDefinitionOptions<
   Input,
   Data extends WireValue,
   Visibility extends ErrorVisibility = "public",
-> = ErrorDefinitionOptionsBase<Tag, Input, Data, Visibility>
-  & (Visibility extends "private"
+> = ErrorDefinitionOptionsBase<Tag, Input, Data> &
+  (Visibility extends "private"
     ? {
-      readonly visibility: "private";
-      /** Private errors never reach HTTP; fold them into a public error first. */
-      readonly httpStatus?: never;
-    }
+        readonly visibility: "private";
+        /** Private errors never reach HTTP; fold them into a public error first. */
+        readonly httpStatus?: never;
+      }
     : {
-      /** Defaults to `"public"`. */
-      readonly visibility?: "public";
-      readonly httpStatus?: number | HttpStatusName;
-    });
+        /** Defaults to `"public"`. */
+        readonly visibility?: "public";
+        readonly httpStatus?: number | HttpStatusName;
+      });
 
 export interface ErrorDefinition<
   Tag extends string,
@@ -180,22 +173,21 @@ export type ErrorOf<TDefinition> =
 
 export type ErrorInputOf<TDefinition> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TDefinition extends ErrorDefinition<string, infer Input, any, any>
-    ? Input
-    : never;
+  TDefinition extends ErrorDefinition<string, infer Input, any, any> ? Input : never;
 
 const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<object>()): T => {
   if (value !== null && typeof value === "object") {
     if (seen.has(value)) return value;
     seen.add(value);
     Object.freeze(value);
-    const children: unknown[] = value instanceof Map
-      ? [...value.entries()].flat()
-      : value instanceof Set
-        ? [...value.values()]
-        : Array.isArray(value)
-          ? value
-          : Object.values(value);
+    const children: unknown[] =
+      value instanceof Map
+        ? [...value.entries()].flat()
+        : value instanceof Set
+          ? [...value.values()]
+          : Array.isArray(value)
+            ? value
+            : Object.values(value);
     for (const child of children) {
       if (child === undefined || child === null || typeof child !== "object") continue;
       freezeWireValue(child as WireValue, seen);
@@ -206,12 +198,14 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
 
 const emptyDataCodec: WireCodec<Record<never, never>, Record<never, never>> = {
   kind: "object",
-  encode: (value) => value !== null && typeof value === "object" && !Array.isArray(value)
-    ? { ok: true, value: {} }
-    : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
-  decode: (value) => value !== null && typeof value === "object" && !Array.isArray(value)
-    ? { ok: true, value: {} }
-    : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
+  encode: (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? { ok: true, value: {} }
+      : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
+  decode: (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? { ok: true, value: {} }
+      : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
 };
 
 const createErrorDefinition = <
@@ -220,7 +214,7 @@ const createErrorDefinition = <
   Data extends WireValue,
   Visibility extends ErrorVisibility,
 >(
-  rawOptions: ErrorDefinitionOptionsBase<Tag, Input, Data, Visibility> & {
+  rawOptions: ErrorDefinitionOptionsBase<Tag, Input, Data> & {
     readonly visibility: Visibility;
     readonly httpStatus?: number | HttpStatusName;
   },
@@ -229,29 +223,25 @@ const createErrorDefinition = <
   const options = {
     ...rawOptions,
     data: rawOptions.data ?? (emptyDataCodec as unknown as WireCodec<Input, Data>),
-    httpStatus: rawOptions.visibility === "public"
-      ? typeof rawOptions.httpStatus === "string"
-        ? httpStatusNames[rawOptions.httpStatus]
-        : rawOptions.httpStatus
-      : undefined,
+    httpStatus:
+      rawOptions.visibility === "public"
+        ? typeof rawOptions.httpStatus === "string"
+          ? httpStatusNames[rawOptions.httpStatus]
+          : rawOptions.httpStatus
+        : undefined,
     retry: rawOptions.retry ?? "never",
     visibility: rawOptions.visibility,
   };
   if (!options.tag.includes("/")) {
     throw new TypeError(`Error tag must be namespaced: ${options.tag}`);
   }
-  if (
-    !allowReservedNamespace
-    && /^(client|server|protocol|control)\//.test(options.tag)
-  ) {
+  if (!allowReservedNamespace && /^(client|server|protocol|control)\//.test(options.tag)) {
     throw new TypeError(`Error tag uses a reserved framework namespace: ${options.tag}`);
   }
   if (
-    options.visibility === "public"
-    && options.httpStatus !== undefined
-    && (!Number.isInteger(options.httpStatus)
-      || options.httpStatus < 400
-      || options.httpStatus > 599)
+    options.visibility === "public" &&
+    options.httpStatus !== undefined &&
+    (!Number.isInteger(options.httpStatus) || options.httpStatus < 400 || options.httpStatus > 599)
   ) {
     throw new TypeError(`Invalid HTTP error status: ${options.httpStatus}`);
   }
@@ -363,37 +353,38 @@ export function error<const Tag extends string, Input, Data extends WireValue>(
   },
 ): ErrorDefinition<Tag, Input, Data, "public">;
 export function error<const Tag extends string>(
-  options: ErrorDefinitionOptions<
-    Tag,
-    Record<never, never>,
-    Record<never, never>,
-    "private"
-  > & { readonly data?: undefined },
+  options: ErrorDefinitionOptions<Tag, Record<never, never>, Record<never, never>, "private"> & {
+    readonly data?: undefined;
+  },
 ): ErrorDefinition<Tag, Record<never, never>, Record<never, never>, "private">;
 export function error<const Tag extends string>(
-  options: ErrorDefinitionOptions<
-    Tag,
-    Record<never, never>,
-    Record<never, never>,
-    "public"
-  > & { readonly data?: undefined },
+  options: ErrorDefinitionOptions<Tag, Record<never, never>, Record<never, never>, "public"> & {
+    readonly data?: undefined;
+  },
 ): ErrorDefinition<Tag, Record<never, never>, Record<never, never>, "public">;
 export function error<const Tag extends string, Input, Data extends WireValue>(
   options: ErrorDefinitionOptions<Tag, Input, Data, ErrorVisibility>,
 ): ErrorDefinition<Tag, Input, Data, ErrorVisibility> {
-  return createErrorDefinition({
-    ...options,
-    visibility: options.visibility ?? "public",
-  }, false);
+  return createErrorDefinition(
+    {
+      ...options,
+      visibility: options.visibility ?? "public",
+    },
+    false,
+  );
 }
 
 /** Internal framework factory; intentionally not re-exported from the package root. */
 export const frameworkError = <const Tag extends string, Input, Data extends WireValue>(
   options: ErrorDefinitionOptions<Tag, Input, Data, "public">,
-): ErrorDefinition<Tag, Input, Data, "public"> => createErrorDefinition({
-  ...options,
-  visibility: options.visibility ?? "public",
-}, true);
+): ErrorDefinition<Tag, Input, Data, "public"> =>
+  createErrorDefinition(
+    {
+      ...options,
+      visibility: options.visibility ?? "public",
+    },
+    true,
+  );
 
 export type ErrorDefinitionInput<TDefinition extends AnyErrorDefinition> = InputOf<
   TDefinition["codec"]
@@ -440,17 +431,13 @@ export const errorCatalog = <
 
 // --- Namespaced declaration -------------------------------------------------
 
-type KebabCase<S extends string, Acc extends string = ""> =
-  S extends `${infer Head}${infer Tail}`
-    ? Head extends Lowercase<Head>
-      ? KebabCase<Tail, `${Acc}${Head}`>
-      : KebabCase<Tail, `${Acc}-${Lowercase<Head>}`>
-    : Acc;
+type KebabCase<S extends string, Acc extends string = ""> = S extends `${infer Head}${infer Tail}`
+  ? Head extends Lowercase<Head>
+    ? KebabCase<Tail, `${Acc}${Head}`>
+    : KebabCase<Tail, `${Acc}-${Lowercase<Head>}`>
+  : Acc;
 
-interface ErrorSpecBase<
-  Input,
-  Data extends WireValue,
-> {
+interface ErrorSpecBase<Input, Data extends WireValue> {
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
   /** Defaults to `"never"`. */
@@ -462,16 +449,17 @@ export type ErrorSpec<
   Input,
   Data extends WireValue,
   Visibility extends ErrorVisibility = "public",
-> = ErrorSpecBase<Input, Data> & (Visibility extends "private"
-  ? {
-    readonly visibility: "private";
-    readonly httpStatus?: never;
-  }
-  : {
-    /** Defaults to `"public"`. */
-    readonly visibility?: "public";
-    readonly httpStatus?: number | HttpStatusName;
-  });
+> = ErrorSpecBase<Input, Data> &
+  (Visibility extends "private"
+    ? {
+        readonly visibility: "private";
+        readonly httpStatus?: never;
+      }
+    : {
+        /** Defaults to `"public"`. */
+        readonly visibility?: "public";
+        readonly httpStatus?: number | HttpStatusName;
+      });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyErrorSpec = ErrorSpecBase<any, any> & {
@@ -491,11 +479,12 @@ type SpecVisibility<TSpec> = TSpec extends {
   ? Visibility
   : "public";
 type CheckedErrorSpecs<TSpecs extends Readonly<Record<string, AnyErrorSpec>>> = {
-  readonly [TKey in keyof TSpecs]: TSpecs[TKey] & ErrorSpec<
-    SpecInput<TSpecs[TKey]>,
-    SpecData<TSpecs[TKey]> extends WireValue ? SpecData<TSpecs[TKey]> : never,
-    SpecVisibility<TSpecs[TKey]>
-  >;
+  readonly [TKey in keyof TSpecs]: TSpecs[TKey] &
+    ErrorSpec<
+      SpecInput<TSpecs[TKey]>,
+      SpecData<TSpecs[TKey]> extends WireValue ? SpecData<TSpecs[TKey]> : never,
+      SpecVisibility<TSpecs[TKey]>
+    >;
 };
 
 export type NamespacedErrors<

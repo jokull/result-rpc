@@ -15,13 +15,15 @@
     "react-server-dom-webpack": "~19.2.4",
     "waku": "1.0.0-beta.8"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
-  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }

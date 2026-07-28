@@ -26,7 +26,7 @@ glue:
 
 ```ts
 // src/pages/_api/rpc.ts
-import { rpcHandler } from "../../server.js";  // createFetchHandler({ router, createContext })
+import { rpcHandler } from "../../server.js"; // createFetchHandler({ router, createContext })
 export const POST = rpcHandler;
 export const getConfig = async () => ({ render: "dynamic" }) as const;
 ```
@@ -144,7 +144,7 @@ Things that fought back, in the order they bit:
 5. **better-sqlite3 must stay external in EVERY server environment.**
    `ssr.external` covers dev, but `waku build`'s SSG step bundled the
    driver into the RSC server bundle, inlining `bindings` → `__filename is
-   not defined in ES module scope`. Fixed with
+not defined in ES module scope`. Fixed with
    `environments: { rsc: { resolve: { external: ["better-sqlite3"] } }, ssr: { … } }`
    in `waku.config.ts`. Also: pnpm 10 blocks native postinstalls by
    default — `pnpm.onlyBuiltDependencies: ["better-sqlite3"]` in

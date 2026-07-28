@@ -5,7 +5,12 @@ import { cancelled, fetchTransport, type ClientTransport } from "../client/trans
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { AnyTaggedError } from "../error.js";
-import { createQueryRuntime, toResult, type QueryState, type ResultQueryObserver } from "./runtime.js";
+import {
+  createQueryRuntime,
+  toResult,
+  type QueryState,
+  type ResultQueryObserver,
+} from "./runtime.js";
 import { defineModel } from "../model.js";
 
 const Missing = error({
@@ -40,9 +45,9 @@ const rename = r
   .input(wire.object({ value: wire.string }))
   .output(wire.object({ value: wire.string }))
   .errors({ Conflict })
-  .mutation(({ input, errors }) => input.value === "taken"
-    ? err(errors.Conflict({ value: input.value }))
-    : ok(input));
+  .mutation(({ input, errors }) =>
+    input.value === "taken" ? err(errors.Conflict({ value: input.value })) : ok(input),
+  );
 const eventsContract = r
   .procedure()
   .input(wire.object({ fail: wire.boolean }))
@@ -74,22 +79,23 @@ const localFetch = (async (input: string | URL | Request, init?: RequestInit) =>
 const waitFor = <T, E extends AnyTaggedError>(
   observer: ResultQueryObserver<T, E>,
   predicate: (state: QueryState<T, E>) => boolean,
-): Promise<QueryState<T, E>> => new Promise((resolve, reject) => {
-  let unsubscribe: () => void = () => undefined;
-  const timeout = setTimeout(() => {
-    unsubscribe();
-    reject(new Error("Timed out waiting for query state"));
-  }, 6_000);
-  const check = () => {
-    const state = observer.getCurrentState();
-    if (!predicate(state)) return;
-    clearTimeout(timeout);
-    unsubscribe();
-    resolve(state);
-  };
-  unsubscribe = observer.subscribe(check);
-  check();
-});
+): Promise<QueryState<T, E>> =>
+  new Promise((resolve, reject) => {
+    let unsubscribe: () => void = () => undefined;
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for query state"));
+    }, 6_000);
+    const check = () => {
+      const state = observer.getCurrentState();
+      if (!predicate(state)) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve(state);
+    };
+    unsubscribe = observer.subscribe(check);
+    check();
+  });
 
 describe("reactive query runtime", () => {
   test("rejects procedures from a different client instance", () => {
@@ -97,8 +103,9 @@ describe("reactive query runtime", () => {
     const client = createClient({ router, transport });
     const otherClient = createClient({ router, transport });
     const runtime = createQueryRuntime({ client });
-    expect(() => runtime.observe(otherClient.value.byId, { id: "one" }))
-      .toThrow("different result-rpc client");
+    expect(() => runtime.observe(otherClient.value.byId, { id: "one" })).toThrow(
+      "different result-rpc client",
+    );
     runtime.clear();
   });
 
@@ -174,9 +181,8 @@ describe("reactive query runtime", () => {
     let fail = false;
     const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
     const transport: ClientTransport = {
-      request: (...args) => fail
-        ? Promise.resolve({ ok: false, reason: "network" })
-        : local.request(...args),
+      request: (...args) =>
+        fail ? Promise.resolve({ ok: false, reason: "network" }) : local.request(...args),
     };
     const client = createClient({ router, transport });
     const runtime = createQueryRuntime({ client });
@@ -229,7 +235,8 @@ describe("reactive query runtime", () => {
       retry: false,
       optimistic: ({ value }, cache) => ({
         rollback: cache.update(client.value.byId, { id: "one" }, (current) =>
-          current === undefined ? undefined : { ...current, value }),
+          current === undefined ? undefined : { ...current, value },
+        ),
       }),
       onFailure: (_failure, _input, context) => {
         (context as { rollback(): void }).rollback();
@@ -247,10 +254,11 @@ describe("reactive query runtime", () => {
 
   test("treats mutation cancellation as lifecycle rather than Err", async () => {
     const transport: ClientTransport = {
-      request: async (_envelope, options) => new Promise((_resolve, reject) => {
-        if (options?.signal?.aborted) return reject(cancelled);
-        options?.signal?.addEventListener("abort", () => reject(cancelled), { once: true });
-      }),
+      request: async (_envelope, options) =>
+        new Promise((_resolve, reject) => {
+          if (options?.signal?.aborted) return reject(cancelled);
+          options?.signal?.addEventListener("abort", () => reject(cancelled), { once: true });
+        }),
     };
     const client = createClient({ router, transport });
     const runtime = createQueryRuntime({ client });
@@ -260,9 +268,15 @@ describe("reactive query runtime", () => {
     const mutation = runtime.mutation(client.value.rename, {
       retry: false,
       optimistic: () => ({ rollback: true }),
-      onFailure: () => { failureCalled = true; },
-      onSettled: () => { settledCalled = true; },
-      onCancel: (_input, context) => { cancelCalled = context?.rollback === true; },
+      onFailure: () => {
+        failureCalled = true;
+      },
+      onSettled: () => {
+        settledCalled = true;
+      },
+      onCancel: (_input, context) => {
+        cancelCalled = context?.rollback === true;
+      },
     });
     const pending = mutation.mutate({ value: "available" });
     mutation.cancel();
@@ -314,11 +328,7 @@ describe("reactive query runtime", () => {
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
     const source = createQueryRuntime({ client });
-    source.cache.update(
-      client.value.byId,
-      { id: "one" },
-      () => ({ hostile: true }) as never,
-    );
+    source.cache.update(client.value.byId, { id: "one" }, () => ({ hostile: true }) as never);
     const state = source.dehydrate();
 
     const target = createQueryRuntime({ client });
@@ -375,18 +385,16 @@ describe("reactive query runtime", () => {
       { retryDelayMs: 0 },
     );
     const seen: string[] = [];
-    const closed = await new Promise<ReturnType<typeof subscription.getCurrentState>>(
-      (resolve) => {
-        const unsubscribe = subscription.subscribe(() => {
-          const state = subscription.getCurrentState();
-          seen.push(state.connection);
-          if (state.connection === "closed" && state.result?.ok) {
-            unsubscribe();
-            resolve(state);
-          }
-        });
-      },
-    );
+    const closed = await new Promise<ReturnType<typeof subscription.getCurrentState>>((resolve) => {
+      const unsubscribe = subscription.subscribe(() => {
+        const state = subscription.getCurrentState();
+        seen.push(state.connection);
+        if (state.connection === "closed" && state.result?.ok) {
+          unsubscribe();
+          resolve(state);
+        }
+      });
+    });
     expect(seen).toContain("reconnecting");
     expect(attempts).toBe(2);
     expect(closed.eventCount).toBe(1);
@@ -403,17 +411,15 @@ describe("reactive query runtime", () => {
     const client = createClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const subscription = runtime.subscription(client.value.events, { fail: false });
-    const paused = await new Promise<ReturnType<typeof subscription.getCurrentState>>(
-      (resolve) => {
-        const unsubscribe = subscription.subscribe(() => {
-          const state = subscription.getCurrentState();
-          if (state.connection === "paused") {
-            unsubscribe();
-            resolve(state);
-          }
-        });
-      },
-    );
+    const paused = await new Promise<ReturnType<typeof subscription.getCurrentState>>((resolve) => {
+      const unsubscribe = subscription.subscribe(() => {
+        const state = subscription.getCurrentState();
+        if (state.connection === "paused") {
+          unsubscribe();
+          resolve(state);
+        }
+      });
+    });
     expect(paused.result).toBeUndefined();
     expect(paused.eventCount).toBe(0);
     subscription.close();
@@ -423,16 +429,22 @@ describe("reactive query runtime", () => {
 
 describe("declared invalidation", () => {
   test("a mutation's .affects() invalidates the target query, code-first and mapped", async () => {
-    const app = rpc.context<{ readonly state: { revision: number; titles: Map<string, string> } }>();
-    const docById = app.procedure()
+    const app = rpc.context<{
+      readonly state: { revision: number; titles: Map<string, string> };
+    }>();
+    const docById = app
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.object({ id: wire.string, title: wire.string, revision: wire.number }))
-      .query(({ input, context }) => ok({
-        id: input.id,
-        title: context.state.titles.get(input.id) ?? "untitled",
-        revision: context.state.revision,
-      }));
-    const bump = app.procedure()
+      .query(({ input, context }) =>
+        ok({
+          id: input.id,
+          title: context.state.titles.get(input.id) ?? "untitled",
+          revision: context.state.revision,
+        }),
+      );
+    const bump = app
+      .procedure()
       .input(wire.object({ id: wire.string, title: wire.string }))
       .output(wire.string)
       .affects(docById, (input) => ({ id: input.id }))
@@ -443,7 +455,10 @@ describe("declared invalidation", () => {
       });
     const affectsRouter = app.router({ doc: { byId: docById, bump } });
     const state = { revision: 1, titles: new Map([["a", "first"]]) };
-    const affectsHandler = createFetchHandler({ router: affectsRouter, createContext: () => ({ state }) });
+    const affectsHandler = createFetchHandler({
+      router: affectsRouter,
+      createContext: () => ({ state }),
+    });
     const client = createClient({
       router: affectsRouter,
       transport: fetchTransport({
@@ -466,8 +481,10 @@ describe("declared invalidation", () => {
     const result = await mutation.getCurrentState().mutate({ id: "a", title: "renamed" });
     expect(result.ok).toBe(true);
 
-    await waitFor(observer, (current) =>
-      current.state === "success" && current.value.revision === 2);
+    await waitFor(
+      observer,
+      (current) => current.state === "success" && current.value.revision === 2,
+    );
     const after = observer.getCurrentState();
     if (after.state !== "success") throw new Error("unreachable");
     expect(after.value.title).toBe("renamed");
@@ -480,16 +497,28 @@ describe("declared invalidation", () => {
 
   test(".affects() is rejected on queries and non-query targets", () => {
     const app = rpc.context<{}>();
-    const target = app.procedure().output(wire.string).query(() => ok("x"));
-    const mutationTarget = app.procedure().output(wire.string).mutation(() => ok("x"));
-    expect(() => app.procedure()
+    const target = app
+      .procedure()
       .output(wire.string)
-      .affects(target)
-      .query(() => ok("x"))).toThrow("Only mutations declare .affects()");
-    expect(() => app.procedure()
+      .query(() => ok("x"));
+    const mutationTarget = app
+      .procedure()
       .output(wire.string)
-      // @ts-expect-error mutations cannot be invalidation targets
-      .affects(mutationTarget)).toThrow("affects() targets must be query procedures");
+      .mutation(() => ok("x"));
+    expect(() =>
+      app
+        .procedure()
+        .output(wire.string)
+        .affects(target)
+        .query(() => ok("x")),
+    ).toThrow("Only mutations declare .affects()");
+    expect(() =>
+      app
+        .procedure()
+        .output(wire.string)
+        // @ts-expect-error mutations cannot be invalidation targets
+        .affects(mutationTarget),
+    ).toThrow("affects() targets must be query procedures");
   });
 });
 
@@ -500,31 +529,46 @@ describe("entity identities", () => {
   });
   const Doc = defineModel("rt-doc", {
     key: "id",
-    shape: { id: wire.string, title: wire.string, archived: wire.boolean, author: User.all("test fixture") },
+    shape: {
+      id: wire.string,
+      title: wire.string,
+      archived: wire.boolean,
+      author: User.all("test fixture"),
+    },
   });
 
   const bootWorld = () => {
-    const app = rpc.context<{ readonly db: {
-      user: { id: string; name: string; avatarUrl: string };
-      docs: Map<string, { id: string; title: string; archived: boolean }>;
-    } }>();
-    const me = app.procedure()
+    const app = rpc.context<{
+      readonly db: {
+        user: { id: string; name: string; avatarUrl: string };
+        docs: Map<string, { id: string; title: string; archived: boolean }>;
+      };
+    }>();
+    const me = app
+      .procedure()
       .output(User.all("test fixture"))
       .query(({ context }) => ok(context.db.user));
-    const list = app.procedure()
+    const list = app
+      .procedure()
       .output(wire.array(Doc.all("test fixture")))
-      .query(({ context }) => ok([...context.db.docs.values()].map((doc) => ({
-        ...doc,
-        author: context.db.user,
-      }))));
-    const setAvatar = app.procedure()
+      .query(({ context }) =>
+        ok(
+          [...context.db.docs.values()].map((doc) => ({
+            ...doc,
+            author: context.db.user,
+          })),
+        ),
+      );
+    const setAvatar = app
+      .procedure()
       .input(wire.object({ avatarUrl: wire.string }))
       .output(User.all("test fixture"))
       .mutation(({ input, context }) => {
         context.db.user = { ...context.db.user, avatarUrl: input.avatarUrl };
         return ok(context.db.user);
       });
-    const archive = app.procedure()
+    const archive = app
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.boolean)
       .writes(Doc, (input) => input.id)
@@ -541,7 +585,10 @@ describe("entity identities", () => {
         ["d2", { id: "d2", title: "Budget", archived: false }],
       ]),
     };
-    const entityHandler = createFetchHandler({ router: entityRouter, createContext: () => ({ db }) });
+    const entityHandler = createFetchHandler({
+      router: entityRouter,
+      createContext: () => ({ db }),
+    });
     let requests = 0;
     const client = createClient({
       router: entityRouter,
@@ -578,12 +625,14 @@ describe("entity identities", () => {
     expect(headerState.value.avatarUrl).toBe("v2.png");
     const docsState = docs.getCurrentState();
     if (docsState.state !== "success") throw new Error("unreachable");
-    expect(docsState.value.map((doc) => doc.author.avatarUrl))
-      .toEqual(["v2.png", "v2.png"]);
+    expect(docsState.value.map((doc) => doc.author.avatarUrl)).toEqual(["v2.png", "v2.png"]);
     expect(requestCount()).toBe(before + 1); // the mutation itself, nothing else
 
-    stopHeader(); stopDocs();
-    header.destroy(); docs.destroy(); mutation.destroy();
+    stopHeader();
+    stopDocs();
+    header.destroy();
+    docs.destroy();
+    mutation.destroy();
     runtime.clear();
   });
 
@@ -596,29 +645,34 @@ describe("entity identities", () => {
 
     const mutation = runtime.mutation(client.archive);
     await mutation.getCurrentState().mutate({ id: "d1" });
-    await waitFor(docs, (state) =>
-      state.state === "success" && state.value[0]!.archived === true);
+    await waitFor(docs, (state) => state.state === "success" && state.value[0]!.archived === true);
     expect(docs.getCurrentState().state).toBe("success");
 
-    stop(); docs.destroy(); mutation.destroy();
+    stop();
+    docs.destroy();
+    mutation.destroy();
     runtime.clear();
   });
 
   test("handler touch() invalidates by identity — deletes and cascades", async () => {
-    const app = rpc.context<{ readonly db: { docs: Map<string, { id: string; title: string; archived: boolean }> } }>();
+    const app = rpc.context<{
+      readonly db: { docs: Map<string, { id: string; title: string; archived: boolean }> };
+    }>();
     const TouchDoc = defineModel("touch-doc", {
       key: "id",
       shape: { id: wire.string, title: wire.string, archived: wire.boolean },
     });
-    const list = app.procedure()
+    const list = app
+      .procedure()
       .output(wire.array(TouchDoc.all("test fixture")))
       .query(({ context }) => ok([...context.db.docs.values()]));
-    const remove = app.procedure()
+    const remove = app
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.boolean)
       .mutation(({ input, context, touch }) => {
         context.db.docs.delete(input.id);
-        touch(TouchDoc, input.id);   // the output cannot carry a deleted entity
+        touch(TouchDoc, input.id); // the output cannot carry a deleted entity
         return ok(true);
       });
     const touchRouter = app.router({ list, remove });
@@ -640,10 +694,11 @@ describe("entity identities", () => {
     const mutation = runtime.mutation(client.remove);
     const result = await mutation.getCurrentState().mutate({ id: "d1" });
     expect(result.ok).toBe(true);
-    await waitFor(docs, (state) =>
-      state.state === "success" && state.value.length === 0);
+    await waitFor(docs, (state) => state.state === "success" && state.value.length === 0);
 
-    stop(); docs.destroy(); mutation.destroy();
+    stop();
+    docs.destroy();
+    mutation.destroy();
     runtime.clear();
   });
 
@@ -669,9 +724,13 @@ describe("entity identities", () => {
 
     const remounted = runtime.observe(client.list, {});
     const stopRemounted = remounted.subscribe(() => undefined);
-    await waitFor(remounted, (state) =>
-      state.state === "success" && state.value[0]!.archived === true);
-    stopRemounted(); remounted.destroy(); mutation.destroy();
+    await waitFor(
+      remounted,
+      (state) => state.state === "success" && state.value[0]!.archived === true,
+    );
+    stopRemounted();
+    remounted.destroy();
+    mutation.destroy();
     runtime.clear();
   });
 
@@ -698,8 +757,10 @@ describe("entity identities", () => {
     if (restored.state !== "success") throw new Error("unreachable");
     expect(restored.value[0]!.author.name).toBe("J");
 
-    stopHeader(); stopDocs();
-    header.destroy(); docs.destroy();
+    stopHeader();
+    stopDocs();
+    header.destroy();
+    docs.destroy();
     runtime.clear();
     // after clear the index is empty: patches are no-ops, not errors
     expect(() => runtime.cache.updateEntity(User, "u1", (user) => user)).not.toThrow();
@@ -789,7 +850,7 @@ describe("mutation retry safety", () => {
     runtime.clear();
   });
 
-  test("a server-scheduled retry (policy \"after\") DOES retry: the server chose not to process", async () => {
+  test('a server-scheduled retry (policy "after") DOES retry: the server chose not to process', async () => {
     const Busy = error({
       tag: "retrysafety/busy",
       data: wire.object({ retryAfterMs: wire.number }),
@@ -797,19 +858,21 @@ describe("mutation retry safety", () => {
       retry: "after",
     });
     const app2 = rpc.context<{ state: { calls: number } }>();
-    const save = app2.procedure()
+    const save = app2
+      .procedure()
       .input(wire.object({ value: wire.string }))
       .output(wire.string)
       .errors({ Busy })
       .mutation(({ input, context, errors }) => {
         context.state.calls += 1;
-        return context.state.calls === 1
-          ? err(errors.Busy({ retryAfterMs: 5 }))
-          : ok(input.value);
+        return context.state.calls === 1 ? err(errors.Busy({ retryAfterMs: 5 })) : ok(input.value);
       });
     const busyRouter = app2.router({ save });
     const state = { calls: 0 };
-    const busyHandler = createFetchHandler({ router: busyRouter, createContext: () => ({ state }) });
+    const busyHandler = createFetchHandler({
+      router: busyRouter,
+      createContext: () => ({ state }),
+    });
     const client = createClient({
       router: busyRouter,
       transport: fetchTransport({

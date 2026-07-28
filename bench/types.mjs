@@ -55,16 +55,32 @@ export const s${i} = r${i}.ok ? r${i}.value.v.a : r${i}.error._tag;\n`;
 
 const measure = (n) => {
   writeFileSync(join(work, `f${n}.ts`), fixture(n));
-  writeFileSync(join(work, "tsconfig.json"), JSON.stringify({
-    compilerOptions: {
-      target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext",
-      strict: true, noEmit: true, skipLibCheck: true,
-      allowImportingTsExtensions: true, types: [], lib: ["ES2022", "DOM"],
-    },
-    include: [`f${n}.ts`],
-  }, null, 2));
-  const out = execFileSync("npx", ["tsc", "-p", join(work, "tsconfig.json"), "--extendedDiagnostics"],
-    { encoding: "utf8", cwd: here });
+  writeFileSync(
+    join(work, "tsconfig.json"),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          target: "ES2022",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
+          strict: true,
+          noEmit: true,
+          skipLibCheck: true,
+          allowImportingTsExtensions: true,
+          types: [],
+          lib: ["ES2022", "DOM"],
+        },
+        include: [`f${n}.ts`],
+      },
+      null,
+      2,
+    ),
+  );
+  const out = execFileSync(
+    "npx",
+    ["tsc", "-p", join(work, "tsconfig.json"), "--extendedDiagnostics"],
+    { encoding: "utf8", cwd: here },
+  );
   const grab = (label) => Number(out.match(new RegExp(`^${label}:\\s+(\\d+)`, "m"))?.[1] ?? 0);
   return { types: grab("Types"), instantiations: grab("Instantiations") };
 };
@@ -77,8 +93,7 @@ rmSync(work, { recursive: true, force: true });
 
 // Marginal cost per procedure between the smallest and largest run: the
 // number that must stay flat.
-const per = (a, b) =>
-  Math.round((results[b].instantiations - results[a].instantiations) / (b - a));
+const per = (a, b) => Math.round((results[b].instantiations - results[a].instantiations) / (b - a));
 const marginal = per(SIZES[0], SIZES.at(-1));
 const report = { ...results, marginalInstantiationsPerProcedure: marginal };
 console.log(JSON.stringify(report, null, 2));
@@ -90,12 +105,19 @@ if (process.argv.includes("--update")) {
 }
 
 let baseline;
-try { baseline = JSON.parse(readFileSync(baselinePath, "utf8")); }
-catch { console.log("no baseline yet — run with --update"); process.exit(0); }
+try {
+  baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
+} catch {
+  console.log("no baseline yet — run with --update");
+  process.exit(0);
+}
 
-const drift = (marginal - baseline.marginalInstantiationsPerProcedure)
-  / baseline.marginalInstantiationsPerProcedure;
-console.log(`marginal/procedure: ${marginal} (baseline ${baseline.marginalInstantiationsPerProcedure}, ${(drift * 100).toFixed(1)}%)`);
+const drift =
+  (marginal - baseline.marginalInstantiationsPerProcedure) /
+  baseline.marginalInstantiationsPerProcedure;
+console.log(
+  `marginal/procedure: ${marginal} (baseline ${baseline.marginalInstantiationsPerProcedure}, ${(drift * 100).toFixed(1)}%)`,
+);
 if (drift > 0.15) {
   console.error("REGRESSION: per-procedure type cost grew more than 15%");
   process.exit(1);

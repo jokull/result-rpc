@@ -95,26 +95,11 @@ No upward dependency is allowed. In particular:
 Suggested exports:
 
 ```ts
-import {
-  ok,
-  err,
-  match,
-  matchError,
-  error,
-  wire,
-  rpc,
-} from "result-rpc"
+import { ok, err, match, matchError, error, wire, rpc } from "result-rpc";
 
-import {
-  createFetchHandler,
-  createServerClient,
-} from "result-rpc/server"
+import { createFetchHandler, createServerClient } from "result-rpc/server";
 
-import {
-  createClient,
-  fetchTransport,
-  batchFetchTransport,
-} from "result-rpc/client"
+import { createClient, fetchTransport, batchFetchTransport } from "result-rpc/client";
 
 import {
   createQueryRuntime,
@@ -123,11 +108,9 @@ import {
   useResultSuspenseQuery,
   useResultMutation,
   useResultSubscription,
-} from "result-rpc/react"
+} from "result-rpc/react";
 
-import {
-  createTestClient,
-} from "result-rpc/testing"
+import { createTestClient } from "result-rpc/testing";
 ```
 
 The root entry is the contract language — everything safe on both sides of the
@@ -168,9 +151,9 @@ naive depth traversal is unsuitable.
 
 ```ts
 interface WireCodec<Input, Output> {
-  readonly kind: string
-  encode(input: Input): DecodeResult<Output>
-  decode(value: unknown): DecodeResult<Input>
+  readonly kind: string;
+  encode(input: Input): DecodeResult<Output>;
+  decode(value: unknown): DecodeResult<Input>;
 }
 ```
 
@@ -192,16 +175,16 @@ abstract class TaggedError<
   Tag extends string = string,
   Data extends WireValue = WireValue,
 > extends Error {
-  private readonly nominalBrand: void
-  readonly _tag: Tag
-  readonly data: Data
-  toJSON(): EncodedTaggedError<Tag, Data>
-  [Symbol.iterator](): Generator<Err<this>, never, unknown>
+  private readonly nominalBrand: void;
+  readonly _tag: Tag;
+  readonly data: Data;
+  toJSON(): EncodedTaggedError<Tag, Data>;
+  [Symbol.iterator](): Generator<Err<this>, never, unknown>;
 }
 
 interface EncodedTaggedError<Tag extends string, Data extends WireValue> {
-  readonly _tag: Tag
-  readonly data: Data
+  readonly _tag: Tag;
+  readonly data: Data;
 }
 ```
 
@@ -227,20 +210,20 @@ interface ErrorDefinition<
   Data extends WireValue,
   Visibility extends "public" | "private",
 > {
-  readonly tag: Tag
-  readonly codec: WireCodec<Input, Data>
-  readonly policy: ErrorPolicy<Visibility>
+  readonly tag: Tag;
+  readonly codec: WireCodec<Input, Data>;
+  readonly policy: ErrorPolicy<Visibility>;
 
-  (input: Input): TaggedError<Tag, Data, Visibility>
-  is(value: unknown): value is TaggedError<Tag, Data, Visibility>
-  decode(value: unknown): DecodeResult<TaggedError<Tag, Data, Visibility>>
+  (input: Input): TaggedError<Tag, Data, Visibility>;
+  is(value: unknown): value is TaggedError<Tag, Data, Visibility>;
+  decode(value: unknown): DecodeResult<TaggedError<Tag, Data, Visibility>>;
 }
 
 interface ErrorPolicy<Visibility extends "public" | "private"> {
-  readonly httpStatus?: Visibility extends "public" ? number : never
-  readonly retry: "never" | "transient" | "after"
-  readonly visibility: Visibility
-  readonly severity: "debug" | "info" | "warning" | "error"
+  readonly httpStatus?: Visibility extends "public" ? number : never;
+  readonly retry: "never" | "transient" | "after";
+  readonly visibility: Visibility;
+  readonly severity: "debug" | "info" | "warning" | "error";
 }
 ```
 
@@ -309,7 +292,7 @@ type FrameworkError =
   | ClientTimeout
   | ClientHttpFailure
   | ClientProtocolViolation
-  | ClientDecodeFailure
+  | ClientDecodeFailure;
 ```
 
 `server/internal` contains an opaque incident ID and no original exception text.
@@ -322,8 +305,7 @@ headers, cookies, stacks, causes, and arbitrary URLs are never embedded.
 
 ```ts
 type Result<T, E extends TaggedError> =
-  | Readonly<{ ok: true; value: T }>
-  | Readonly<{ ok: false; error: E }>
+  Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; error: E }>;
 ```
 
 The enumerable representation is a small discriminated value with a
@@ -384,7 +366,7 @@ Builders accumulate context, input/output codecs, metadata, and error definition
 The handler must return:
 
 ```ts
-Result<Output, ErrorOf<ErrorDefinitions>>
+Result<Output, ErrorOf<ErrorDefinitions>>;
 ```
 
 or its promised equivalent.
@@ -413,13 +395,14 @@ Middleware errors union with procedure errors. Collision rules are identical to
 router composition. Middleware cannot silently replace a procedure's definition.
 
 ```ts
-const authenticated = rpc.middleware()
+const authenticated = rpc
+  .middleware()
   .errors({ Unauthorized })
   .use(async ({ context, next, errors }) => {
-    const user = await authenticate(context.request)
-    if (!user) return err(errors.Unauthorized({}))
-    return next({ context: { ...context, user } })
-  })
+    const user = await authenticate(context.request);
+    if (!user) return err(errors.Unauthorized({}));
+    return next({ context: { ...context, user } });
+  });
 ```
 
 ### Router manifest
@@ -489,10 +472,10 @@ Observability receives richer server-local events than clients receive:
 
 ```ts
 interface FailureEvent {
-  incidentId: string
-  procedurePath?: string
-  phase: "input" | "context" | "middleware" | "handler" | "output" | "error"
-  cause: unknown
+  incidentId: string;
+  procedurePath?: string;
+  phase: "input" | "context" | "middleware" | "handler" | "output" | "error";
+  cause: unknown;
 }
 ```
 
@@ -513,18 +496,18 @@ Conceptually:
 
 ```ts
 interface SuccessEnvelope {
-  readonly v: 1
-  readonly ok: true
-  readonly value: WireValue
+  readonly v: 1;
+  readonly ok: true;
+  readonly value: WireValue;
 }
 
 interface FailureEnvelope {
-  readonly v: 1
-  readonly ok: false
+  readonly v: 1;
+  readonly ok: false;
   readonly error: {
-    readonly _tag: string
-    readonly data: WireValue
-  }
+    readonly _tag: string;
+    readonly data: WireValue;
+  };
 }
 ```
 
@@ -601,7 +584,7 @@ validate and encode input
 The default client resolves every recoverable outcome:
 
 ```ts
-Promise<Result<Output, DeclaredErrors | FrameworkErrors>>
+Promise<Result<Output, DeclaredErrors | FrameworkErrors>>;
 ```
 
 There is no public `TRPCClientError`, `ThrowableError`, or `unknown` fallback.
@@ -642,8 +625,8 @@ unless a client programming invariant is violated.
 - `createClient(transport)` uses the real protocol.
 - `createServerClient(router, { mode: "parity" })` executes locally but still runs
   input, output, and error codecs.
-Tests and SSR use parity mode. An unchecked server client is deliberately omitted
-from the first release so local calls cannot silently diverge from remote behavior.
+  Tests and SSR use parity mode. An unchecked server client is deliberately omitted
+  from the first release so local calls cannot silently diverge from remote behavior.
 
 ## Reactive query runtime
 
@@ -668,9 +651,9 @@ The internal query function is equivalent to:
 
 ```ts
 async function execute(): Promise<T> {
-  const result = await client.procedure(input)
-  if (!result.ok) throw result.error
-  return result.value
+  const result = await client.procedure(input);
+  if (!result.ok) throw result.error;
+  return result.value;
 }
 ```
 
@@ -682,20 +665,20 @@ it back into the same tagged Result union.
 ```ts
 type QueryState<T, E extends TaggedError> =
   | {
-      state: "pending"
-      fetch: "fetching" | "paused"
+      state: "pending";
+      fetch: "fetching" | "paused";
     }
   | {
-      state: "success"
-      value: T
-      fetch: "idle" | "fetching" | "paused"
+      state: "success";
+      value: T;
+      fetch: "idle" | "fetching" | "paused";
     }
   | {
-      state: "failure"
-      error: E
-      previous?: T
-      fetch: "idle" | "fetching" | "paused"
-    }
+      state: "failure";
+      error: E;
+      previous?: T;
+      fetch: "idle" | "fetching" | "paused";
+    };
 ```
 
 `previous` preserves usable cached data after a failed background refetch. It does
@@ -817,6 +800,7 @@ constraint codes as private `db/*` composition currency, collapsed to
 declared domain tags at the boundary).
 
 Derivations deliberately NOT taken, evaluated against doctrine:
+
 - **Form validators from models** — forms validate humans, wires validate
   applications; deriving form rules from column metadata is the 1:1
   forms-bridge mistake with a schema accent.
@@ -935,7 +919,7 @@ monitor on all procedure activity below it, keyed purely by the wire contract's
 tags, with no knowledge of the procedures involved. `useHeld()` aggregates
 everything absorbed, not just shell-hook traffic.
 
-**Narrowing is carried by the shell *value*, not by tree position:**
+**Narrowing is carried by the shell _value_, not by tree position:**
 
 - the accumulated handled set is computed at the type level by walking `from:`,
   so `Shell.useQuery` returns `ExcludeTags<ProcedureError, Handled>` without any
@@ -954,10 +938,10 @@ claims nothing.
 
 Projection rules for a claimed error:
 
-| Effect | Query | Mutation | Subscription |
-| --- | --- | --- | --- |
-| `pause` | `fetch: "paused"`; stale success is retained, otherwise `pending` | state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
-| `escalate` | reified `TaggedError` thrown during render | same | same |
+| Effect     | Query                                                             | Mutation                                                            | Subscription                             |
+| ---------- | ----------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
+| `pause`    | `fetch: "paused"`; stale success is retained, otherwise `pending` | state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
+| `escalate` | reified `TaggedError` thrown during render                        | same                                                                | same                                     |
 
 Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
 fallback can `matchError` on it. The library does not introduce a second public
@@ -1090,7 +1074,7 @@ it, and the emitted declarations are validated for consumers on every build by
 `publint` and `are-the-types-wrong`.
 
 The property that matters for a typed-RPC library is not raw speed but **shape**:
-what a consumer's compiler pays *per procedure* must stay constant, because
+what a consumer's compiler pays _per procedure_ must stay constant, because
 superlinear growth is what eventually makes an API package unusable
 (TypeScript's `ts7056` "inferred type exceeds the maximum length the compiler
 will serialize" is the terminal form). `pnpm bench:types` generates a synthetic

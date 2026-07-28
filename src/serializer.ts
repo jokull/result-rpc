@@ -26,12 +26,13 @@ export const serialize = (
     }
     return { ok: true, value: serialized };
   } catch (cause) {
-    const path = cause !== null
-      && typeof cause === "object"
-      && "path" in cause
-      && typeof cause.path === "string"
-      ? cause.path
-      : undefined;
+    const path =
+      cause !== null &&
+      typeof cause === "object" &&
+      "path" in cause &&
+      typeof cause.path === "string"
+        ? cause.path
+        : undefined;
     return {
       ok: false,
       ...(path === undefined ? {} : { path }),

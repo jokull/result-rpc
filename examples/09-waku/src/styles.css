@@ -184,7 +184,9 @@ main {
   border-radius: 999px;
   padding: 0.25rem 0.8rem;
   cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
+  transition:
+    background 120ms ease,
+    transform 120ms ease;
   white-space: nowrap;
 }
 
@@ -242,23 +244,32 @@ main {
   height: 0.85rem;
   border-radius: 6px;
   margin: 0.45rem 0;
-  background: linear-gradient(
-    100deg,
-    #ece8e1 30%,
-    #f8f6f2 50%,
-    #ece8e1 70%
-  );
+  background: linear-gradient(100deg, #ece8e1 30%, #f8f6f2 50%, #ece8e1 70%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-.w-25 { width: 25%; }
-.w-40 { width: 40%; }
-.w-70 { width: 70%; }
-.w-80 { width: 80%; }
-.w-90 { width: 90%; }
+.w-25 {
+  width: 25%;
+}
+.w-40 {
+  width: 40%;
+}
+.w-70 {
+  width: 70%;
+}
+.w-80 {
+  width: 80%;
+}
+.w-90 {
+  width: 90%;
+}
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }

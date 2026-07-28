@@ -1,11 +1,6 @@
 import "./test-setup.js";
 import { expect, test } from "bun:test";
-import {
-  act,
-  create,
-  type ReactTestInstance,
-  type ReactTestRenderer,
-} from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { err, ok } from "../../src/index.js";
 import { makeClient, type AppClient } from "./client.js";
 import { seedDb, TODAY } from "./world.js";
@@ -619,8 +614,7 @@ type Assert<T extends true> = T;
 declare const probeClient: AppClient;
 
 // Under the boundary onion, the tour detail sees exactly its domain error.
-const probeTour = () =>
-  StaleShell.useQuery(probeClient.tours.byId, { id: "t-fuji", locale: "en" });
+const probeTour = () => StaleShell.useQuery(probeClient.tours.byId, { id: "t-fuji", locale: "en" });
 type TourError = Extract<ReturnType<typeof probeTour>, { state: "failure" }>["error"];
 export type _TourDetailSeesOnlyNotFound = Assert<Equal<TourError["_tag"], "tours/not-found">>;
 void probeTour;

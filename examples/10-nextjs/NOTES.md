@@ -61,7 +61,7 @@ export const POST = rpcHandler;
 export const dynamic = "force-dynamic";
 ```
 
-**GOTCHA.** The handler matches the request *pathname* against its `endpoint`
+**GOTCHA.** The handler matches the request _pathname_ against its `endpoint`
 option, and that option defaults to `"/rpc"`. Next's convention puts route
 handlers under `app/api/**`, i.e. `/api/rpc`. So both ends must be told:
 
@@ -95,7 +95,7 @@ This is the part that is easy to get wrong, and Next enforces it loudly:
 
 - **`result-rpc/query`** is react-free and has no directive. Server-only
   modules (`src/rsc.ts`) import `createQueryRuntime` from here, because that
-  function must actually *execute* in the react-server environment — and a
+  function must actually _execute_ in the react-server environment — and a
   react-server environment refuses to evaluate a `"use client"` module.
 - **`result-rpc/react`** ships `"use client"`. Client components import the
   hooks and `ResultRpcProvider` from it. A **server component may import
@@ -104,7 +104,7 @@ This is the part that is easy to get wrong, and Next enforces it loudly:
   reference instead of executing it. That is the boundary working as designed,
   not a leak.
 
-Rule of thumb: *call* nothing from `result-rpc/react` on the server; *rendering*
+Rule of thumb: _call_ nothing from `result-rpc/react` on the server; _rendering_
 its components from the server is fine.
 
 ### 5. Prefetch + hydrate
@@ -118,7 +118,9 @@ await Promise.all([
 ]);
 return (
   <ResultRpcHydrationBoundary state={runtime.dehydrate()}>
-    <StatsBar /><AddSpotForm /><Feed />
+    <StatsBar />
+    <AddSpotForm />
+    <Feed />
   </ResultRpcHydrationBoundary>
 );
 ```
@@ -136,7 +138,7 @@ Two Next-flavoured details:
 - `export const dynamic = "force-dynamic"` on both pages and the route handler
   — they read sqlite per request.
 - `loading.tsx` at both segments renders the shimmer skeletons while the
-  server component's prefetch is in flight. The *client* skeletons in
+  server component's prefetch is in flight. The _client_ skeletons in
   `feed.tsx`/`spot-detail.tsx` are then essentially dead code on a prefetched
   paint — which is the point.
 - `dehydrate()` only carries **successful** queries. `/spots/does-not-exist`
@@ -147,15 +149,15 @@ Two Next-flavoured details:
 
 Against `next dev` on a freshly seeded database:
 
-| Check | Result |
-| --- | --- |
-| Cold load `/` — client `/api/rpc` calls on first paint | **0** (`performance.getEntriesByType("resource")`), 8 rows rendered, stats tiles filled |
-| "Load more" | rows 8 → 16, meta `16 spots loaded · 2 pages`, **exactly 1** new `/api/rpc` call |
-| Like row 1 | `♥ 0 → ♥ 1` patched in place; row count stays 16 (no list refetch); "total likes" tile `331 → 332` via `.affects()` |
-| Client-side nav to `/spots/spot-01` | detail renders `♥ 1` with **0** further calls — the entity patch crossed the query boundary before the detail view ever fetched |
-| Cold load `/spots/spot-05` | renders server-prefetched, **0** client calls |
-| `tryDb` + UNIQUE | duplicate name → `spot/name-taken` → `"Fushimi Inari at dawn" already exists` |
-| Insert a fresh name | succeeds; `.affects(feedContract)` invalidates the whole list (window resets to page one) and the spots tile goes `30 → 31` |
+| Check                                                  | Result                                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Cold load `/` — client `/api/rpc` calls on first paint | **0** (`performance.getEntriesByType("resource")`), 8 rows rendered, stats tiles filled                                         |
+| "Load more"                                            | rows 8 → 16, meta `16 spots loaded · 2 pages`, **exactly 1** new `/api/rpc` call                                                |
+| Like row 1                                             | `♥ 0 → ♥ 1` patched in place; row count stays 16 (no list refetch); "total likes" tile `331 → 332` via `.affects()`             |
+| Client-side nav to `/spots/spot-01`                    | detail renders `♥ 1` with **0** further calls — the entity patch crossed the query boundary before the detail view ever fetched |
+| Cold load `/spots/spot-05`                             | renders server-prefetched, **0** client calls                                                                                   |
+| `tryDb` + UNIQUE                                       | duplicate name → `spot/name-taken` → `"Fushimi Inari at dawn" already exists`                                                   |
+| Insert a fresh name                                    | succeeds; `.affects(feedContract)` invalidates the whole list (window resets to page one) and the spots tile goes `30 → 31`     |
 
 Screenshots in `./screenshots/`: `01-home-prefetched.png`, `02-load-more.png`,
 `03-like-patched.png`, `04-detail.png`, `05-add-spot-conflict.png`,
@@ -164,7 +166,7 @@ Screenshots in `./screenshots/`: `01-home-prefetched.png`, `02-load-more.png`,
 ## Client-boundary proof
 
 `src/server.ts` plants a canary inside the like handler, compared against
-*runtime input* so the minifier cannot constant-fold it away:
+_runtime input_ so the minifier cannot constant-fold it away:
 
 ```ts
 const SERVER_SECRET = "NEXT_SECRET_marker_do_not_ship";
@@ -187,21 +189,21 @@ Additional greps over `.next/static/`, all **0 files**: `better-sqlite3`,
 `node:fs`, `spots.sqlite`, `INSERT INTO spots`, `tryDb`, `createFetchHandler`.
 
 One client chunk does mention `drizzle`: `modelFromDrizzle` reads table metadata
-from the `drizzle-orm/sqlite-core` *builders*, which are browser-safe by design.
+from the `drizzle-orm/sqlite-core` _builders_, which are browser-safe by design.
 The driver is not in the graph.
 
 ## FRICTION log
 
 1. **LIBRARY-ADJACENT, WORKED AROUND — Turbopack empties the `drizzle-orm`
    barrel.** `drizzle-orm@1.0.0-rc.4`'s root entry is a pure re-export barrel
-   with `"sideEffects": false`. In *every* Next 16 server graph (route handler,
+   with `"sideEffects": false`. In _every_ Next 16 server graph (route handler,
    RSC, SSR) Turbopack tree-shakes it to nothing: `import { asc, count, eq, sql }
-   from "drizzle-orm"` gives `undefined` for every name, and `import * as DZ`
+from "drizzle-orm"` gives `undefined` for every name, and `import * as DZ`
    gives `undefined` for the namespace itself. Deep subpaths
    (`drizzle-orm/sqlite-core`, `drizzle-orm/sql/expressions/select`) are fine,
    and `next dev --webpack` is fine, so it is a Turbopack barrel-analysis bug,
    not drizzle's and not result-rpc's. Setting `experimental.optimizePackageImports:
-   []` does **not** help. Fix:
+[]` does **not** help. Fix:
    `turbopack.resolveAlias: { "drizzle-orm": "drizzle-orm/index.js" }`.
    Cost of not knowing: the failure surfaces only as
    `server/internal` + `TypeError: (void 0) is not a function` from inside a
@@ -218,7 +220,7 @@ The driver is not in the graph.
 3. **Endpoint mismatch.** See §2 above. Nothing warns you; the client just gets
    a 404 body it cannot decode. Worth a line in the RSC guide.
 
-4. **`file:` dependency staleness.** `file:../..` is a *packed snapshot*, not a
+4. **`file:` dependency staleness.** `file:../..` is a _packed snapshot_, not a
    live symlink. Rebuilding the library at the repo root does not update the
    example until you reinstall. Good for realism (you get the published
    `exports` map, which is a stronger test than aliases), mildly annoying in a

@@ -23,15 +23,15 @@ Three steps, each a value crossing one boundary:
 
 ```tsx
 // app/rsc.ts — one runtime per request, shared by every server component
-import { cache } from "react"
-import { createServerClient } from "result-rpc/server"
-import { createQueryRuntime } from "result-rpc/query"   // ← react-free entry
-import { appRouter } from "@app/server"      // server-only module
+import { cache } from "react";
+import { createServerClient } from "result-rpc/server";
+import { createQueryRuntime } from "result-rpc/query"; // ← react-free entry
+import { appRouter } from "@app/server"; // server-only module
 
 export const getServerRuntime = cache(() => {
-  const client = createServerClient(appRouter, { mode: "parity", context: buildContext() })
-  return createQueryRuntime({ client })
-})
+  const client = createServerClient(appRouter, { mode: "parity", context: buildContext() });
+  return createQueryRuntime({ client });
+});
 ```
 
 :::note[Two entries: `result-rpc/query` on the server, `result-rpc/react` in components]
@@ -41,7 +41,7 @@ imported straight into a server component, and the bundler turns it into a
 client reference rather than executing it on the server. That is the boundary
 working as designed.
 
-What you cannot do is *call* its non-component exports on the server: a
+What you cannot do is _call_ its non-component exports on the server: a
 react-server environment will not evaluate a client module, so
 `createQueryRuntime` imported from `result-rpc/react` fails there. The cache
 runtime has no React dependency at all, so it ships as its own entry — import
@@ -53,33 +53,33 @@ shares a runtime — prefetches accumulate, and you dehydrate once at the bounda
 
 ```tsx
 // app/users/[id]/page.tsx — a server component
-import { getServerRuntime } from "@app/rsc"
-import { serverClient } from "@app/rsc"
-import { ResultRpcHydrationBoundary } from "result-rpc/react"
-import { UserDetail } from "./user-detail"   // a client component
+import { getServerRuntime } from "@app/rsc";
+import { serverClient } from "@app/rsc";
+import { ResultRpcHydrationBoundary } from "result-rpc/react";
+import { UserDetail } from "./user-detail"; // a client component
 
 export default async function Page({ params }: { params: { id: string } }) {
-  const runtime = getServerRuntime()
-  await runtime.prefetch(serverClient.users.get, { id: params.id })
+  const runtime = getServerRuntime();
+  await runtime.prefetch(serverClient.users.get, { id: params.id });
   return (
     <ResultRpcHydrationBoundary state={runtime.dehydrate()}>
       <UserDetail id={params.id} />
     </ResultRpcHydrationBoundary>
-  )
+  );
 }
 ```
 
 ```tsx
 // user-detail.tsx — a client component
-"use client"
-import { useResultQuery } from "result-rpc/react"
-import { client } from "@app/client"
+"use client";
+import { useResultQuery } from "result-rpc/react";
+import { client } from "@app/client";
 
 export function UserDetail({ id }: { id: string }) {
   // Already `success` on first paint — the server prefetched it.
-  const user = useResultQuery(client.users.get, { id }, { staleTime: 60_000 })
-  if (user.state !== "success") return <UserSkeleton />
-  return <h1>{user.value.name}</h1>
+  const user = useResultQuery(client.users.get, { id }, { staleTime: 60_000 });
+  if (user.state !== "success") return <UserSkeleton />;
+  return <h1>{user.value.name}</h1>;
 }
 ```
 
@@ -130,7 +130,7 @@ the tree. A stale server payload never renders as if it were current.
 
 ## Only successes hydrate
 
-`dehydrate()` carries successful queries only — a prefetch that *failed* on the
+`dehydrate()` carries successful queries only — a prefetch that _failed_ on the
 server is deliberately not persisted. A server-rendered failure is a snapshot of
 one request's bad luck; replaying it on the client would show a stale error the
 user cannot retry past. Instead the client starts that query cold and fetches
@@ -149,10 +149,10 @@ survive.
 Unwrap at the server/client component boundary:
 
 ```tsx
-const result = await serverClient.users.get({ id })
+const result = await serverClient.users.get({ id });
 
-if (!result.ok) return <MissingUser id={id} />
-return <UserDetail initialUser={result.value} />
+if (!result.ok) return <MissingUser id={id} />;
+return <UserDetail initialUser={result.value} />;
 ```
 
 When the browser needs the full Result API, let the result-rpc client make the
@@ -164,17 +164,17 @@ faithful runtime behavior across its own wire, not arbitrary serialization.
 The pattern is identical everywhere; only the mount point and the prefetch site
 move. Three worked examples ship in the repo:
 
-| Example | Framework | Prefetch happens in | RPC handler mounts at |
-| --- | --- | --- | --- |
-| `09-waku` | Waku (RSC) | async server component | `src/pages/_api/rpc.ts` → `/rpc` |
-| `10-nextjs` | Next.js App Router (RSC) | async server component | `app/api/rpc/route.ts` → `/api/rpc` |
-| `11-tanstack-start` | TanStack Start (SSR) | route **loader** | `src/routes/api.rpc.ts` → `/api/rpc` |
+| Example             | Framework                | Prefetch happens in    | RPC handler mounts at                |
+| ------------------- | ------------------------ | ---------------------- | ------------------------------------ |
+| `09-waku`           | Waku (RSC)               | async server component | `src/pages/_api/rpc.ts` → `/rpc`     |
+| `10-nextjs`         | Next.js App Router (RSC) | async server component | `app/api/rpc/route.ts` → `/api/rpc`  |
+| `11-tanstack-start` | TanStack Start (SSR)     | route **loader**       | `src/routes/api.rpc.ts` → `/api/rpc` |
 
 Three traps worth knowing before you wire your own:
 
 - **Match the endpoint on both ends.** The library defaults to `/rpc`, but
   Next.js and TanStack Start mount route handlers under `/api/`. Set both
-  `endpoint` on `createFetchHandler` *and* `url` on `fetchTransport`, or every
+  `endpoint` on `createFetchHandler` _and_ `url` on `fetchTransport`, or every
   call 404s silently.
 - **TanStack Start reserves `src/server.ts` and `src/client.ts`.** It resolves
   those paths as its own optional entries, so the file names used by every other

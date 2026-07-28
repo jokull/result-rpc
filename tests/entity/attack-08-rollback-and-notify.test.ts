@@ -29,15 +29,20 @@ const User = defineModel("a08-user", {
 });
 
 const boot = () => {
-  const app = rpc.context<{ readonly db: { users: Map<string, { id: string; name: string; avatarUrl: string }> } }>();
-  const list = app.procedure()
+  const app = rpc.context<{
+    readonly db: { users: Map<string, { id: string; name: string; avatarUrl: string }> };
+  }>();
+  const list = app
+    .procedure()
     .output(wire.array(User.all("test fixture")))
     .query(({ context }) => ok([...context.db.users.values()]));
   const router = app.router({ list });
-  const db = { users: new Map([
-    ["u1", { id: "u1", name: "Alice", avatarUrl: "a1.png" }],
-    ["u2", { id: "u2", name: "Bob", avatarUrl: "b1.png" }],
-  ]) };
+  const db = {
+    users: new Map([
+      ["u1", { id: "u1", name: "Alice", avatarUrl: "a1.png" }],
+      ["u2", { id: "u2", name: "Bob", avatarUrl: "b1.png" }],
+    ]),
+  };
   const handler = createFetchHandler({ router, createContext: () => ({ db }) });
   const client = createClient({
     router,
@@ -72,7 +77,9 @@ describe("attack-08 rollback and notify", () => {
     // ATTACK ASSERTION: u2's confirmed write must survive u1's rollback.
     expect(byId.get("u2")!.name).toBe("Bob-confirmed");
 
-    stop(); users.destroy(); runtime.clear();
+    stop();
+    users.destroy();
+    runtime.clear();
   });
 
   test("8b: a value-identical patch does not notify observers", async () => {
@@ -80,7 +87,9 @@ describe("attack-08 rollback and notify", () => {
     const runtime = createQueryRuntime({ client });
     const users = runtime.observe(client.list, {});
     let notifications = 0;
-    const stop = users.subscribe(() => { notifications += 1; });
+    const stop = users.subscribe(() => {
+      notifications += 1;
+    });
     await waitFor(users, (s) => s.state === "success");
     const before = notifications;
 
@@ -88,7 +97,9 @@ describe("attack-08 rollback and notify", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(notifications).toBe(before);
 
-    stop(); users.destroy(); runtime.clear();
+    stop();
+    users.destroy();
+    runtime.clear();
   });
 
   test("8c: patching u1 preserves the u2 row's object identity", async () => {
@@ -108,6 +119,8 @@ describe("attack-08 rollback and notify", () => {
     // React-bridge assertion: untouched row keeps identity (memo-friendly).
     expect(after.value.find((u) => u.id === "u2")).toBe(bobBefore!);
 
-    stop(); users.destroy(); runtime.clear();
+    stop();
+    users.destroy();
+    runtime.clear();
   });
 });

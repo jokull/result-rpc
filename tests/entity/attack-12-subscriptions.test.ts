@@ -29,15 +29,20 @@ const User = defineModel("a12-user", {
 const boot = () => {
   const db = { user: { id: "u1", name: "old" } };
   const app = rpc.context<{ readonly db: typeof db }>();
-  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-  const setName = app.procedure()
+  const me = app
+    .procedure()
+    .output(User.all("test fixture"))
+    .query(({ context }) => ok(context.db.user));
+  const setName = app
+    .procedure()
     .input(wire.object({ name: wire.string }))
     .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
       context.db.user = { ...context.db.user, name: input.name };
       return ok(context.db.user);
     });
-  const liveUserContract = app.procedure()
+  const liveUserContract = app
+    .procedure()
     .input(wire.object({ name: wire.string }))
     .output(User.all("test fixture"))
     .subscription();
@@ -68,7 +73,10 @@ describe("attack-12 subscriptions vs entity index", () => {
     const live = runtime.subscription(client.liveUser, { name: "from-stream" });
     await new Promise<void>((resolve) => {
       const un = live.subscribe(() => {
-        if (live.getCurrentState().eventCount > 0) { un(); resolve(); }
+        if (live.getCurrentState().eventCount > 0) {
+          un();
+          resolve();
+        }
       });
     });
     await sleep(20);
@@ -78,7 +86,10 @@ describe("attack-12 subscriptions vs entity index", () => {
     // GAP ASSERTION: same identity, live value arrived — cache not updated.
     expect(state.value.name).toBe("from-stream");
 
-    live.close(); stop(); header.destroy(); runtime.clear();
+    live.close();
+    stop();
+    header.destroy();
+    runtime.clear();
   });
 
   test("12b: a mutation's entity patch reaches a live subscription result", async () => {
@@ -87,7 +98,10 @@ describe("attack-12 subscriptions vs entity index", () => {
     const live = runtime.subscription(client.liveUser, { name: "streamed" });
     await new Promise<void>((resolve) => {
       const un = live.subscribe(() => {
-        if (live.getCurrentState().eventCount > 0) { un(); resolve(); }
+        if (live.getCurrentState().eventCount > 0) {
+          un();
+          resolve();
+        }
       });
     });
 
@@ -102,6 +116,8 @@ describe("attack-12 subscriptions vs entity index", () => {
     // is its own source of truth; the next event supersedes.
     expect((result.value as { name: string }).name).toBe("streamed");
 
-    live.close(); mutation.destroy(); runtime.clear();
+    live.close();
+    mutation.destroy();
+    runtime.clear();
   });
 });

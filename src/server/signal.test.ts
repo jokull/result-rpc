@@ -11,7 +11,10 @@ describe("caller-lifetime signals reach handlers", () => {
     const seen: { hasSignal?: boolean; abortedDuring?: boolean } = {};
     const app = rpc.context<{}>();
     const router = app.router({
-      slow: app.procedure().input(wire.object({})).output(wire.string)
+      slow: app
+        .procedure()
+        .input(wire.object({}))
+        .output(wire.string)
         .query(async ({ signal }) => {
           seen.hasSignal = signal instanceof AbortSignal;
           await new Promise<void>((resolve) => {
@@ -52,10 +55,14 @@ describe("caller-lifetime signals reach handlers", () => {
         // a slow producer awaiting upstream work — must stop with the caller
         await new Promise<void>((resolve) => {
           if (signal.aborted) return resolve();
-          signal.addEventListener("abort", () => {
-            lifecycle.push("signal-aborted");
-            resolve();
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              lifecycle.push("signal-aborted");
+              resolve();
+            },
+            { once: true },
+          );
           setTimeout(resolve, 2_000);
         });
         lifecycle.push("resumed");

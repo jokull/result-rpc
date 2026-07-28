@@ -29,12 +29,12 @@ starts there: it validates the plain wire form, then reconstructs both the Resul
 and its real `TaggedError` instance on the client.
 
 ```ts
-const query = useResultQuery(client.doc.byId, { id: "doc_123" })
+const query = useResultQuery(client.doc.byId, { id: "doc_123" });
 
 if (query.state === "failure") {
   // DocNotFound | Unauthorized | ServerInternal | Offline | NetworkFailure |
   // Timeout | HttpFailure | ProtocolViolation | DecodeFailure | Stale
-  query.error
+  query.error;
 }
 ```
 
@@ -47,11 +47,11 @@ branch on all of it, because the same union is narrowed by what the tree
 already takes responsibility for:
 
 ```ts
-const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" })
+const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" });
 
 if (query.state === "failure") {
   // DocNotFound
-  query.error
+  query.error;
 }
 ```
 
@@ -91,16 +91,16 @@ failures come back somewhere else:
 ```ts
 const query = useQuery({
   queryFn: () => rpc.doc.byId.query({ id }),
-})
+});
 
-query.data
+query.data;
 // Result<Doc, DocNotFound | Unauthorized> | undefined
 
-query.error
+query.error;
 // TRPCClientError | null  — code buried in error.data?.code, cause stripped
 ```
 
-Domain failures are *successful query data*. Network failures use the query
+Domain failures are _successful query data_. Network failures use the query
 error channel. Retries, error boundaries, offline behavior, and exhaustive
 matching now operate on different halves of the same operation — and the half
 in `query.error` is stringly typed, because error classes do not survive the
@@ -115,7 +115,7 @@ Every good team patches this, and each patch is a known move:
   not in, and every component maps every tag by hand, because nothing ever
   narrows.
 - **Encoding.** superjson-encode the Result objects across the wire. You get
-  Result-*shaped* JSON, not a contract: no closed union per procedure, no
+  Result-_shaped_ JSON, not a contract: no closed union per procedure, no
   exhaustiveness, no retry or status policy attached to the error.
 - **Interception.** A global `onError` callback on the client. That is
   problem two.
@@ -133,7 +133,7 @@ type GetDocError =
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure
-  | Stale
+  | Stale;
 ```
 
 The shared contract declares server and middleware errors. The client boundary
@@ -163,11 +163,11 @@ queryClient.setDefaultOptions({
   queries: {
     onError: (error) => {
       if ((error as any)?.data?.httpStatus === 401) {
-        window.location.href = "/login"
+        window.location.href = "/login";
       }
     },
   },
-})
+});
 ```
 
 A global, stringly hook, invisible to the type system, that fires once per
@@ -179,7 +179,7 @@ because the alternative — handling session expiry in every component that
 fetches — is worse.
 
 The requirement the interceptor cannot express is that ownership depends on
-*where you are*: the app shell should own `Unauthorized` almost everywhere,
+_where you are_: the app shell should own `Unauthorized` almost everywhere,
 while the one login-adjacent screen that wants to render it inline takes it
 back. result-rpc keeps the union complete at the contract and replaces the
 interceptor with a typed, tree-positional owner: a shell declares, in one
@@ -192,19 +192,19 @@ section, and it is the reason the rest of the machinery exists.
 
 ## What result-rpc owns
 
-| Concern | result-rpc contract |
-| --- | --- |
+| Concern            | result-rpc contract                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
 | Result composition | Plain Result values, `gen`/`yield*`, `tryPromise`, union-preserving combinators, exhaustive matching |
-| Error definitions | Namespaced tags, wire codecs, HTTP/retry/visibility policy |
-| RPC | Procedures, middleware, routers, server execution, protocol, clients |
-| Transport failures | Tagged additions to each procedure's inferred error union |
-| Query runtime | Keys, caching, retries, invalidation, lifecycle, hydration |
-| Failure ownership | Shells that subtract claimed tags and guarantee context |
-| React | Query, mutation, subscription, suspense, and SSR bindings |
-| Diagnostics | Safe incident IDs publicly; full causes only in local observability |
-| Observability | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps |
-| Cache coherence | Entity identities (patch by model+id), declared invalidation, membership via `.affects` |
-| Forms | Validator-as-wire-codec adoption, plus server-issue → field projection |
+| Error definitions  | Namespaced tags, wire codecs, HTTP/retry/visibility policy                                           |
+| RPC                | Procedures, middleware, routers, server execution, protocol, clients                                 |
+| Transport failures | Tagged additions to each procedure's inferred error union                                            |
+| Query runtime      | Keys, caching, retries, invalidation, lifecycle, hydration                                           |
+| Failure ownership  | Shells that subtract claimed tags and guarantee context                                              |
+| React              | Query, mutation, subscription, suspense, and SSR bindings                                            |
+| Diagnostics        | Safe incident IDs publicly; full causes only in local observability                                  |
+| Observability      | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps                          |
+| Cache coherence    | Entity identities (patch by model+id), declared invalidation, membership via `.affects`              |
+| Forms              | Validator-as-wire-codec adoption, plus server-issue → field projection                               |
 
 The query engine uses `@tanstack/query-core` privately. That is an engine
 choice, not part of the public API. Applications do not install or compose

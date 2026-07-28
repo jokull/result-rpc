@@ -39,16 +39,16 @@ submitted an invalid title through `useResultMutation`.
 What happened, in two stages:
 
 1. The direct client **throws** `TypeError: Invalid input for issues.create:
-   title: Title must be at least 3 characters` at the encode preflight. The
+title: Title must be at least 3 characters` at the encode preflight. The
    pitch ("a client whose every call resolves `Result` — never a thrown
-   transport error on the side") has an undocumented carve-out: *invalid input
-   is a programmer error and throws*. Defensible stance — but it must be
+   transport error on the side") has an undocumented carve-out: _invalid input
+   is a programmer error and throws_. Defensible stance — but it must be
    written down, because the forms guide reads as if `server/bad-request` is
    the normal outcome of submitting a bad value.
 2. Through `useResultMutation` it is worse than a throw: the mutation engine
    crashes with `TypeError: Mutation engine received an untagged failure`
    (src/query/runtime.ts, via the observer notify path). That is an
-   app-crashing failure reachable by *user input* whenever a form field feeds
+   app-crashing failure reachable by _user input_ whenever a form field feeds
    a `wire.standard` input without duplicate client-side validation. This one
    is a bug, not a doc gap: the engine should either surface the preflight
    rejection as a tagged value or reject the `mutate` promise cleanly.
@@ -95,11 +95,11 @@ override, document stub, instrumenting `EventTarget.prototype`), I read
 `src/connectivity.ts` — the one source peek this exercise needed. Findings a
 testing doc should own:
 
-- Listeners attach to **`globalThis`** (in a browser that *is* `window`; in
+- Listeners attach to **`globalThis`** (in a browser that _is_ `window`; in
   Bun it is not).
 - The online snapshot is seeded from `navigator.onLine` **at module import**
   and is event-driven afterwards — so test setup must be imported before the
-  library and must *dispatch events*, not just flip `navigator.onLine`.
+  library and must _dispatch events_, not just flip `navigator.onLine`.
 - Listeners attach lazily on first subscriber, so events dispatched before
   mount are lost.
 
@@ -132,7 +132,7 @@ under the recommended `boundaryShells()` onion **no form can ever branch on
 `server/bad-request`**: the narrowed hooks remove it from the type, and even
 `useResultMutation` gets a `claimed` rejection instead of a Result. The forms
 guide's `if (result.error._tag === "server/bad-request")` example only works
-for a form rendered *outside* the DefectShell, which the guide never mentions.
+for a form rendered _outside_ the DefectShell, which the guide never mentions.
 My form is mounted outside the boundary subtree for exactly this reason.
 Either `boundaryShells` needs an option to leave bad-request unclaimed, or the
 forms guide needs a loud "mount your form outside the defect shell (or catch
@@ -143,13 +143,13 @@ forms guide needs a loud "mount your form outside the defect shell (or catch
 - `error()`/`defineErrors` require `httpStatus` even for server-internal
   definitions that never cross the wire (my granular upstream errors). The
   results.md example happens to include 502s so I only hit it by omission;
-  the TS error (`missing in type ... ErrorSpec<any, any>`) doesn't say *why*
+  the TS error (`missing in type ... ErrorSpec<any, any>`) doesn't say _why_
   a status is mandatory for an error that has no HTTP life.
 - `InputOf` yields `readonly` fields — right for wire values, but a mock db
   wants mutable rows; I hand-rolled `Mutable<T>`. Worth a sentence or an
   exported helper.
 - The `defineErrors` key→tag conversion (camelCase key → kebab-case tag
-  segment: `titleTaken` → `issue/title-taken`) is only *implied* by one
+  segment: `titleTaken` → `issue/title-taken`) is only _implied_ by one
   example (`notFound` → `doc/not-found`). I guessed and verified at runtime.
   One explicit sentence, please — shells claim by tag and tests assert tags,
   so getting this wrong fails at a distance.
@@ -164,15 +164,16 @@ forms guide needs a loud "mount your form outside the defect shell (or catch
 ## 7. [delight] The type inference held up under blind fire
 
 I wrote ~700 lines against APIs I had only read prose about — layer contract
-+ `SessionLayer.procedure(app, contract, middleware)`, `layerShell` with a
-`procedure:` *selector*, `.affects()` contract-first, `touch(Project, id)` in
-a handler, `wire.standard` over a hand-rolled Standard Schema object,
-`errorCatalog` over a shell-narrowed union — and the first full `tsc` pass
-had **two** real errors (a missing `httpStatus`, readonly rows). Everything
-else — including `ViewerShell.use()` returning `User` with no null, and the
-narrowed `switch` exhaustiveness in every component — compiled exactly as the
-docs promised. I have never had a first-contact experience like that with
-tRPC middleware/context typing.
+
+- `SessionLayer.procedure(app, contract, middleware)`, `layerShell` with a
+  `procedure:` _selector_, `.affects()` contract-first, `touch(Project, id)` in
+  a handler, `wire.standard` over a hand-rolled Standard Schema object,
+  `errorCatalog` over a shell-narrowed union — and the first full `tsc` pass
+  had **two** real errors (a missing `httpStatus`, readonly rows). Everything
+  else — including `ViewerShell.use()` returning `User` with no null, and the
+  narrowed `switch` exhaustiveness in every component — compiled exactly as the
+  docs promised. I have never had a first-contact experience like that with
+  tRPC middleware/context typing.
 
 ## 8. [delight] The flagship entity behavior worked first try, and the counts prove it
 
@@ -198,12 +199,13 @@ banner switch is nicer than anything I've hand-rolled over
 The `Equal`/`Assert` probe pattern from the layers doc pinned "the issue page
 can only ever be asked to render `issue/not-found | project/forbidden`" and
 "the list component cannot fail in component space" as type-level tests. That
-artifact — *which error codes can this call site surface* — is something I
+artifact — _which error codes can this call site surface_ — is something I
 have wanted in every tRPC review I've ever done.
 
 ---
 
 **Source peeks (each one a documentation failure by contract):**
+
 1. `src/connectivity.ts` — looking for how to simulate offline in tests;
    should have been in guides/testing.md. (Only deliberate peek; items 1, 2
    and 4 were diagnosed from public behavior and stack traces alone.)

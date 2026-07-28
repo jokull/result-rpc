@@ -52,38 +52,59 @@ import {
 } from "./transport.js";
 
 /** Zero-input procedures may be called with no argument. */
-export type ClientInputArgs<TInput> = Record<never, never> extends TInput
-  ? [input?: TInput, options?: TransportRequestOptions]
-  : [input: TInput, options?: TransportRequestOptions];
+export type ClientInputArgs<TInput> =
+  Record<never, never> extends TInput
+    ? [input?: TInput, options?: TransportRequestOptions]
+    : [input: TInput, options?: TransportRequestOptions];
 
 export type ProcedureClient<TProcedure> =
   TProcedure extends SubscriptionProcedure<any, infer TInput, infer TOutput, infer TDefinitions>
     ? SubscriptionClient<TInput, TOutput, TDefinitions>
-    : TProcedure extends Procedure<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
-    ? TKind extends "subscription"
-      ? SubscriptionClient<TInput, TOutput, TDefinitions>
-      : ((
-        ...args: ClientInputArgs<TInput>
-      ) => Promise<Result<
-        TOutput,
-        ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
-      >>) & { readonly $kind: TKind }
-    : TProcedure extends ProcedureContract<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
+    : TProcedure extends Procedure<
+          any,
+          infer TInput,
+          infer TOutput,
+          infer TDefinitions,
+          infer TKind
+        >
       ? TKind extends "subscription"
         ? SubscriptionClient<TInput, TOutput, TDefinitions>
         : ((
-          ...args: ClientInputArgs<TInput>
-        ) => Promise<Result<
-          TOutput,
-          ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
-        >>) & { readonly $kind: TKind }
-    : never;
+            ...args: ClientInputArgs<TInput>
+          ) => Promise<
+            Result<
+              TOutput,
+              | ErrorUnion<TDefinitions>
+              | ReturnType<typeof ServerInternal>
+              | ReturnType<typeof ServerBadRequest>
+              | ClientBoundaryError
+            >
+          >) & { readonly $kind: TKind }
+      : TProcedure extends ProcedureContract<
+            any,
+            infer TInput,
+            infer TOutput,
+            infer TDefinitions,
+            infer TKind
+          >
+        ? TKind extends "subscription"
+          ? SubscriptionClient<TInput, TOutput, TDefinitions>
+          : ((
+              ...args: ClientInputArgs<TInput>
+            ) => Promise<
+              Result<
+                TOutput,
+                | ErrorUnion<TDefinitions>
+                | ReturnType<typeof ServerInternal>
+                | ReturnType<typeof ServerBadRequest>
+                | ClientBoundaryError
+              >
+            >) & { readonly $kind: TKind }
+        : never;
 
 type ClientProcedure = AnyProcedure | AnyProcedureContract;
 type ClientRouterRecord = RouterRecord | ContractRouterRecord;
-type ClientRouter =
-  | Router<any, RouterRecord>
-  | RouterContract<any, ContractRouterRecord>;
+type ClientRouter = Router<any, RouterRecord> | RouterContract<any, ContractRouterRecord>;
 
 export type ClientRecord<TRecord> = {
   readonly [TKey in keyof TRecord]: TRecord[TKey] extends ClientProcedure
@@ -95,7 +116,9 @@ export type ClientRecord<TRecord> = {
 
 type ClientRecordError<TRecord> = {
   readonly [TKey in keyof TRecord]: TRecord[TKey] extends ClientProcedure
-    ? TRecord[TKey] extends { readonly _def: { readonly definitions: infer TDefinitions extends ErrorDefinitionMap } }
+    ? TRecord[TKey] extends {
+        readonly _def: { readonly definitions: infer TDefinitions extends ErrorDefinitionMap };
+      }
       ? ErrorUnion<TDefinitions>
       : never
     : TRecord[TKey] extends ClientRouterRecord
@@ -103,11 +126,12 @@ type ClientRecordError<TRecord> = {
       : never;
 }[keyof TRecord];
 
-type ClientRouterRecordOf<TRouter> = TRouter extends Router<any, infer TRecord>
-  ? TRecord
-  : TRouter extends RouterContract<any, infer TRecord>
+type ClientRouterRecordOf<TRouter> =
+  TRouter extends Router<any, infer TRecord>
     ? TRecord
-    : never;
+    : TRouter extends RouterContract<any, infer TRecord>
+      ? TRecord
+      : never;
 
 /** Every failure this client may observe, flattened into one public tagged union. */
 export type ClientErrorOf<TRouter> = Extract<
@@ -124,8 +148,9 @@ export interface ClientErrorRegistry<E extends AnyPublicTaggedError> {
   is(value: unknown): value is E;
 }
 
-export interface ResultSubscription<T, E extends AnyTaggedError>
-  extends AsyncIterable<Result<T, E>> {
+export interface ResultSubscription<T, E extends AnyTaggedError> extends AsyncIterable<
+  Result<T, E>
+> {
   close(): void;
 }
 
@@ -134,21 +159,24 @@ type SubscriptionClient<TInput, TOutput, TDefinitions extends ErrorDefinitionMap
   options?: TransportRequestOptions,
 ) => ResultSubscription<
   TOutput,
-  ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
+  | ErrorUnion<TDefinitions>
+  | ReturnType<typeof ServerInternal>
+  | ReturnType<typeof ServerBadRequest>
+  | ClientBoundaryError
 >) & { readonly $kind: "subscription" };
 
-export type ClientOf<TRouter> = (
-  TRouter extends Router<any, infer TRecord>
+export type ClientOf<TRouter> = (TRouter extends Router<any, infer TRecord>
+  ? ClientRecord<TRecord>
+  : TRouter extends RouterContract<any, infer TRecord>
     ? ClientRecord<TRecord>
-    : TRouter extends RouterContract<any, infer TRecord>
-      ? ClientRecord<TRecord>
-      : never
-) & { readonly $errors: ClientErrorRegistry<ClientErrorOf<TRouter>> };
+    : never) & { readonly $errors: ClientErrorRegistry<ClientErrorOf<TRouter>> };
 
 /** Extracts the flattened, public error union carried by a client instance. */
 export type ClientErrors<TClient> = TClient extends {
   readonly $errors: ClientErrorRegistry<infer E>;
-} ? E : never;
+}
+  ? E
+  : never;
 
 /**
  * The wire-level breadcrumb stream. Every operation the client performs emits
@@ -158,7 +186,12 @@ export type ClientErrors<TClient> = TClient extends {
  */
 export type ClientEvent =
   | Readonly<{ type: "call"; kind: "query" | "mutation" | "subscription"; path: string }>
-  | Readonly<{ type: "success"; kind: "query" | "mutation" | "subscription"; path: string; durationMs: number }>
+  | Readonly<{
+      type: "success";
+      kind: "query" | "mutation" | "subscription";
+      path: string;
+      durationMs: number;
+    }>
   | Readonly<{
       type: "failure";
       kind: "query" | "mutation" | "subscription";
@@ -228,25 +261,27 @@ export const getClientRouter = (clientIdentity: object): ClientRouter | undefine
   clientRouters.get(clientIdentity);
 
 /** Internal: the event listener registered for a client, by client identity. */
-export const getClientEventListener = (
-  clientIdentity: object,
-): ClientEventListener | undefined => clientEventListeners.get(clientIdentity);
+export const getClientEventListener = (clientIdentity: object): ClientEventListener | undefined =>
+  clientEventListeners.get(clientIdentity);
 
-export const getProcedureClientMetadata = (
-  value: Function,
-): ProcedureClientMetadata | undefined => procedureClientMetadata.get(value);
+export const getProcedureClientMetadata = (value: Function): ProcedureClientMetadata | undefined =>
+  procedureClientMetadata.get(value);
 
-export const getClientIdentity = (value: object): object | undefined =>
-  clientIdentities.get(value);
+export const getClientIdentity = (value: object): object | undefined => clientIdentities.get(value);
 
-const clientFailure = (outcome: Exclude<Awaited<ReturnType<ClientTransport["request"]>>, { ok: true }>) => {
+const clientFailure = (
+  outcome: Exclude<Awaited<ReturnType<ClientTransport["request"]>>, { ok: true }>,
+) => {
   switch (outcome.reason) {
-    case "offline": return ClientOffline({});
+    case "offline":
+      return ClientOffline({});
     // A fetch rejection is AMBIGUOUS — DNS failure (never sent) and a
     // connection dropped mid-response (sent, maybe processed) look the same.
     // `retryable` means "provably never left the client", so: false.
-    case "network": return ClientNetworkFailure({ retryable: false });
-    case "timeout": return ClientTimeout({ timeoutMs: outcome.timeoutMs });
+    case "network":
+      return ClientNetworkFailure({ retryable: false });
+    case "timeout":
+      return ClientTimeout({ timeoutMs: outcome.timeoutMs });
   }
 };
 
@@ -256,34 +291,32 @@ const decodeEnvelope = (
   status: number,
 ): Result<unknown, AnyTaggedError> => {
   try {
-  if (envelope.ok) {
-    if (status < 200 || status >= 300) {
+    if (envelope.ok) {
+      if (status < 200 || status >= 300) {
+        return err(ClientProtocolViolation({ reason: "envelope" }));
+      }
+      const decoded = procedure._def.output.decode(envelope.value);
+      return decoded.ok ? ok(decoded.value) : err(ClientDecodeFailure({ target: "success" }));
+    }
+    for (const framework of [ServerInternal, ServerBadRequest] as const) {
+      if (framework.tag !== envelope.error._tag) continue;
+      if (status !== framework.policy.httpStatus && status !== 200) {
+        return err(ClientProtocolViolation({ reason: "envelope" }));
+      }
+      const decoded = framework.decode(envelope.error);
+      return decoded.ok ? err(decoded.value) : err(ClientDecodeFailure({ target: "error" }));
+    }
+    const definitions = procedure._def.definitions as ErrorDefinitionMap;
+    const definition = Object.values(definitions).find(
+      (candidate) => candidate.tag === envelope.error._tag,
+    );
+    if (!definition) return err(ClientProtocolViolation({ reason: "unknown-tag" }));
+    const decoded = definition.decode(envelope.error);
+    if (!decoded.ok) return err(ClientDecodeFailure({ target: "error" }));
+    if (status !== definition.policy.httpStatus && status !== 200) {
       return err(ClientProtocolViolation({ reason: "envelope" }));
     }
-    const decoded = procedure._def.output.decode(envelope.value);
-    return decoded.ok ? ok(decoded.value) : err(ClientDecodeFailure({ target: "success" }));
-  }
-  for (const framework of [ServerInternal, ServerBadRequest] as const) {
-    if (framework.tag !== envelope.error._tag) continue;
-    if (status !== framework.policy.httpStatus && status !== 200) {
-      return err(ClientProtocolViolation({ reason: "envelope" }));
-    }
-    const decoded = framework.decode(envelope.error);
-    return decoded.ok
-      ? err(decoded.value)
-      : err(ClientDecodeFailure({ target: "error" }));
-  }
-  const definitions = procedure._def.definitions as ErrorDefinitionMap;
-  const definition = Object.values(definitions).find(
-    (candidate) => candidate.tag === envelope.error._tag,
-  );
-  if (!definition) return err(ClientProtocolViolation({ reason: "unknown-tag" }));
-  const decoded = definition.decode(envelope.error);
-  if (!decoded.ok) return err(ClientDecodeFailure({ target: "error" }));
-  if (status !== definition.policy.httpStatus && status !== 200) {
-    return err(ClientProtocolViolation({ reason: "envelope" }));
-  }
-  return err(decoded.value);
+    return err(decoded.value);
   } catch {
     return err(ClientDecodeFailure({ target: envelope.ok ? "success" : "error" }));
   }
@@ -340,10 +373,7 @@ const callProcedureOnce = async (
     throw new TypeError(`Invalid input for ${path}: ${details}`);
   }
 
-  const outcome = await transport.request(
-    requestEnvelope(path, encodedInput.value),
-    options,
-  );
+  const outcome = await transport.request(requestEnvelope(path, encodedInput.value), options);
   if (!outcome.ok) return err(clientFailure(outcome));
 
   const { response } = outcome;
@@ -356,27 +386,30 @@ const decodeTransportResponse = (
 ): Result<unknown, AnyTaggedError> => {
   const isProtocolContent = isProtocolContentType(response.contentType);
   if (!isProtocolContent) {
-    return err(response.status >= 400
-      ? ClientHttpFailure({ status: response.status })
-      : ClientProtocolViolation({ reason: "content-type" }));
+    return err(
+      response.status >= 400
+        ? ClientHttpFailure({ status: response.status })
+        : ClientProtocolViolation({ reason: "content-type" }),
+    );
   }
 
   const decodedBody = deserialize(response.body, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
   if (!decodedBody.ok) {
-    return err(response.status >= 400
-      ? ClientHttpFailure({ status: response.status })
-      : ClientProtocolViolation({ reason: "envelope" }));
+    return err(
+      response.status >= 400
+        ? ClientHttpFailure({ status: response.status })
+        : ClientProtocolViolation({ reason: "envelope" }),
+    );
   }
   const raw = decodedBody.value;
   const envelope = decodeResponseEnvelope(raw);
   if (!envelope) {
-    const versionMismatch = raw !== null
-      && typeof raw === "object"
-      && "v" in raw
-      && raw.v !== 1;
-    return err(ClientProtocolViolation({
-      reason: versionMismatch ? "version" : "envelope",
-    }));
+    const versionMismatch = raw !== null && typeof raw === "object" && "v" in raw && raw.v !== 1;
+    return err(
+      ClientProtocolViolation({
+        reason: versionMismatch ? "version" : "envelope",
+      }),
+    );
   }
 
   const result = decodeEnvelope(procedure, envelope, response.status);
@@ -391,9 +424,8 @@ const decodeTransportResponse = (
 const touchedByResult = new WeakMap<object, readonly string[]>();
 
 /** Internal: `model:id` keys the server declared touching for this result. */
-export const getTouchedEntities = (
-  result: object,
-): readonly string[] | undefined => touchedByResult.get(result);
+export const getTouchedEntities = (result: object): readonly string[] | undefined =>
+  touchedByResult.get(result);
 
 const retryDelayFor = (
   procedure: ClientProcedure,
@@ -412,9 +444,7 @@ const retryDelayFor = (
     ClientDecodeFailure,
     ClientStale,
   } as ErrorDefinitionMap;
-  const definition = Object.values(definitions).find(
-    (candidate) => candidate.tag === failure._tag,
-  );
+  const definition = Object.values(definitions).find((candidate) => candidate.tag === failure._tag);
   // Never spin on offline while the browser still reports offline — the
   // recovery path is reconnect, not a retry timer.
   if (failure._tag === "client/offline" && !getOnlineSnapshot()) return undefined;
@@ -423,17 +453,19 @@ const retryDelayFor = (
   // processed it. Only provably-unsent (offline short-circuit) and
   // server-scheduled (retry: "after") failures retry for mutations.
   if (
-    kind === "mutation"
-    && failure._tag !== "client/offline"
-    && definition.policy.retry !== "after"
-  ) return undefined;
+    kind === "mutation" &&
+    failure._tag !== "client/offline" &&
+    definition.policy.retry !== "after"
+  )
+    return undefined;
   if (definition.policy.retry === "after") {
-    const retryAfterMs = failure.data !== null
-      && typeof failure.data === "object"
-      && "retryAfterMs" in failure.data
-      && typeof failure.data.retryAfterMs === "number"
-      ? failure.data.retryAfterMs
-      : undefined;
+    const retryAfterMs =
+      failure.data !== null &&
+      typeof failure.data === "object" &&
+      "retryAfterMs" in failure.data &&
+      typeof failure.data.retryAfterMs === "number"
+        ? failure.data.retryAfterMs
+        : undefined;
     return retryAfterMs;
   }
   return Math.min(250 * 2 ** attempt, 2_000);
@@ -446,10 +478,13 @@ const waitForRetry = (delay: number, signal?: AbortSignal): Promise<void> =>
       clearTimeout(timeout);
       reject(cancelled);
     };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, Math.max(0, delay));
+    const timeout = setTimeout(
+      () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      },
+      Math.max(0, delay),
+    );
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 
@@ -471,9 +506,10 @@ const callProcedure = async (
       onEvent?.({ type: "success", kind, path, durationMs: Date.now() - startedAt });
       return result;
     }
-    const delay = options?.retry === "from-error-policy"
-      ? retryDelayFor(procedure, kind, result.error, attempt)
-      : undefined;
+    const delay =
+      options?.retry === "from-error-policy"
+        ? retryDelayFor(procedure, kind, result.error, attempt)
+        : undefined;
     if (delay === undefined) {
       onEvent?.({
         type: "failure",
@@ -484,7 +520,13 @@ const callProcedure = async (
       });
       return result;
     }
-    onEvent?.({ type: "retry", path, tag: result.error._tag, attempt: attempt + 1, delayMs: delay });
+    onEvent?.({
+      type: "retry",
+      path,
+      tag: result.error._tag,
+      attempt: attempt + 1,
+      delayMs: delay,
+    });
     await waitForRetry(delay, options?.signal);
   }
 };
@@ -502,70 +544,72 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
   async function* stream(): AsyncGenerator<Result<T, E>> {
-      const encodedInput = procedure._def.input.encode(input);
-      if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
-      if (!transport.stream) {
-        yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
-        return;
-      }
-      const outcome = await transport.stream(
-        requestEnvelope(path, encodedInput.value),
-        { ...options, signal },
-      );
-      if (!outcome.ok) {
-        yield err(clientFailure(outcome)) as Result<T, E>;
-        return;
-      }
-      const { response } = outcome;
-      if (
-        response.status < 200
-        || response.status >= 300
-        || !isStreamContentType(response.contentType)
-        || !response.body
-      ) {
-        yield err(response.status >= 400
+    const encodedInput = procedure._def.input.encode(input);
+    if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
+    if (!transport.stream) {
+      yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
+      return;
+    }
+    const outcome = await transport.stream(requestEnvelope(path, encodedInput.value), {
+      ...options,
+      signal,
+    });
+    if (!outcome.ok) {
+      yield err(clientFailure(outcome)) as Result<T, E>;
+      return;
+    }
+    const { response } = outcome;
+    if (
+      response.status < 200 ||
+      response.status >= 300 ||
+      !isStreamContentType(response.contentType) ||
+      !response.body
+    ) {
+      yield err(
+        response.status >= 400
           ? ClientHttpFailure({ status: response.status })
-          : ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
-        return;
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let expectedSequence = 0;
-      try {
-        while (true) {
-          const chunk = await reader.read();
-          buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-          if (new TextEncoder().encode(buffer).byteLength > DEFAULT_MAX_WIRE_BYTES) {
-            yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
-            return;
-          }
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (line.length === 0) continue;
-            const decoded = deserialize(line, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
-            const frame = decoded.ok ? decodeStreamFrame(decoded.value) : undefined;
-            if (!frame || frame.seq !== expectedSequence++) {
-              yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
-              return;
-            }
-            if (frame.done) return;
-            const result = decodeEnvelope(procedure, frame.response, 200) as Result<T, E>;
-            yield result;
-            if (!result.ok) return;
-          }
-          if (chunk.done) {
-            yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
-            return;
-          }
+          : ClientProtocolViolation({ reason: "content-type" }),
+      ) as unknown as Result<T, E>;
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let expectedSequence = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+        if (new TextEncoder().encode(buffer).byteLength > DEFAULT_MAX_WIRE_BYTES) {
+          yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+          return;
         }
-      } catch (failure) {
-        if (isCancelled(failure)) throw failure;
-        yield err(ClientNetworkFailure({ retryable: false })) as unknown as Result<T, E>;
-      } finally {
-        reader.releaseLock();
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.length === 0) continue;
+          const decoded = deserialize(line, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
+          const frame = decoded.ok ? decodeStreamFrame(decoded.value) : undefined;
+          if (!frame || frame.seq !== expectedSequence++) {
+            yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+            return;
+          }
+          if (frame.done) return;
+          const result = decodeEnvelope(procedure, frame.response, 200) as Result<T, E>;
+          yield result;
+          if (!result.ok) return;
+        }
+        if (chunk.done) {
+          yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+          return;
+        }
       }
+    } catch (failure) {
+      if (isCancelled(failure)) throw failure;
+      yield err(ClientNetworkFailure({ retryable: false })) as unknown as Result<T, E>;
+    } finally {
+      reader.releaseLock();
+    }
   }
   return {
     close: () => controller.abort(),
@@ -578,7 +622,12 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
         yield result;
       }
       if (last === undefined || last.ok) {
-        onEvent?.({ type: "success", kind: "subscription", path, durationMs: Date.now() - startedAt });
+        onEvent?.({
+          type: "success",
+          kind: "subscription",
+          path,
+          durationMs: Date.now() - startedAt,
+        });
       } else {
         onEvent?.({
           type: "failure",
@@ -617,8 +666,9 @@ const createProxy = (
       // router. Everything else — `then` (await-safety), `valueOf`, `toJSON`,
       // `name`, dev-tooling introspection — reads `undefined` instead of a
       // callable that throws later inside whoever poked at it.
-      const leadsSomewhere = router.procedures.has(candidatePath)
-        || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
+      const leadsSomewhere =
+        router.procedures.has(candidatePath) ||
+        [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
       if (!leadsSomewhere) return undefined;
       return createProxy(
         router,
@@ -643,7 +693,15 @@ const createProxy = (
           argumentsList[1],
         );
       }
-      return callProcedure(procedure, procedurePath, argumentsList[0], transport, onEvent, skew, argumentsList[1]);
+      return callProcedure(
+        procedure,
+        procedurePath,
+        argumentsList[0],
+        transport,
+        onEvent,
+        skew,
+        argumentsList[1],
+      );
     },
   });
   clientIdentities.set(proxy, clientIdentity);
@@ -669,8 +727,9 @@ const createProxy = (
  * Bundlers still see the `process.env.NODE_ENV` text and strip dev branches.
  */
 const isProductionEnv = (): boolean =>
-  (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process?.env?.["NODE_ENV"] === "production";
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
+    "NODE_ENV"
+  ] === "production";
 
 const clientBoundaryWarningState = { warned: false };
 
@@ -688,17 +747,17 @@ const warnRouterInBrowser = () => {
   clientBoundaryWarningState.warned = true;
   // eslint-disable-next-line no-console
   console.warn(
-    "[result-rpc] createClient received a server `router` in a browser. The "
-      + "router carries handlers, middleware, and their imports (db drivers, "
-      + "secrets) — all of which are now in your client bundle. Pass a "
-      + "`contract` defined in a server-code-free module instead. "
-      + "See https://result-rpc.com/concepts/client-boundary",
+    "[result-rpc] createClient received a server `router` in a browser. The " +
+      "router carries handlers, middleware, and their imports (db drivers, " +
+      "secrets) — all of which are now in your client bundle. Pass a " +
+      "`contract` defined in a server-code-free module instead. " +
+      "See https://result-rpc.com/concepts/client-boundary",
   );
 };
 
-export function createClient<
-  TRouter extends RouterContract<any, ContractRouterRecord>,
->(options: CreateContractClientOptions<TRouter>): ClientOf<TRouter>;
+export function createClient<TRouter extends RouterContract<any, ContractRouterRecord>>(
+  options: CreateContractClientOptions<TRouter>,
+): ClientOf<TRouter>;
 export function createClient<TRouter extends Router<any, RouterRecord>>(
   options: CreateRouterClientOptions<TRouter>,
 ): ClientOf<TRouter>;
@@ -726,9 +785,9 @@ export function createClient(
   const errorRegistry: ClientErrorRegistry<AnyPublicTaggedError> = Object.freeze({
     definitions,
     is: (value: unknown): value is AnyPublicTaggedError =>
-      isTaggedError(value)
-      && value.visibility === "public"
-      && definitions.get(value._tag)?.is(value) === true,
+      isTaggedError(value) &&
+      value.visibility === "public" &&
+      definitions.get(value._tag)?.is(value) === true,
   });
   return createProxy(
     router,

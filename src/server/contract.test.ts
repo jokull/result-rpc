@@ -69,44 +69,57 @@ describe("procedure execution", () => {
       .handler(({ context, input }) => ok({ id: input.id, ownerId: context.userId }));
 
     expect(publicContract.procedures.get("value.byId")).toBe(contract);
-    const result = await executeProcedure(implementation, { id: "one" }, {
-      context: { authenticated: true, values: new Map() },
-    });
+    const result = await executeProcedure(
+      implementation,
+      { id: "one" },
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result).toEqual(ok({ id: "one", ownerId: "user_1" }));
   });
 
   test("rejects middleware errors absent from a shared contract", () => {
-    const contract = r
-      .procedure()
-      .input(wire.object({}))
-      .output(wire.string)
-      .query();
+    const contract = r.procedure().input(wire.object({})).output(wire.string).query();
 
-    expect(() => r.implement(contract).use(authenticated))
-      .toThrow("is not declared by the procedure contract");
+    expect(() => r.implement(contract).use(authenticated)).toThrow(
+      "is not declared by the procedure contract",
+    );
   });
 
   test("composes middleware context and errors", async () => {
-    const result = await executeProcedure(byId, { id: "one" }, {
-      context: {
-        authenticated: true,
-        values: new Map([["one", "value"]]),
+    const result = await executeProcedure(
+      byId,
+      { id: "one" },
+      {
+        context: {
+          authenticated: true,
+          values: new Map([["one", "value"]]),
+        },
       },
-    });
+    );
     expect(result).toEqual(ok({ id: "one", value: "value", ownerId: "user_1" }));
   });
 
   test("returns a declared middleware error", async () => {
-    const result = await executeProcedure(byId, { id: "one" }, {
-      context: { authenticated: false, values: new Map() },
-    });
+    const result = await executeProcedure(
+      byId,
+      { id: "one" },
+      {
+        context: { authenticated: false, values: new Map() },
+      },
+    );
     expect(result).toEqual(err(Unauthorized({})));
   });
 
   test("returns a declared procedure error", async () => {
-    const result = await executeProcedure(byId, { id: "missing" }, {
-      context: { authenticated: true, values: new Map() },
-    });
+    const result = await executeProcedure(
+      byId,
+      { id: "missing" },
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result).toEqual(err(NotFound({ id: "missing" })));
   });
 
@@ -120,10 +133,14 @@ describe("procedure execution", () => {
         throw new Error("database password must not cross the wire");
       });
 
-    const result = await executeProcedure(broken, {}, {
-      context: { authenticated: true, values: new Map() },
-      onInternalError: (event) => incidents.push(event),
-    });
+    const result = await executeProcedure(
+      broken,
+      {},
+      {
+        context: { authenticated: true, values: new Map() },
+        onInternalError: (event) => incidents.push(event),
+      },
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error._tag).toBe("server/internal");
@@ -138,9 +155,13 @@ describe("procedure execution", () => {
       .input(wire.object({}))
       .output(wire.string)
       .query(() => null as never);
-    const result = await executeProcedure(malformed, {}, {
-      context: { authenticated: true, values: new Map() },
-    });
+    const result = await executeProcedure(
+      malformed,
+      {},
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe("server/internal");
   });
@@ -151,17 +172,24 @@ describe("procedure execution", () => {
       .input(wire.object({}))
       .output(wire.string)
       .errors({ NotFound })
-      .query(() => ({
-        ok: false,
-        error: {
-          _tag: "value/not-found",
-          data: { id: "missing" },
-          secret: "must not cross",
-        },
-      }) as never);
-    const result = await executeProcedure(forged, {}, {
-      context: { authenticated: true, values: new Map() },
-    });
+      .query(
+        () =>
+          ({
+            ok: false,
+            error: {
+              _tag: "value/not-found",
+              data: { id: "missing" },
+              secret: "must not cross",
+            },
+          }) as never,
+      );
+    const result = await executeProcedure(
+      forged,
+      {},
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error._tag).toBe("server/internal");
     expect(JSON.stringify(result)).not.toContain("secret");
@@ -175,9 +203,13 @@ describe("procedure execution", () => {
       // Deliberately bypass the public contract type to test the runtime backstop.
       .errors({ PrivateFailure } as unknown as ErrorDefinitionMap)
       .query(() => err(PrivateFailure({ secret: "database detail" })) as never);
-    const result = await executeProcedure(privateProcedure, {}, {
-      context: { authenticated: true, values: new Map() },
-    });
+    const result = await executeProcedure(
+      privateProcedure,
+      {},
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("database detail");
     if (!result.ok) expect(result.error._tag).toBe("server/internal");
@@ -186,17 +218,25 @@ describe("procedure execution", () => {
   test("sanitizes custom codec exceptions", async () => {
     const throwing = {
       kind: "throwing",
-      encode: () => { throw new Error("codec secret"); },
-      decode: () => { throw new Error("codec secret"); },
+      encode: () => {
+        throw new Error("codec secret");
+      },
+      decode: () => {
+        throw new Error("codec secret");
+      },
     } as never;
     const procedure = r
       .procedure()
       .input(throwing)
       .output(wire.string)
       .query(() => ok("unreachable"));
-    const result = await executeProcedure(procedure, {}, {
-      context: { authenticated: true, values: new Map() },
-    });
+    const result = await executeProcedure(
+      procedure,
+      {},
+      {
+        context: { authenticated: true, values: new Map() },
+      },
+    );
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secret");
   });
@@ -209,8 +249,9 @@ describe("procedure execution", () => {
       retry: "never",
       visibility: "public",
     });
-    expect(() => r.procedure().errors({ Unauthorized }).errors({ OtherUnauthorized }))
-      .toThrow("Conflicting definitions");
+    expect(() => r.procedure().errors({ Unauthorized }).errors({ OtherUnauthorized })).toThrow(
+      "Conflicting definitions",
+    );
   });
 });
 
@@ -218,7 +259,8 @@ describe("bad input", () => {
   test("malformed input is a 400 server/bad-request, not an incident", async () => {
     const r = rpc.context<{}>();
     const router = r.router({
-      echo: r.procedure()
+      echo: r
+        .procedure()
         .input(wire.object({ id: wire.string }))
         .output(wire.string)
         .query(({ input }) => ok(input.id)),
@@ -231,11 +273,13 @@ describe("bad input", () => {
     });
     const envelope = serialize({ v: 1, path: "echo", input: { id: 42 } });
     if (!envelope.ok) throw new Error("unreachable");
-    const response = await handler(new Request("https://example.test/rpc", {
-      method: "POST",
-      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
-      body: envelope.value,
-    }));
+    const response = await handler(
+      new Request("https://example.test/rpc", {
+        method: "POST",
+        headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+        body: envelope.value,
+      }),
+    );
     expect(response.status).toBe(400);
     const decoded = deserialize(await response.text());
     if (!decoded.ok) throw new Error("unreachable");
@@ -250,12 +294,14 @@ describe("procedure bases", () => {
   test("a base procedure with middleware is reusable across procedures", async () => {
     const r = rpc.context<{ user: string | undefined }>();
     const Denied = error({ tag: "base/denied", httpStatus: 403 });
-    const guard = r.middleware<{ viewer: string }>()
+    const guard = r
+      .middleware<{ viewer: string }>()
       .errors({ Denied })
       .use(({ context, errors, next }) =>
         context.user === undefined
           ? err(errors.Denied())
-          : next({ context: { ...context, viewer: context.user } }));
+          : next({ context: { ...context, viewer: context.user } }),
+      );
 
     // the tRPC protectedProcedure pattern: builders are immutable, so a base forks freely
     const protectedProcedure = r.procedure().use(guard);
@@ -274,38 +320,40 @@ describe("procedure bases", () => {
       });
     expect(await run("whoami", "u_1", {})).toEqual(ok("u_1"));
     expect(await run("shout", "u_1", { word: "hey" })).toEqual(ok("u_1: hey!"));
-    expect(await run("shout", undefined, { word: "hey" }))
-      .toEqual(err(Denied()));
+    expect(await run("shout", undefined, { word: "hey" })).toEqual(err(Denied()));
   });
 
   test("onError observes declared errors with their policy", async () => {
     const r = rpc.context<{}>();
     const Missing = error({ tag: "obs/missing", httpStatus: "not-found", severity: "info" });
     const router = r.router({
-      find: r.procedure()
+      find: r
+        .procedure()
         .input(wire.object({ id: wire.string }))
         .output(wire.string)
         .errors({ Missing })
-        .query(({ input, errors }) =>
-          input.id === "x" ? err(errors.Missing()) : ok(input.id)),
+        .query(({ input, errors }) => (input.id === "x" ? err(errors.Missing()) : ok(input.id))),
     });
     const seen: { tag: string; status: number; severity?: string }[] = [];
     const handler = createFetchHandler({
       router,
       createContext: () => ({}),
-      onError: (event) => seen.push({
-        tag: event.error._tag,
-        status: event.httpStatus,
-        ...(event.policy?.severity === undefined ? {} : { severity: event.policy.severity }),
-      }),
+      onError: (event) =>
+        seen.push({
+          tag: event.error._tag,
+          status: event.httpStatus,
+          ...(event.policy?.severity === undefined ? {} : { severity: event.policy.severity }),
+        }),
     });
     const envelope = serialize({ v: 1, path: "find", input: { id: "x" } });
     if (!envelope.ok) throw new Error("unreachable");
-    const response = await handler(new Request("https://example.test/rpc", {
-      method: "POST",
-      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
-      body: envelope.value,
-    }));
+    const response = await handler(
+      new Request("https://example.test/rpc", {
+        method: "POST",
+        headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+        body: envelope.value,
+      }),
+    );
     expect(response.status).toBe(404);
     expect(seen).toEqual([{ tag: "obs/missing", status: 404, severity: "info" }]);
   });

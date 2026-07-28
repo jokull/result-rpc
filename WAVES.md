@@ -4,6 +4,7 @@ Working ledger for implementing PLAN.md. One wave = one coherent, verified
 increment. Status: `pending` → `in-progress` → `done (commit)`.
 
 ## Wave 0 — plan amendments `done`
+
 - [ ] Fold the burden analysis into PLAN.md (burden table, decision table)
 - [ ] Add `.writes(Model, map)` escape hatch to the design
 - [ ] Add `Model.pick()` and the shape-based `defineModel` API
@@ -12,6 +13,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       a sharp edge instead)
 
 ## Wave 1 — models and collection `done`
+
 - [ ] `src/model.ts`: `defineModel(name, { key, shape })` → canonical codec,
       `pick()`, decode-time entity branding (WeakMap, global, race-free)
 - [ ] `collectEntities(value)` — walk decoded values for branded objects,
@@ -22,6 +24,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       no branding without decode
 
 ## Wave 2 — stage 1: identity invalidation `done`
+
 - [ ] Runtime entity index: query-cache event subscription → reindex on
       success data, drop on eviction
 - [ ] Mutation success → collect output entities → invalidate containing
@@ -33,6 +36,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       eviction drops index entries
 
 ## Wave 3 — stage 2: write-through patches `done`
+
 - [ ] Structural patch at recorded paths: identity-preserving clone
       (files.ts pattern), projection merge rule (merge only keys the cached
       object has), patched objects re-branded
@@ -45,6 +49,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       refs, optimistic create under a client-minted id (success ≈ no-op)
 
 ## Wave 4 — stage 3: server-declared writes `done`
+
 - [ ] `touch` in handler args (`({ input, context, errors, touch })`)
 - [ ] Envelope sidecar: `touched: ["user:u_1"]` — identities only, never
       values; tolerant decode (old clients ignore)
@@ -54,6 +59,7 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       tolerance
 
 ## Wave 5 — docs, example, probes `done`
+
 - [ ] README: "Entities" section (profile-pic demo, division of labor,
       client-minted ids, fractional-index pattern, decision table)
 - [ ] ARCHITECTURE: entity index design + normalized-store non-goal
@@ -64,7 +70,9 @@ increment. Status: `pending` → `in-progress` → `done (commit)`.
       non-collection miss
 
 ## Deviations from PLAN.md
+
 (recorded as they happen)
+
 - Wave 1: dropped recorded paths entirely — patching walks cached values and
   replaces branded objects by identity, which makes shared refs, cycles, and
   Map/Set members uniform (PLAN said Map/Set would be invalidate-only; no

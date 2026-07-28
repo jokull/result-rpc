@@ -17,24 +17,24 @@ bun run examples/07-tracker/serve.ts   # 07 also runs in a real browser
 
 ## Which rung do you want?
 
-| Rung | Start here if you want… | Headline proof |
-| --- | --- | --- |
-| [01-hello](#01-hello) | the smallest possible app | one error, one exhaustive switch |
-| [02-todo](#02-todo) | mutations + optimistic basics | rollback on failure, catalog over a narrowed union |
-| [03-docs](#03-docs) | the whole system, minimally | avatar patch: 1 request, 0 refetches |
-| [04-router](#04-router) | TanStack Router integration | routes are shells; loaders prefetch layers |
-| [05-router-glue](#05-router-glue) | proof you need no router package | the same app on ~60 lines of app-owned glue |
-| [06-sentry](#06-sentry) | the observability story | incident-id correlation with zero plumbing |
-| [07-tracker](#07-tracker) | a real app, end to end | built *blind* from the docs; its friction log drove library fixes |
-| [08-bookings](#08-bookings) | entities on a real database | Drizzle 1.0; one rename patches 4 surfaces across 2 paginated feeds |
-| [09-waku](#framework-examples) | server rendering on Waku (RSC) | first paint from the server at **zero** client requests |
-| [10-nextjs](#framework-examples) | server rendering on Next.js App Router | same app, same proof, `app/api/rpc/route.ts` |
-| [11-tanstack-start](#framework-examples) | server rendering without RSC | prefetch in a **loader**; the isomorphic-loader hazard, named |
+| Rung                                     | Start here if you want…                | Headline proof                                                      |
+| ---------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| [01-hello](#01-hello)                    | the smallest possible app              | one error, one exhaustive switch                                    |
+| [02-todo](#02-todo)                      | mutations + optimistic basics          | rollback on failure, catalog over a narrowed union                  |
+| [03-docs](#03-docs)                      | the whole system, minimally            | avatar patch: 1 request, 0 refetches                                |
+| [04-router](#04-router)                  | TanStack Router integration            | routes are shells; loaders prefetch layers                          |
+| [05-router-glue](#05-router-glue)        | proof you need no router package       | the same app on ~60 lines of app-owned glue                         |
+| [06-sentry](#06-sentry)                  | the observability story                | incident-id correlation with zero plumbing                          |
+| [07-tracker](#07-tracker)                | a real app, end to end                 | built _blind_ from the docs; its friction log drove library fixes   |
+| [08-bookings](#08-bookings)              | entities on a real database            | Drizzle 1.0; one rename patches 4 surfaces across 2 paginated feeds |
+| [09-waku](#framework-examples)           | server rendering on Waku (RSC)         | first paint from the server at **zero** client requests             |
+| [10-nextjs](#framework-examples)         | server rendering on Next.js App Router | same app, same proof, `app/api/rpc/route.ts`                        |
+| [11-tanstack-start](#framework-examples) | server rendering without RSC           | prefetch in a **loader**; the isomorphic-loader hazard, named       |
 
 ## 01-hello
 
 One procedure, one domain error, no shells — the
-[quickstart](/start/quickstart/), verbatim. The handler *returns* its
+[quickstart](/start/quickstart/), verbatim. The handler _returns_ its
 failure (`err(...)`) against a declared union, and the component switches
 over one channel that includes the transport. Read this first if you're
 arriving from tRPC.
@@ -52,7 +52,7 @@ mounted.
 The whole system in one small app: a `defineService` dependency graph,
 optional→required session/viewer layers, a four-shell onion, entity
 models, a rendered subscription, and a defect escalation boundary. The
-key test: change the avatar, and the header — a *different query* —
+key test: change the avatar, and the header — a _different query_ —
 shows the new image at exactly one request (the mutation itself), zero
 refetches. Compile-time probes pin the narrowed unions: a query resolving
 a dozen possible failures presents exactly `doc/not-found`.
@@ -117,7 +117,7 @@ worth what they cost" with numbers:
 - The locale trap closed by a composite `["id","locale"]` key; `min()`
   aggregates that stay query-relative while the entity inside them
   patches; derived summaries refreshed by `.affects`; and `tryDb` turning
-  a UNIQUE constraint into a domain error — the insert *is* the
+  a UNIQUE constraint into a domain error — the insert _is_ the
   uniqueness check, no pre-check SELECT anywhere.
 
 Its `NOTES.md` is the model-vs-pick-vs-one-off decision table applied to
@@ -140,12 +140,12 @@ at **zero** client requests on first paint, "Load more" costs exactly one call, 
 like patches its row **in place** while the aggregate follows, and a planted
 server-only canary is **absent** from the built client bundle.
 
-| | `09-waku` | `10-nextjs` | `11-tanstack-start` |
-| --- | --- | --- | --- |
-| Model | RSC | RSC | SSR + router loaders |
-| Prefetch in | async server component | async server component | route `loader` |
-| Handler | `src/pages/_api/rpc.ts` | `app/api/rpc/route.ts` | `src/routes/api.rpc.ts` |
-| Server wall | `'use client'` boundary | `'use client'` boundary | `createServerFn` |
+|             | `09-waku`               | `10-nextjs`             | `11-tanstack-start`     |
+| ----------- | ----------------------- | ----------------------- | ----------------------- |
+| Model       | RSC                     | RSC                     | SSR + router loaders    |
+| Prefetch in | async server component  | async server component  | route `loader`          |
+| Handler     | `src/pages/_api/rpc.ts` | `app/api/rpc/route.ts`  | `src/routes/api.rpc.ts` |
+| Server wall | `'use client'` boundary | `'use client'` boundary | `createServerFn`        |
 
 The TanStack Start rung is the instructive one: without RSC there is no
 `'use client'` directive to protect you, and its **isomorphic loaders** will ship

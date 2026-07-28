@@ -37,9 +37,8 @@ const dotKey = (
 ): string =>
   (path ?? [])
     .map((segment) =>
-      typeof segment === "object" && segment !== null
-        ? String(segment.key)
-        : String(segment))
+      typeof segment === "object" && segment !== null ? String(segment.key) : String(segment),
+    )
     .join(".");
 
 /**

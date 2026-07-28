@@ -74,10 +74,7 @@ export const useAmbientClaim = (
 export const useClaimScope = (): readonly ClaimEntry[] => useContext(ClaimScopeContext);
 
 /** Innermost mounted owner of a tag, if any (scope is outermost-first). */
-export const claimOwner = (
-  entries: readonly ClaimEntry[],
-  tag: string,
-): ClaimEntry | undefined => {
+export const claimOwner = (entries: readonly ClaimEntry[], tag: string): ClaimEntry | undefined => {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     if (entries[index]!.tags.has(tag)) return entries[index];
   }

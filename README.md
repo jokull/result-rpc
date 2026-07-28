@@ -40,12 +40,12 @@ starts there: it validates the plain wire form, then reconstructs both the Resul
 and its real `TaggedError` instance on the client.
 
 ```ts
-const query = useResultQuery(client.doc.byId, { id: "doc_123" })
+const query = useResultQuery(client.doc.byId, { id: "doc_123" });
 
 if (query.state === "failure") {
   // DocNotFound | Unauthorized | ServerInternal | Offline | NetworkFailure |
   // Timeout | HttpFailure | ProtocolViolation | DecodeFailure | Stale
-  query.error
+  query.error;
 }
 ```
 
@@ -58,11 +58,11 @@ branch on all of it, because the same union is narrowed by what the tree
 already takes responsibility for:
 
 ```ts
-const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" })
+const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" });
 
 if (query.state === "failure") {
   // DocNotFound
-  query.error
+  query.error;
 }
 ```
 
@@ -104,16 +104,16 @@ failures come back somewhere else:
 ```ts
 const query = useQuery({
   queryFn: () => rpc.doc.byId.query({ id }),
-})
+});
 
-query.data
+query.data;
 // Result<Doc, DocNotFound | Unauthorized> | undefined
 
-query.error
+query.error;
 // TRPCClientError | null  — code buried in error.data?.code, cause stripped
 ```
 
-Domain failures are *successful query data*. Network failures use the query
+Domain failures are _successful query data_. Network failures use the query
 error channel. Retries, error boundaries, offline behavior, and exhaustive
 matching now operate on different halves of the same operation — and the half
 in `query.error` is stringly typed, because error classes do not survive the
@@ -128,7 +128,7 @@ Every good team patches this, and each patch is a known move:
   not in, and every component maps every tag by hand, because nothing ever
   narrows.
 - **Encoding.** superjson-encode the Result objects across the wire. You get
-  Result-*shaped* JSON, not a contract: no closed union per procedure, no
+  Result-_shaped_ JSON, not a contract: no closed union per procedure, no
   exhaustiveness, no retry or status policy attached to the error.
 - **Interception.** A global `onError` callback on the client. That is
   problem two.
@@ -146,7 +146,7 @@ type GetDocError =
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure
-  | Stale
+  | Stale;
 ```
 
 The shared contract declares server and middleware errors. The client boundary
@@ -176,11 +176,11 @@ queryClient.setDefaultOptions({
   queries: {
     onError: (error) => {
       if ((error as any)?.data?.httpStatus === 401) {
-        window.location.href = "/login"
+        window.location.href = "/login";
       }
     },
   },
-})
+});
 ```
 
 A global, stringly hook, invisible to the type system, that fires once per
@@ -192,7 +192,7 @@ because the alternative — handling session expiry in every component that
 fetches — is worse.
 
 The requirement the interceptor cannot express is that ownership depends on
-*where you are*: the app shell should own `Unauthorized` almost everywhere,
+_where you are_: the app shell should own `Unauthorized` almost everywhere,
 while the one login-adjacent screen that wants to render it inline takes it
 back. result-rpc keeps the union complete at the contract and replaces the
 interceptor with a typed, tree-positional owner: a shell declares, in one
@@ -213,10 +213,22 @@ One versioned package, one entry per runtime — the root is everything
 isomorphic (the contract language):
 
 ```ts
-import { rpc, error, errorCatalog, err, ok, wire, defineLayer, defineService, resolveServices, type RouterInputs, type RouterOutputs } from "result-rpc"
-import { createFetchHandler } from "result-rpc/server"
-import { batchFetchTransport, createClient } from "result-rpc/client"
-import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react"
+import {
+  rpc,
+  error,
+  errorCatalog,
+  err,
+  ok,
+  wire,
+  defineLayer,
+  defineService,
+  resolveServices,
+  type RouterInputs,
+  type RouterOutputs,
+} from "result-rpc";
+import { createFetchHandler } from "result-rpc/server";
+import { batchFetchTransport, createClient } from "result-rpc/client";
+import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react";
 ```
 
 ## Define errors once
@@ -231,18 +243,18 @@ and its policy (HTTP status, retry, visibility) — declared once, shared by
 both sides:
 
 ```ts
-import { error, wire } from "result-rpc"
+import { error, wire } from "result-rpc";
 
 export const DocNotFound = error({
   tag: "doc/not-found",
   data: wire.object({ docId: wire.string }),
   httpStatus: 404,
-})
+});
 
-export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 })
+export const Unauthorized = error({ tag: "auth/unauthorized", httpStatus: 401 });
 
-export type DocNotFound = ReturnType<typeof DocNotFound>
-export type Unauthorized = ReturnType<typeof Unauthorized>
+export type DocNotFound = ReturnType<typeof DocNotFound>;
+export type Unauthorized = ReturnType<typeof Unauthorized>;
 ```
 
 Or declare a whole namespace at once — keys become tags, so the tag string is
@@ -252,9 +264,9 @@ never written twice and cannot drift from the name:
 export const docErrors = defineErrors("doc", {
   notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
   locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
-})
+});
 
-docErrors.notFound({ docId })  // TaggedError<"doc/not-found", { docId: string }>
+docErrors.notFound({ docId }); // TaggedError<"doc/not-found", { docId: string }>
 ```
 
 Public definitions use the same map shape everywhere: procedure `.errors()`,
@@ -276,14 +288,14 @@ envelope. When supplied, it accepts the common vocabulary by name —
 Calling a definition creates the complete error value:
 
 ```ts
-const failure = DocNotFound({ docId: "doc_123" })
+const failure = DocNotFound({ docId: "doc_123" });
 
-failure instanceof Error       // true
-DocNotFound.is(failure)         // true — exact definition identity
-failure._tag                    // "doc/not-found"
-failure.data.docId              // "doc_123"
-failure.visibility              // "public"
-failure.toJSON()                // canonical prototype-free wire form
+failure instanceof Error; // true
+DocNotFound.is(failure); // true — exact definition identity
+failure._tag; // "doc/not-found"
+failure.data.docId; // "doc_123"
+failure.visibility; // "public"
+failure.toJSON(); // canonical prototype-free wire form
 ```
 
 The definition is the runtime identity; the namespaced tag is its portable wire
@@ -316,23 +328,23 @@ tag alone, so a tag can never mean two different things in one app. The
 registry is inspectable:
 
 ```ts
-appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
+appRouter.errors; // ReadonlyMap<string, ErrorDefinition> — every declared tag
 ```
 
 The client carries the corresponding flattened public union, including the
 framework boundary errors every call can observe:
 
 ```ts
-import type { ClientErrors } from "result-rpc/client"
+import type { ClientErrors } from "result-rpc/client";
 
-type AppError = ClientErrors<typeof client>
+type AppError = ClientErrors<typeof client>;
 // a `_tag`-discriminated union; every member has visibility: "public"
 
 if (client.$errors.is(unknownFailure)) {
-  unknownFailure satisfies AppError
+  unknownFailure satisfies AppError;
 }
 
-client.$errors.definitions // runtime registry for tooling and inspection
+client.$errors.definitions; // runtime registry for tooling and inspection
 ```
 
 Private definitions cannot enter this union: visibility is filtered at the
@@ -344,7 +356,7 @@ contract type boundary, not by trusting server data received over the wire.
 unavailable." That is deliberate. GraphQL spent a decade with nullable
 fields as ambient partial failure and is now retrofitting field-level error
 semantics (Relay's `@catch`/`@throwOnFieldError`) — a directive on the
-*query*, deciding per call site how much failure to tolerate.
+_query_, deciding per call site how much failure to tolerate.
 
 Here the same fact is modeled where every other fact lives: in the output
 type. If a field can be independently unavailable, say so in the schema —
@@ -360,7 +372,7 @@ type. If a field can be independently unavailable, say so in the schema —
 ```
 
 — and the component branches on a value, exhaustively, like everything
-else. The operation still resolves one Result: the *call* succeeded, and
+else. The operation still resolves one Result: the _call_ succeeded, and
 "the author service was down" is part of what it successfully learned. No
 directive vocabulary, no per-call-site tolerance policy, no nullable-means-
 maybe-failed ambiguity: a partial outcome is a declared shape on the wire,
@@ -369,40 +381,40 @@ visible in the contract diff like any other API decision.
 ## Define the shared contract
 
 ```ts
-import { rpc, wire, type InputOf } from "result-rpc"
-import { DocNotFound, Unauthorized } from "./errors"
+import { rpc, wire, type InputOf } from "result-rpc";
+import { DocNotFound, Unauthorized } from "./errors";
 
 interface AppContext {
-  docs: DocRepository
-  auth: AuthService
+  docs: DocRepository;
+  auth: AuthService;
 }
 
-export const app = rpc.context<AppContext>()
+export const app = rpc.context<AppContext>();
 
 const DocCodec = wire.object({
   id: wire.string,
   title: wire.string,
   savedAt: wire.date,
-})
-type Doc = InputOf<typeof DocCodec>
+});
+type Doc = InputOf<typeof DocCodec>;
 
 export const getDocContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
   .output(DocCodec)
   .errors({ Unauthorized, DocNotFound })
-  .query()
+  .query();
 
 export const appContract = app.contract({
   doc: {
     byId: getDocContract,
   },
-})
+});
 ```
 
-One honest difference from tRPC: tRPC ships the router's *type* to the client
+One honest difference from tRPC: tRPC ships the router's _type_ to the client
 (`import type AppRouter`), and in exchange the client can neither decode rich
-values nor validate anything. result-rpc ships a small *value* — the contract:
+values nor validate anything. result-rpc ships a small _value_ — the contract:
 codecs, tags, and policies, no middleware or handler code, safe in any browser
 bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
@@ -415,25 +427,25 @@ the browser boundary, not a required style.)
 ## Implement the contract on the server
 
 ```ts
-import { err, ok } from "result-rpc"
-import { app, getDocContract } from "./contract"
+import { err, ok } from "result-rpc";
+import { app, getDocContract } from "./contract";
 
 export const getDoc = app
   .implement(getDocContract)
   .use(authenticated)
   .handler(async ({ input, errors, context }) => {
-    const doc = await context.docs.find(input.id)
+    const doc = await context.docs.find(input.id);
 
-    if (!doc) return err(errors.DocNotFound({ docId: input.id }))
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }));
 
-    return ok(doc)
-  })
+    return ok(doc);
+  });
 ```
 
 The handler must return the declared Result:
 
 ```ts
-Result<Doc, Unauthorized | DocNotFound>
+Result<Doc, Unauthorized | DocNotFound>;
 ```
 
 Returning a different tag is a type error. Smuggling an undeclared or
@@ -448,48 +460,45 @@ Here, middleware declares what it contributes, and the contribution lands in
 the union:
 
 ```ts
-import { err } from "result-rpc"
-import { app } from "./doc"
-import { Unauthorized } from "./errors"
+import { err } from "result-rpc";
+import { app } from "./doc";
+import { Unauthorized } from "./errors";
 
 const authenticated = app
   .middleware<{ user: User }>()
   .errors({ Unauthorized })
   .use(async ({ context, errors, next }) => {
-    const user = await context.auth.user()
+    const user = await context.auth.user();
 
     if (!user) {
-      return err(errors.Unauthorized({}))
+      return err(errors.Unauthorized({}));
     }
 
     return next({
       context: { ...context, user },
-    })
-  })
+    });
+  });
 
-export const getDoc = app
-  .implement(getDocContract)
-  .use(authenticated)
-  .handler(/* ... */)
+export const getDoc = app.implement(getDocContract).use(authenticated).handler(/* ... */);
 ```
 
 The procedure now returns:
 
 ```ts
-Result<Doc, Unauthorized | DocNotFound>
+Result<Doc, Unauthorized | DocNotFound>;
 ```
 
 Builders are immutable, so a base forks freely — the `protectedProcedure`
 pattern is one line:
 
 ```ts
-const protectedProcedure = app.procedure().use(authenticated)
+const protectedProcedure = app.procedure().use(authenticated);
 
 const renameDoc = protectedProcedure
   .input(RenameInput)
   .output(DocCodec)
-  .errors({ DocNotFound, DocLocked })   // only its own domain errors;
-  .mutation(/* ... */)                     // the auth union rides in with the base
+  .errors({ DocNotFound, DocLocked }) // only its own domain errors;
+  .mutation(/* ... */); // the auth union rides in with the base
 ```
 
 Middleware definitions also join the handler's `errors` bag, so a handler can
@@ -509,13 +518,13 @@ than silently overridden.
 A procedure sees one `context`, but two different things feed it, with
 different lifetimes and failure rules:
 
-| | Services | Request middleware |
-| --- | --- | --- |
-| Examples | database pool, worker bindings, API clients | session, viewer, organization |
-| Lifetime | process | request |
-| Shape | dependency graph | ordered chain |
-| Can fail with a wire error | no — a broken service is a broken process | yes — failures join the operation union |
-| Owned by | `defineService` / `resolveServices` | middleware |
+|                            | Services                                    | Request middleware                      |
+| -------------------------- | ------------------------------------------- | --------------------------------------- |
+| Examples                   | database pool, worker bindings, API clients | session, viewer, organization           |
+| Lifetime                   | process                                     | request                                 |
+| Shape                      | dependency graph                            | ordered chain                           |
+| Can fail with a wire error | no — a broken service is a broken process   | yes — failures join the operation union |
+| Owned by                   | `defineService` / `resolveServices`         | middleware                              |
 
 ### Services
 
@@ -525,18 +534,18 @@ memoize by identity — without fibers, without `Effect.gen`, without a runtime.
 It is a small feature, not a religion.
 
 ```ts
-import { defineService, resolveServices } from "result-rpc"
+import { defineService, resolveServices } from "result-rpc";
 
 const Db = defineService("db", {
   create: () => createPool(env.DATABASE_URL),
-})
+});
 
 const Mailer = defineService("mailer", {
   needs: { db: Db },
   create: ({ db }) => createMailer(db),
-})
+});
 
-const services = await resolveServices({ db: Db, mailer: Mailer })
+const services = await resolveServices({ db: Db, mailer: Mailer });
 ```
 
 The graph is resolved once at process start and memoized by definition
@@ -550,7 +559,7 @@ The resolved record becomes the root context that every request closes over:
 export const handleRpc = createFetchHandler({
   router: appRouter,
   createContext: ({ request }) => ({ ...services, request }),
-})
+});
 ```
 
 Nothing pulls services per call — the auth middleware reads `context.db`
@@ -566,28 +575,35 @@ join the union, and any `.use()` site pulls the whole chain in dependency
 order:
 
 ```ts
-const session = app.middleware<{ viewer: User | null }>()
+const session = app
+  .middleware<{ viewer: User | null }>()
   .use(async ({ context, next }) =>
-    next({ context: { ...context, viewer: await userFromCookie(context) } }))
+    next({ context: { ...context, viewer: await userFromCookie(context) } }),
+  );
 
-const requireViewer = app.middleware<{ viewer: User }>()
-  .after(session)                        // handler sees viewer: User | null
+const requireViewer = app
+  .middleware<{ viewer: User }>()
+  .after(session) // handler sees viewer: User | null
   .errors({ Unauthorized })
   .use(({ context, errors, next }) =>
     context.viewer === null
       ? err(errors.Unauthorized({}))
-      : next({ context: { ...context, viewer: context.viewer } }))
+      : next({ context: { ...context, viewer: context.viewer } }),
+  );
 ```
 
 A mutation then demands exactly one thing:
 
 ```ts
-export const renameDoc = app.procedure()
+export const renameDoc = app
+  .procedure()
   .input(RenameInput)
   .output(DocCodec)
-  .use(requireViewer)                    // session comes along, in order
-  .mutation(({ context, input }) =>      // context.viewer: User
-    context.db.docs.rename(input, context.viewer))
+  .use(requireViewer) // session comes along, in order
+  .mutation(({ context, input }) =>
+    // context.viewer: User
+    context.db.docs.rename(input, context.viewer),
+  );
 ```
 
 `.use(session)` followed by `.use(requireViewer)` still runs `session` once —
@@ -599,16 +615,16 @@ checked, not hoped for.
 ## Create the router and server
 
 ```ts
-import { createFetchHandler } from "result-rpc/server"
-import { app, getDoc } from "./doc"
+import { createFetchHandler } from "result-rpc/server";
+import { app, getDoc } from "./doc";
 
 export const appRouter = app.router({
   doc: {
     byId: getDoc,
   },
-})
+});
 
-export type AppRouter = typeof appRouter
+export type AppRouter = typeof appRouter;
 
 // Nested inference helpers mirror the router's shape — works on contracts too:
 // type Inputs = RouterInputs<AppRouter>;  Inputs["doc"]["byId"]  → { id: string }
@@ -624,9 +640,9 @@ export const handleRpc = createFetchHandler({
     docs,
   }),
   onInternalError: ({ incidentId, phase, cause, procedurePath }) => {
-    logger.error({ incidentId, phase, cause, procedurePath })
+    logger.error({ incidentId, phase, cause, procedurePath });
   },
-})
+});
 ```
 
 `onError` is the observability tap: it fires for every declared error that
@@ -636,8 +652,8 @@ one hook feeds metrics and logging:
 
 ```ts
 onError: ({ error, policy, procedurePath, httpStatus }) => {
-  metrics.count(error._tag, { severity: policy?.severity })
-}
+  metrics.count(error._tag, { severity: policy?.severity });
+};
 ```
 
 Malformed input is the client's fault, not an incident: it becomes a public
@@ -659,15 +675,15 @@ reflected over the wire.
 ## Call it directly
 
 ```ts
-import { createClient, batchFetchTransport } from "result-rpc/client"
-import { appContract } from "../shared/contract"
+import { createClient, batchFetchTransport } from "result-rpc/client";
+import { appContract } from "../shared/contract";
 
 export const client = createClient({
   contract: appContract,
   transport: batchFetchTransport({ url: "/rpc" }),
-})
+});
 
-const result = await client.doc.byId({ id: "doc_123" })
+const result = await client.doc.byId({ id: "doc_123" });
 ```
 
 Calls issued in the same microtask share one HTTP request. Every batch item
@@ -675,7 +691,7 @@ keeps its own status, decoder, rich-value envelope, and tagged Result. Use
 `fetchTransport` when batching is not wanted; the client API is unchanged.
 
 The direct client is the honest base: it always resolves the complete union.
-Narrowing is a property of where a call is *rendered*, and the direct client
+Narrowing is a property of where a call is _rendered_, and the direct client
 is not rendered anywhere, so it never subtracts anything.
 
 ```ts
@@ -690,7 +706,7 @@ Result<
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure
->
+>;
 ```
 
 Handle the union with an ordinary switch (`result.error satisfies never` in
@@ -699,12 +715,15 @@ message catalog, a metrics mapper — once, from the same definition map
 middleware and shells use:
 
 ```ts
-import { errorCatalog } from "result-rpc"
+import { errorCatalog } from "result-rpc";
 
-const message = errorCatalog({ DocNotFound, Unauthorized }, {
-  "doc/not-found": (e) => `Doc ${e.data.docId} is gone`,
-  "auth/unauthorized": () => "Sign in to continue",
-})
+const message = errorCatalog(
+  { DocNotFound, Unauthorized },
+  {
+    "doc/not-found": (e) => `Doc ${e.data.docId} is gone`,
+    "auth/unauthorized": () => "Sign in to continue",
+  },
+);
 ```
 
 Adding a definition to the map breaks every catalog missing the new tag. For
@@ -726,20 +745,20 @@ declared definitions, and reified into the matching instance on the other side.
 the first failure, with the error union accumulating automatically:
 
 ```ts
-import { gen, tryPromise } from "result-rpc"
+import { gen, tryPromise } from "result-rpc";
 
 const outcome = await gen(async function* () {
-  const doc = yield* await client.doc.byId({ id }) // crossed the wire; still yieldable
-  const parsed = yield* parseBody(doc)       // Result<Body, ParseFailure>
-  return render(doc, parsed)
-})
+  const doc = yield* await client.doc.byId({ id }); // crossed the wire; still yieldable
+  const parsed = yield* parseBody(doc); // Result<Body, ParseFailure>
+  return render(doc, parsed);
+});
 // Result<Rendered, DocNotFound | ParseFailure>
 
 if (!outcome.ok && DocNotFound.is(outcome.error)) {
-  outcome.error instanceof Error             // true
+  outcome.error instanceof Error; // true
   const propagated = gen(function* () {
-    return yield* outcome.error               // TaggedErrors are yieldable too
-  })
+    return yield* outcome.error; // TaggedErrors are yieldable too
+  });
 }
 ```
 
@@ -749,9 +768,9 @@ prop serializer strips the runtime behavior. Unwrap a Result before handing its
 success value to such a boundary, or keep the call inside result-rpc:
 
 ```tsx
-const result = await client.doc.byId({ id })
-if (!result.ok) return <Failure error={result.error._tag} />
-return <DocView doc={result.value} /> // pass the value, not Result itself
+const result = await client.doc.byId({ id });
+if (!result.ok) return <Failure error={result.error._tag} />;
+return <DocView doc={result.value} />; // pass the value, not Result itself
 ```
 
 `tryPromise` is the border checkpoint for throwing upstreams — the catch
@@ -774,11 +793,11 @@ the pattern the rest of the library exists to retire).
 Hand the provider your client; it owns a query runtime for its lifetime:
 
 ```tsx
-import { ResultRpcProvider } from "result-rpc/react"
-import { client } from "./client"
+import { ResultRpcProvider } from "result-rpc/react";
+import { client } from "./client";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <ResultRpcProvider client={client}>{children}</ResultRpcProvider>
+  return <ResultRpcProvider client={client}>{children}</ResultRpcProvider>;
 }
 ```
 
@@ -788,34 +807,21 @@ SSR prefetching, imperative cache access.
 Query a procedure:
 
 ```tsx
-import { useResultQuery } from "result-rpc/react"
-import { client } from "./client"
+import { useResultQuery } from "result-rpc/react";
+import { client } from "./client";
 
 export function DocPage({ id }: { id: string }) {
-  const doc = useResultQuery(client.doc.byId, { id })
+  const doc = useResultQuery(client.doc.byId, { id });
 
   switch (doc.state) {
     case "pending":
-      return doc.fetch === "paused"
-        ? <OfflinePlaceholder />
-        : <DocSkeleton />
+      return doc.fetch === "paused" ? <OfflinePlaceholder /> : <DocSkeleton />;
 
     case "success":
-      return (
-        <DocView
-          doc={doc.value}
-          refreshing={doc.fetch === "fetching"}
-        />
-      )
+      return <DocView doc={doc.value} refreshing={doc.fetch === "fetching"} />;
 
     case "failure":
-      return (
-        <DocFailure
-          error={doc.error}
-          previous={doc.previous}
-          retry={doc.refetch}
-        />
-      )
+      return <DocFailure error={doc.error} previous={doc.previous} retry={doc.refetch} />;
   }
 }
 ```
@@ -824,8 +830,8 @@ export function DocPage({ id }: { id: string }) {
 under its own state, so the impossible combinations are unrepresentable:
 
 ```ts
-doc.value  // Doc      — only when doc.state === "success"
-doc.error  // GetDocError — only when doc.state === "failure"
+doc.value; // Doc      — only when doc.state === "success"
+doc.error; // GetDocError — only when doc.state === "failure"
 ```
 
 When Result-typed code needs the settled outcome as the same `Result` the
@@ -858,7 +864,7 @@ if (doc.state === "failure" && doc.previous) {
       <DocView doc={doc.previous} stale />
       <RefreshFailure error={doc.error} />
     </>
-  )
+  );
 }
 ```
 
@@ -870,7 +876,7 @@ channel.
 When an operation is waiting for connectivity:
 
 ```ts
-doc.fetch === "paused"
+doc.fetch === "paused";
 ```
 
 This does not consume a retry or immediately become `client/offline`. An
@@ -881,7 +887,7 @@ operation as a failure.
 
 Remember the 401 interceptor. Now recall that React already solved this exact
 shape once, for a different kind of failure. Render errors used to be every
-component's private problem; error boundaries made them *positional*: throw
+component's private problem; error boundaries made them _positional_: throw
 anywhere below, and the nearest boundary that claims it takes over. Three
 properties made that design stick:
 
@@ -891,7 +897,7 @@ properties made that design stick:
 3. **Unclaimed errors fail loudly** rather than vanish.
 
 A shell is the same contract, transplanted from thrown render errors to
-failure *values*. A shell is a provider that claims a set of error tags. Any
+failure _values_. A shell is a provider that claims a set of error tags. Any
 operation rendered beneath it — no matter which hook issued it — that fails
 with a claimed tag is routed to the shell instead of surfacing as component
 state. The 401 interceptor becomes a typed declaration with a position in the
@@ -902,22 +908,22 @@ tree, and the tags it owns disappear from the unions below it.
 The tiers are nothing more than which definition map you hand to which shell —
 there is no classification field:
 
-| What failed | Example tags | Reaction | The map |
-| --- | --- | --- | --- |
-| The domain said no | `doc/not-found`, `auth/unauthorized` | the component branches, or an auth shell reacts | your `defineErrors` maps |
-| The world flaked | `client/offline`, `client/timeout`, `client/network-failure` | pause, banner, resume | `transportErrors` |
-| The contract broke | `client/protocol-violation`, `client/decode-failure`, `server/internal` | escalate to the error boundary | `defectErrors` |
-| A deploy left this client behind | `client/stale` | reload — the reload *is* the fix | `staleErrors` |
+| What failed                      | Example tags                                                            | Reaction                                        | The map                  |
+| -------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------- | ------------------------ |
+| The domain said no               | `doc/not-found`, `auth/unauthorized`                                    | the component branches, or an auth shell reacts | your `defineErrors` maps |
+| The world flaked                 | `client/offline`, `client/timeout`, `client/network-failure`            | pause, banner, resume                           | `transportErrors`        |
+| The contract broke               | `client/protocol-violation`, `client/decode-failure`, `server/internal` | escalate to the error boundary                  | `defectErrors`           |
+| A deploy left this client behind | `client/stale`                                                          | reload — the reload _is_ the fix                | `staleErrors`            |
 
 The framework contributes every non-domain row, so the framework ships their
 owners pre-assembled — assembling them by hand was the same ten lines in
 every app:
 
 ```tsx
-import { boundaryShells } from "result-rpc/react"
+import { boundaryShells } from "result-rpc/react";
 
 export const { TransportShell, DefectShell, StaleShell, BoundaryProvider, useConnectivity } =
-  boundaryShells()
+  boundaryShells();
 // TransportShell  claims transportErrors, pauses; useHeld() feeds the banner
 // DefectShell     claims defectErrors, escalates to the React error boundary
 // StaleShell      claims staleErrors; default reaction reloads the page
@@ -946,11 +952,14 @@ two-source signal, exhaustively switchable like everything else here:
 
 ```tsx
 function ConnectionBanner() {
-  const net = useConnectivity()
+  const net = useConnectivity();
   switch (net.status) {
-    case "online":   return null
-    case "offline":  return <Banner>You're offline — paused work resumes automatically.</Banner>
-    case "degraded": return <Banner action={net.resume}>Connection trouble — retrying…</Banner>
+    case "online":
+      return null;
+    case "offline":
+      return <Banner>You're offline — paused work resumes automatically.</Banner>;
+    case "degraded":
+      return <Banner action={net.resume}>Connection trouble — retrying…</Banner>;
   }
 }
 ```
@@ -964,32 +973,34 @@ transport errors are outcomes. The hint never mints or suppresses an error
 tag and never touches the cache; it only times resumes and informs the
 banner. `net.held`, `net.latest`, and `net.resume` are there for custom UX.
 
-You only ever *write* shells for what the app itself owns:
+You only ever _write_ shells for what the app itself owns:
 
 ```tsx
-import { defineShell } from "result-rpc/react"
-import { authErrors } from "../shared/errors"
+import { defineShell } from "result-rpc/react";
+import { authErrors } from "../shared/errors";
 
 export const AuthShell = defineShell({
   name: "auth",
-  from: StaleShell,                 // hang off the innermost built-in
+  from: StaleShell, // hang off the innermost built-in
   claims: authErrors,
   onError: (_error, { signOut }) => signOut(),
   provide: (props: { session: Session; signOut: () => void }) => ({
     user: props.session.user,
     signOut: props.signOut,
   }),
-})
+});
 ```
 
 Mount them as an onion:
 
 ```tsx
 <ResultRpcProvider runtime={runtime}>
-  <BoundaryProvider>            {/* transport pauses · defects escalate · stale reloads */}
+  <BoundaryProvider>
+    {" "}
+    {/* transport pauses · defects escalate · stale reloads */}
     <ErrorBoundary fallback={<AppBroken />}>
       <AuthShell.Provider session={session} signOut={signOut}>
-        <Routes />              {/* components below see ONLY their domain errors */}
+        <Routes /> {/* components below see ONLY their domain errors */}
       </AuthShell.Provider>
     </ErrorBoundary>
   </BoundaryProvider>
@@ -1000,32 +1011,36 @@ Inside `Routes`, an operation resolving ten possible tags presents one:
 
 ```tsx
 export function DocPage({ id }: { id: string }) {
-  const { user } = AuthShell.use()      // User, not User | null
-  const doc = AuthShell.useQuery(client.doc.byId, { id })
+  const { user } = AuthShell.use(); // User, not User | null
+  const doc = AuthShell.useQuery(client.doc.byId, { id });
 
   switch (doc.state) {
-    case "pending": return <DocSkeleton />
-    case "success": return <DocView doc={doc.value} viewer={user} />
+    case "pending":
+      return <DocSkeleton />;
+    case "success":
+      return <DocView doc={doc.value} viewer={user} />;
     case "failure":
       // DocNotFound — and adding a case for anything else is a type error
-      return <DocMissing docId={doc.error.data.docId} />
+      return <DocMissing docId={doc.error.data.docId} />;
   }
 }
 ```
 
-And when a query's domain union is *empty* — a list that declares no domain
+And when a query's domain union is _empty_ — a list that declares no domain
 errors, rendered under a complete onion — the failure branch becomes a
 compile-time certificate that the owners are mounted:
 
 ```tsx
 switch (issues.state) {
-  case "pending": return <p>Loading issues…</p>
-  case "success": return <IssueRows issues={issues.value} />
+  case "pending":
+    return <p>Loading issues…</p>;
+  case "success":
+    return <IssueRows issues={issues.value} />;
   case "failure":
     // transport, defect, stale, and auth are all claimed above; nothing
     // domain remains. This line compiles ONLY while that is true — remove
     // a provider from the tree and the build fails, right here.
-    return issues.error satisfies never
+    return issues.error satisfies never;
 }
 ```
 
@@ -1037,7 +1052,7 @@ Claiming is **per observer and tree-positional**. Each hook, at its render
 position, checks whether an enclosing shell claims the failure's tag. The
 cache is never rewritten: the entry still holds the real `Err`, refetch
 bookkeeping continues underneath, and an observer of the same cache entry
-rendered *outside* the shell still sees `state: "failure"`. A shell changes
+rendered _outside_ the shell still sees `state: "failure"`. A shell changes
 how a failure presents where it presents — nothing else. The innermost shell
 claiming a tag owns it.
 
@@ -1046,7 +1061,7 @@ The type story has two halves:
 - **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's claimed
   tags from the union — and eagerly asserts, at mount, that every shell in
   the chain is actually mounted above it. The subtraction is only honest if
-  the owners exist, so a missing provider throws on *first render*, the same
+  the owners exist, so a missing provider throws on _first render_, the same
   contract as any context hook without its provider. You find out on the
   happy path in development, not on the error path in production.
 - **Plain hooks over-approximate.** `useResultQuery` keeps the full union.
@@ -1094,7 +1109,7 @@ With `effect: "pause"` (the default):
 - **Mutation** — state returns to `"idle"` and the pending `mutate` promise
   rejects with a **`claimed` control signal**: the caller's continuation was
   written against the narrowed union, so an outcome owned above it must not
-  run it. The signal is the same *family* as cancellation — control flow,
+  run it. The signal is the same _family_ as cancellation — control flow,
   never part of a recoverable union — but deliberately distinguishable,
   because "you cancelled" and "a shell owns this outcome" are different
   events. `isClaimed(reason)` identifies it and carries the claimed tag and
@@ -1102,16 +1117,19 @@ With `effect: "pause"` (the default):
   were signed out" instead of silently resetting:
 
   ```ts
-  import { isCancelled, isClaimed } from "result-rpc/client"
+  import { isCancelled, isClaimed } from "result-rpc/client";
 
   try {
-    await rename.mutate({ id, title })
+    await rename.mutate({ id, title });
   } catch (reason) {
-    if (isClaimed(reason)) reason.data // { tag: "auth/session-expired", owner: "auth" }
-    else if (isCancelled(reason)) {}   // user cancelled; nothing happened for sure
-    else throw reason
+    if (isClaimed(reason))
+      reason.data; // { tag: "auth/session-expired", owner: "auth" }
+    else if (isCancelled(reason)) {
+    } // user cancelled; nothing happened for sure
+    else throw reason;
   }
   ```
+
 - **Subscription** — `connection` becomes `"paused"` and `result` stays
   `undefined`.
 
@@ -1130,9 +1148,9 @@ Held is not stuck. Every held operation carries a retry handle, and the shell
 exposes the whole set:
 
 ```tsx
-const { latest, affected, resume } = AuthShell.useHeld()
+const { latest, affected, resume } = AuthShell.useHeld();
 // after re-authenticating:
-resume() // every held query refetches; held subscriptions reconnect
+resume(); // every held query refetches; held subscriptions reconnect
 ```
 
 Held mutations reset to idle — their failure already reached the caller as the claimed rejection, and replaying a side effect is never the shell's call. Resetting ends the pause arc, so holdings (and the connection banner) drain on resume.
@@ -1155,9 +1173,9 @@ together:
 
 ```tsx
 function OfflineBanner() {
-  const { latest, affected } = AppShell.useHeld()
-  if (!latest) return null
-  return <Banner tag={latest._tag} count={affected} />
+  const { latest, affected } = AppShell.useHeld();
+  if (!latest) return null;
+  return <Banner tag={latest._tag} count={affected} />;
 }
 ```
 
@@ -1171,13 +1189,13 @@ the error and produces context. They are inverses over the same declaration:
 
 ```ts
 // shared/errors.ts
-export const authErrors = { Unauthorized, SessionExpired }
+export const authErrors = { Unauthorized, SessionExpired };
 
 // server
-const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */)
+const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
 
 // client
-const AuthShell = defineShell({ name: "auth", claims: authErrors, /* ... */ })
+const AuthShell = defineShell({ name: "auth", claims: authErrors /* ... */ });
 ```
 
 Add an error to `authErrors` and every derived shell absorbs it; no component
@@ -1199,14 +1217,14 @@ occur while establishing it.
 
 ```ts
 // shared
-import { defineLayer } from "result-rpc"
+import { defineLayer } from "result-rpc";
 
 export const AuthLayer = defineLayer({
   name: "auth",
-  key: "user",                       // the context property and the guarantee
-  provides: UserCodec,               // wire codec for the guaranteed value
+  key: "user", // the context property and the guarantee
+  provides: UserCodec, // wire codec for the guaranteed value
   errors: { Unauthorized, SessionExpired },
-})
+});
 ```
 
 The server half derives from it:
@@ -1214,12 +1232,12 @@ The server half derives from it:
 ```ts
 // server
 const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
-  const user = await context.auth.user()
-  return user ? ok(user) : err(errors.Unauthorized({}))
-})
+  const user = await context.auth.user();
+  return user ? ok(user) : err(errors.Unauthorized({}));
+});
 // Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
 
-export const whoami = AuthLayer.procedure(app, authenticated)
+export const whoami = AuthLayer.procedure(app, authenticated);
 // the context procedure: {} -> User with the layer union. Its handler is
 // derived — it returns the user the middleware placed in context — so the
 // endpoint *cannot* disagree with the middleware. That is the drift, deleted.
@@ -1232,13 +1250,13 @@ And the React half is its sibling:
 
 ```tsx
 // client
-import { layerShell } from "result-rpc/react"
+import { layerShell } from "result-rpc/react";
 
 export const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
   procedure: client.auth.whoami,
   onError: () => redirect("/login"),
-})
+});
 ```
 
 This **replaces** the hand-declared `AuthShell` from the shells section — same
@@ -1267,31 +1285,30 @@ export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
   provides: wire.union([UserCodec, wire.null] as const),
-  errors: {},                            // optional: cannot fail
-})
+  errors: {}, // optional: cannot fail
+});
 
 export const ViewerLayer = SessionLayer.require({
   name: "viewer",
-  provides: UserCodec,                   // the narrowed value
-  errors: { Unauthorized },              // the union the refinement contributes
-  refine: ({ value, errors }) =>
-    value === null ? err(errors.Unauthorized({})) : ok(value),
-})
+  provides: UserCodec, // the narrowed value
+  errors: { Unauthorized }, // the union the refinement contributes
+  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized({})) : ok(value)),
+});
 ```
 
 On the server, context grows and narrows monotonically through the chain:
 
 ```ts
-const session = SessionLayer.middleware(app, ({ context }) =>
-  ok(await userFromCookie(context)))     // User | null — never fails
+const session = SessionLayer.middleware(app, ({ context }) => ok(await userFromCookie(context))); // User | null — never fails
 
 // No resolver: the refinement is derived. Passing `session` bundles the
 // parent, so one `.use(requireViewer)` pulls the whole chain in order.
-const requireViewer = ViewerLayer.middleware(app, session)
+const requireViewer = ViewerLayer.middleware(app, session);
 
-app.procedure()
-  .use(requireViewer)                    // session runs first: viewer is User
-  .query(({ context }) => ok(greet(context.viewer)))
+app
+  .procedure()
+  .use(requireViewer) // session runs first: viewer is User
+  .query(({ context }) => ok(greet(context.viewer)));
 ```
 
 (`ViewerLayer.middleware(app)` without the parent also works when the input
@@ -1303,18 +1320,18 @@ claims nothing and provides the nullable value; the required shell claims
 `Unauthorized` and provides the narrowed one:
 
 ```tsx
-const SessionShell = layerShell(SessionLayer, { from: DefectShell, procedure: client.session })
+const SessionShell = layerShell(SessionLayer, { from: DefectShell, procedure: client.session });
 const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
   procedure: client.viewer,
   onError: () => redirect("/login"),
-})
+});
 
 // public page, inside SessionShell
-SessionShell.use()   // User | null
+SessionShell.use(); // User | null
 
 // account page, inside ViewerShell
-ViewerShell.use()    // User
+ViewerShell.use(); // User
 ```
 
 ### Keeping it honest
@@ -1323,7 +1340,7 @@ Narrowing this cheap can quietly become swallowing, so both halves of the
 claim are assertable. The absorbed set is a runtime value:
 
 ```ts
-AuthShell.claimedTags
+AuthShell.claimedTags;
 // ["auth/unauthorized", "auth/session-expired", "client/stale",
 //  "client/http-failure", "client/protocol-violation", "client/decode-failure",
 //  "server/bad-request", "server/internal", "client/offline",
@@ -1337,13 +1354,13 @@ site can surface.
 
 ```ts
 type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false
-type Assert<T extends true> = T
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
 
 // doc.byId resolves a dozen possible failures; with shells mounted the page sees one.
-const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" })
-type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"]
-export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>
+const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" });
+type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"];
+export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>;
 ```
 
 Add an application-namespace tag to a shell and the probe breaks — narrowing
@@ -1356,7 +1373,7 @@ Every deploy opens a compatibility window: new server, old tabs. In most
 stacks the window is invisible — a stale client's failures are
 indistinguishable from bugs (bad requests, decode failures), Sentry counts
 every deploy as an incident spike, and the "fix" is a user who happens to
-press reload. Closed unions make the window *more* acute, not less: a stale
+press reload. Closed unions make the window _more_ acute, not less: a stale
 client cannot even decode an error tag added after it was built.
 
 result-rpc makes the window a detected, owned state:
@@ -1369,20 +1386,20 @@ result-rpc makes the window a detected, owned state:
    a `skew` ClientEvent — observability sees the drift before anything fails.
 3. When a request **fails** with a contract-shaped tag (`server/bad-request`,
    `client/decode-failure`, `client/protocol-violation`,
-   `client/http-failure`) *while the digests differ*, the failure is
+   `client/http-failure`) _while the digests differ_, the failure is
    reclassified as `client/stale`, carrying the original tag. Matching
    digests change nothing — a real defect stays a defect, and successful
    calls are never touched.
 
 And `client/stale` has a built-in owner: the boundary's `StaleShell` claims
 it, holds the affected operations, and reacts — by default with a page
-reload, because the reload fetches the current client, which *is* the fix.
+reload, because the reload fetches the current client, which _is_ the fix.
 Override it to taste:
 
 ```tsx
 const { BoundaryProvider } = boundaryShells({
   onStale: () => toast("A new version is available", { action: reload }),
-})
+});
 ```
 
 The automatic digest reads what codecs expose, so a field-level change inside
@@ -1399,7 +1416,7 @@ Detection is failure-gated, so the coarser stamp is safe: matching successful
 calls are never reclassified.
 
 The whole mid-deploy arc is pinned as a runnable test in
-`examples/07-tracker`: a deliberately *stale-shaped* client — the old
+`examples/07-tracker`: a deliberately _stale-shaped_ client — the old
 deploy, no schema preflight — sends a bad request across the real wire, the
 server's input decode rejects it, and `server/bad-request` comes back
 projected onto form fields with `fieldIssues`, asserted at exactly one wire
@@ -1430,37 +1447,33 @@ context procedure before its route commits.
 ## Mutations return the same Result state
 
 ```tsx
-import { useResultMutation } from "result-rpc/react"
-import { client } from "./client"
+import { useResultMutation } from "result-rpc/react";
+import { client } from "./client";
 
 function RenameDoc({ id }: { id: string }) {
   const rename = useResultMutation(client.doc.rename, {
     optimistic: ({ title }, cache) => {
-      const rollback = cache.update(
-        client.doc.byId,
-        { id },
-        doc => doc && { ...doc, title },
-      )
+      const rollback = cache.update(client.doc.byId, { id }, (doc) => doc && { ...doc, title });
 
-      return { rollback }
+      return { rollback };
     },
     onFailure: (_error, _input, context) => {
-      context?.rollback()
+      context?.rollback();
     },
     onCancel: (_input, context) => {
-      context?.rollback()
+      context?.rollback();
     },
-  })
+  });
 
   async function submit(title: string) {
-    const result = await rename.mutate({ id, title })
+    const result = await rename.mutate({ id, title });
 
     if (!result.ok && result.error._tag === "doc/title-conflict") {
-      focusTitleField()
+      focusTitleField();
     }
   }
 
-  return <RenameForm pending={rename.state === "pending"} onSubmit={submit} />
+  return <RenameForm pending={rename.state === "pending"} onSubmit={submit} />;
 }
 ```
 
@@ -1477,23 +1490,25 @@ resets lifecycle state and rejects the pending `mutate` promise with the
 
 ### Declared invalidation
 
-You noticed what the example above does *not* contain: `onSettled` with a
+You noticed what the example above does _not_ contain: `onSettled` with a
 `cache.invalidate` call. That line — the most-repeated and most-forgotten
 line in any React Query app, whose absence is a stale-UI bug — lives in the
 contract now. A mutation declares its blast radius once, where it is defined:
 
 ```ts
-const byId = app.procedure()
+const byId = app
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(DocCodec)
-  .query()
+  .query();
 
-const rename = app.procedure()
+const rename = app
+  .procedure()
   .input(wire.object({ id: wire.string, title: wire.string }))
   .output(DocCodec)
-  .affects(byId, (input) => ({ id: input.id }))   // rename touches this doc
-  .affects(list)                                  // and every cached list page
-  .mutation()
+  .affects(byId, (input) => ({ id: input.id })) // rename touches this doc
+  .affects(list) // and every cached list page
+  .mutation();
 ```
 
 Every `useResultMutation` of `rename` — in any component, forever —
@@ -1566,12 +1581,12 @@ should now contain this new doc" needs a declaration — the same boundary
 Graphcache draws with manual updaters, except ours is typed and lives in
 the contract. The mutation writer's decision table:
 
-| The write changes… | Use |
-| --- | --- |
-| Fields of an entity | return the entity — auto-patch everywhere |
-| Fields, but the output must stay scalar | `.writes(Doc, (input) => input.id)` — invalidation by identity |
-| List membership | `.affects(listQuery)` |
-| Entities the output can't mention (cascades, **deletes**) | `touch(Model, id)` in the handler |
+| The write changes…                                        | Use                                                            |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Fields of an entity                                       | return the entity — auto-patch everywhere                      |
+| Fields, but the output must stay scalar                   | `.writes(Doc, (input) => input.id)` — invalidation by identity |
+| List membership                                           | `.affects(listQuery)`                                          |
+| Entities the output can't mention (cascades, **deletes**) | `touch(Model, id)` in the handler                              |
 
 `touch` rides the response envelope as `model:id` keys — identities only,
 never values — and invalidates by identity client-side:
@@ -1594,19 +1609,18 @@ const rename = useResultMutation(client.doc.rename, {
     rollback: cache.updateEntity(Doc, input.id, (doc) => ({ ...doc, title: input.title })),
   }),
   onFailure: (_e, _i, ctx) => ctx?.rollback(),
-})
+});
 ```
 
 One line patches the detail view, every list row, every breadcrumb. And if
 the client mints ids (cuid2, nanoid, uuidv7), optimistic **creates** stop
 being a reconciliation problem: the optimistic entity is born under its
-*final* identity, so the server's response is a no-op patch or a field
+_final_ identity, so the server's response is a no-op patch or a field
 correction — nothing re-keys, nothing flickers, and the id doubles as a
 natural idempotency key. Add
 [fractional indexing](https://github.com/rocicorp/fractional-indexing) and
 order becomes a field too: a drag-reorder is one `sortKey` patch and every
 cached list re-sorts locally — no list invalidation for reorders, ever.
-
 
 ### What the coherence oracle pins
 
@@ -1648,7 +1662,7 @@ shape must be classified. Every new query starts life as one-off
 a model when you notice recurrence, and apply one rule: **will a mutation
 somewhere else ever need to update this field on this screen without a
 refetch?** No → leave it a one-off. Yes → model the keyed core, and
-only its *context-free* fields — values that are true about the entity in
+only its _context-free_ fields — values that are true about the entity in
 every query (`name`, `phone`), never values relative to the query's input (a
 `minAvailable` computed over the requested date range lives in the
 surrounding one-off shape, where it is immune to patching by construction).
@@ -1665,15 +1679,15 @@ walking, so there is no relation schema to keep in sync.
 And when the database is Drizzle, the dual-model tax disappears entirely:
 
 ```ts
-import { modelFromDrizzle } from "result-rpc/drizzle"
+import { modelFromDrizzle } from "result-rpc/drizzle";
 
 export const Hotel = modelFromDrizzle("hotel", hotels, {
-  columns: ["id", "name", "phone", "city"],   // mandatory allowlist
-})
+  columns: ["id", "name", "phone", "city"], // mandatory allowlist
+});
 export const TourContent = modelFromDrizzle("tour-content", tourContent, {
   columns: ["id", "locale", "title"],
-  key: ["id", "locale"],                       // composite PKs named explicitly
-})
+  key: ["id", "locale"], // composite PKs named explicitly
+});
 ```
 
 Shape, types, and key derive from the same schema your migrations already
@@ -1702,10 +1716,10 @@ which everything else here is built on. Permanent non-goal.
 ## Forms and the wire
 
 Two validations live near each other here, and they are not the same thing.
-A form validates a *human*: values arrive as strings, get coerced, deserve
+A form validates a _human_: values arrive as strings, get coerced, deserve
 progressive per-field feedback, and usually cover only a slice of the
 eventual input — the id comes from the route, the author from the session.
-The wire validates an *application boundary*: values arrive typed, complete,
+The wire validates an _application boundary_: values arrive typed, complete,
 and possibly hostile. Collapsing the two into one schema is tempting and
 almost never right — the form wants "looks like an email while you type",
 the wire wants "is a string, or 400".
@@ -1722,10 +1736,11 @@ as a procedure's input codec — validation on both sides of the wire, plus
 the serializer preflight a plain validator can't give you:
 
 ```ts
-const rename = app.procedure()
-  .input(wire.standard(RenameInput))   // your Valibot/Zod schema, as the wire codec
+const rename = app
+  .procedure()
+  .input(wire.standard(RenameInput)) // your Valibot/Zod schema, as the wire codec
   .output(DocCodec)
-  .mutation()
+  .mutation();
 ```
 
 (Async schemas are rejected — wire validation is synchronous — and the
@@ -1739,11 +1754,11 @@ form-side companion to `wire.standard`. Per-field feedback before a request
 exists, no `~standard` spec plumbing:
 
 ```ts
-import { validateStandard } from "result-rpc"
+import { validateStandard } from "result-rpc";
 
-const validated = validateStandard(RenameInput, { id, title })
-if (!validated.ok) return setFieldErrors(validated.fields)  // dot-joined keys
-await rename.mutate(validated.value)
+const validated = validateStandard(RenameInput, { id, title });
+if (!validated.ok) return setFieldErrors(validated.fields); // dot-joined keys
+await rename.mutate(validated.value);
 ```
 
 **Server rejections land on fields.** Whatever validates the form, the
@@ -1752,14 +1767,14 @@ codec still validates the wire — and when a request fails there,
 keys:
 
 ```tsx
-const result = await rename.mutate(toInput(form.values))
+const result = await rename.mutate(toInput(form.values));
 if (!result.ok && result.error._tag === "server/bad-request") {
-  setFieldErrors(fieldIssues(result.error))
+  setFieldErrors(fieldIssues(result.error));
   // { "title": ["Expected a string"], "author.email": ["Expected an email"] }
 }
 ```
 
-The paths are shaped like the *input*. When the form edits a projection of
+The paths are shaped like the _input_. When the form edits a projection of
 the input — it usually does — map the keys where the shapes diverge, in the
 same place you already map values (`toInput` above). The mapping is the
 honest artifact: it is where "what the human edits" and "what the wire
@@ -1785,22 +1800,22 @@ export const docEventsContract = app
   .input(wire.object({ docId: wire.string }))
   .output(DocEvent)
   .errors({ Unauthorized, DocNotFound })
-  .subscription()
+  .subscription();
 
 export const docEvents = app
   .implement(docEventsContract)
   .use(authenticated)
   .stream(async function* ({ input, errors, context }) {
-    const doc = await context.docs.find(input.docId)
+    const doc = await context.docs.find(input.docId);
     if (!doc) {
-      yield err(errors.DocNotFound({ docId: input.docId }))
-      return
+      yield err(errors.DocNotFound({ docId: input.docId }));
+      return;
     }
 
     for await (const event of context.docs.events(input.docId)) {
-      yield ok(event)
+      yield ok(event);
     }
-  })
+  });
 ```
 
 The direct client is an async iterable of the same Result union. React
@@ -1808,10 +1823,10 @@ observes connection state independently from the latest event or terminal
 failure:
 
 ```tsx
-const events = useResultSubscription(client.doc.events, { docId })
+const events = useResultSubscription(client.doc.events, { docId });
 
-events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed"
-events.result     // Ok<DocEvent> | Err<GetDocEventsError> | undefined
+events.connection; // "connecting" | "open" | "reconnecting" | "paused" | "closed"
+events.result; // Ok<DocEvent> | Err<GetDocEventsError> | undefined
 ```
 
 Subscriptions are the one hook that keeps a `result` envelope. Queries and
@@ -1841,7 +1856,7 @@ export const ServiceUnavailable = error({
   tag: "search/service-unavailable",
   httpStatus: 503,
   retry: "transient",
-})
+});
 
 export const RateLimited = error({
   tag: "search/rate-limited",
@@ -1850,13 +1865,12 @@ export const RateLimited = error({
   }),
   httpStatus: 429,
   retry: "after",
-})
+});
 ```
-
 
 **Mutations are stricter by default.** A query retries `transient` and
 `after` tags freely — reads are idempotent. A mutation whose connection
-died mid-flight is *ambiguous*: the server may have processed it, and a
+died mid-flight is _ambiguous_: the server may have processed it, and a
 blind retry is the double-side-effect bug. So by default a mutation retries
 only two failures: `client/offline` (the transport short-circuits before
 sending — the request provably never left the client) and policy
@@ -1874,7 +1888,7 @@ run underneath it. Direct calls can opt into the same policy:
 ```ts
 const result = await client.search.run(input, {
   retry: "from-error-policy",
-})
+});
 ```
 
 ## Rich values are transparently wire-safe
@@ -1887,11 +1901,11 @@ export const SaveConflict = error({
   tag: "doc/save-conflict",
   data: wire.object({
     docId: wire.string,
-    theirSavedAt: wire.date,      // a real Date on both sides of the wire
-    revision: wire.bigint,        // a real BigInt, not a stringified one
+    theirSavedAt: wire.date, // a real Date on both sides of the wire
+    revision: wire.bigint, // a real BigInt, not a stringified one
   }),
   httpStatus: 409,
-})
+});
 ```
 
 result-rpc uses a pinned, protocol-versioned devalue transport. Success values
@@ -1909,14 +1923,14 @@ const RichDoc = wire.object({
   revision: wire.bigint,
   pattern: wire.regexp,
   homepage: wire.url,
-})
+});
 ```
 
 For a recursive or otherwise richer application type, validate serializer
 support at the boundary:
 
 ```ts
-const Graph = wire.serializable<DocGraph>()
+const Graph = wire.serializable<DocGraph>();
 ```
 
 Functions, symbols, unsupported class instances, and arbitrary `Error` causes
@@ -1942,12 +1956,14 @@ typically via a presigned URL, and let the contract carry only the **reference**
 ```ts
 // mint a target (RPC or a plain POST route), PUT the file to it directly,
 // then finish with an RPC that carries only the bucket key:
-const setAvatar = app.procedure()
+const setAvatar = app
+  .procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
   .output(UserCard)
   .errors({ ImageUnprocessable })
   .mutation(async ({ input, context }) =>
-    ok(await context.users.setAvatarFromKey(input.userId, input.key)))
+    ok(await context.users.setAvatarFromKey(input.userId, input.key)),
+  );
 ```
 
 The contract stays fully typed, uploads scale on your storage provider instead
@@ -1962,14 +1978,11 @@ consuming a retry, or entering an error boundary.
 Direct calls accept an `AbortSignal`:
 
 ```ts
-const controller = new AbortController()
+const controller = new AbortController();
 
-const pending = client.doc.byId(
-  { id: "doc_123" },
-  { signal: controller.signal },
-)
+const pending = client.doc.byId({ id: "doc_123" }, { signal: controller.signal });
 
-controller.abort()
+controller.abort();
 ```
 
 Internally result-rpc uses a tagged `control/cancelled` sentinel so
@@ -1982,15 +1995,15 @@ the two events apart when the UX differs.
 ## Server-side calls keep wire parity
 
 ```ts
-import { createServerClient } from "result-rpc/server"
-import { appRouter } from "./router"
+import { createServerClient } from "result-rpc/server";
+import { appRouter } from "./router";
 
 const serverClient = createServerClient(appRouter, {
   mode: "parity",
   context,
-})
+});
 
-const result = await serverClient.doc.byId({ id: "doc_123" })
+const result = await serverClient.doc.byId({ id: "doc_123" });
 ```
 
 Parity mode executes locally but still applies input, output, and error
@@ -2002,14 +2015,18 @@ follow if profiling ever demands one.
 
 ```tsx
 // Server
-const runtime = createQueryRuntime({ client: serverClient })
+const runtime = createQueryRuntime({ client: serverClient });
 
-await runtime.prefetch(serverClient.doc.byId, { id })
+await runtime.prefetch(serverClient.doc.byId, { id });
 
-const dehydrated = runtime.dehydrate()
+const dehydrated = runtime.dehydrate();
 
 // Browser
-return <ResultRpcProvider client={client} hydrate={dehydrated}>{children}</ResultRpcProvider>
+return (
+  <ResultRpcProvider client={client} hydrate={dehydrated}>
+    {children}
+  </ResultRpcProvider>
+);
 ```
 
 The cache format is versioned and each hydrated success is validated against
@@ -2020,15 +2037,15 @@ transient connection state are never persisted.
 ## Test procedures without a network
 
 ```ts
-import { createTestClient } from "result-rpc/testing"
-import { appRouter } from "./router"
+import { createTestClient } from "result-rpc/testing";
+import { appRouter } from "./router";
 
 const client = createTestClient(appRouter, {
   context: testContext,
   mode: "parity",
-})
+});
 
-const result = await client.doc.byId({ id: "missing" })
+const result = await client.doc.byId({ id: "missing" });
 
 expect(result).toEqual({
   ok: false,
@@ -2036,7 +2053,7 @@ expect(result).toEqual({
     _tag: "doc/not-found",
     data: { docId: "missing" },
   },
-})
+});
 ```
 
 Parity mode runs the same codecs and undeclared-error checks as the remote
@@ -2044,11 +2061,11 @@ protocol. A separate test transport covers malformed envelopes, 5xx responses,
 timeouts, offline behavior, and batch failures.
 
 And when a test should cross the real wire — protocol, serializer, HTTP
-statuses and all — the fetch handler *is* the fetch, no server process
+statuses and all — the fetch handler _is_ the fetch, no server process
 required. The examples run their full React trees this way:
 
 ```ts
-const handler = createFetchHandler({ router, createContext: () => context })
+const handler = createFetchHandler({ router, createContext: () => context });
 
 const client = createClient({
   router,
@@ -2056,11 +2073,11 @@ const client = createClient({
     url: "https://example.test/rpc",
     fetch: (input, init) => handler(new Request(input, init)),
   }),
-})
+});
 
 // full round-trip: devalue envelope, HTTP status, rich values intact
-const events = await collect(client.doc.events({ id: "doc_1" }))
-expect(events[0]).toEqual(ok({ docId: "doc_1", kind: "renamed", at: new Date("2026-01-01") }))
+const events = await collect(client.doc.events({ id: "doc_1" }));
+expect(events[0]).toEqual(ok({ docId: "doc_1", kind: "renamed", at: new Date("2026-01-01") }));
 ```
 
 Note the `Date` inside the assertion — it crossed the wire as a `Date`.
@@ -2082,13 +2099,14 @@ that fights the framework. Four taps, one per tier:
 const client = createClient({
   contract,
   transport,
-  onEvent: (event) => Sentry.addBreadcrumb({
-    category: `rpc.${event.type}`,
-    message: event.path,
-    level: event.type === "failure" ? "warning" : "info",
-    data: event,
-  }),
-})
+  onEvent: (event) =>
+    Sentry.addBreadcrumb({
+      category: `rpc.${event.type}`,
+      message: event.path,
+      level: event.type === "failure" ? "warning" : "info",
+      data: event,
+    }),
+});
 // event: call | success | failure | retry | skew
 //      | claimed  ← a shell took ownership: { path, tag, owner, effect }
 
@@ -2097,23 +2115,23 @@ const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
   procedure: (client: AppClient) => client.auth.me,
   onError: (error) => {
-    Sentry.captureMessage(`signed out: ${error._tag}`, "info")
-    redirect("/login")
+    Sentry.captureMessage(`signed out: ${error._tag}`, "info");
+    redirect("/login");
   },
-})
+});
 
 // 3. Server, declared errors: policy included, so severity routes the sink.
 createFetchHandler({
   router,
   onError: ({ error, policy, procedurePath, httpStatus }) => {
-    metrics.increment(error._tag, { status: httpStatus })
-    if (policy?.severity === "error") Sentry.captureMessage(error._tag)
+    metrics.increment(error._tag, { status: httpStatus });
+    if (policy?.severity === "error") Sentry.captureMessage(error._tag);
   },
   // 4. Server, defects: the only place causes and stacks exist.
   onInternalError: ({ incidentId, cause, procedurePath, phase }) => {
-    Sentry.captureException(cause, { tags: { incidentId, procedurePath, phase } })
+    Sentry.captureException(cause, { tags: { incidentId, procedurePath, phase } });
   },
-})
+});
 ```
 
 The wire stream is redaction-safe by construction: events carry paths, tags,
@@ -2124,25 +2142,25 @@ For inline observation of a single Result, the tap combinators return the
 original value unchanged:
 
 ```ts
-tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
+tapError(await client.doc.rename(input), (error) => log.warn(error._tag));
 // also: tap(result, fn), tapBoth(result, { ok, error })
 ```
 
 ## What result-rpc owns
 
-| Concern | result-rpc contract |
-| --- | --- |
+| Concern            | result-rpc contract                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
 | Result composition | Plain Result values, `gen`/`yield*`, `tryPromise`, union-preserving combinators, exhaustive matching |
-| Error definitions | Namespaced tags, wire codecs, HTTP/retry/visibility policy |
-| RPC | Procedures, middleware, routers, server execution, protocol, clients |
-| Transport failures | Tagged additions to each procedure's inferred error union |
-| Query runtime | Keys, caching, retries, invalidation, lifecycle, hydration |
-| Failure ownership | Shells that subtract claimed tags and guarantee context |
-| React | Query, mutation, subscription, suspense, and SSR bindings |
-| Diagnostics | Safe incident IDs publicly; full causes only in local observability |
-| Observability | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps |
-| Cache coherence | Entity identities (patch by model+id), declared invalidation, membership via `.affects` |
-| Forms | Validator-as-wire-codec adoption, plus server-issue → field projection |
+| Error definitions  | Namespaced tags, wire codecs, HTTP/retry/visibility policy                                           |
+| RPC                | Procedures, middleware, routers, server execution, protocol, clients                                 |
+| Transport failures | Tagged additions to each procedure's inferred error union                                            |
+| Query runtime      | Keys, caching, retries, invalidation, lifecycle, hydration                                           |
+| Failure ownership  | Shells that subtract claimed tags and guarantee context                                              |
+| React              | Query, mutation, subscription, suspense, and SSR bindings                                            |
+| Diagnostics        | Safe incident IDs publicly; full causes only in local observability                                  |
+| Observability      | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps                          |
+| Cache coherence    | Entity identities (patch by model+id), declared invalidation, membership via `.affects`              |
+| Forms              | Validator-as-wire-codec adoption, plus server-issue → field projection                               |
 
 The query engine uses `@tanstack/query-core` privately. That is an engine
 choice, not part of the public API. Applications do not install or compose
@@ -2156,12 +2174,12 @@ side by side for as long as the migration takes:
 
 ```ts
 // server: two handlers, two routes
-app.all("/api/trpc/*", trpcHandler)     // existing routers stay
-app.post("/rpc", resultRpcHandler)      // migrated routers move here
+app.all("/api/trpc/*", trpcHandler); // existing routers stay
+app.post("/rpc", resultRpcHandler); // migrated routers move here
 
 // client: two clients during the transition
-export const trpc = createTRPCReact<LegacyRouter>()
-export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) })
+export const trpc = createTRPCReact<LegacyRouter>();
+export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) });
 ```
 
 The recommended first slice is **the auth layer plus one feature router** —
@@ -2171,19 +2189,19 @@ instead of at the end.
 
 The concept mapping is mechanical:
 
-| tRPC | result-rpc |
-| --- | --- |
-| `initTRPC.context<Ctx>().create()` | `rpc.context<Ctx>()` |
-| `t.procedure.input(z...).query(fn)` | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
-| `throw new TRPCError({ code })` | `return err(errors.SomeError({...}))` |
-| `t.middleware` + `ctx` spread | `app.middleware<Added>().errors({...}).use(...)` |
-| `protectedProcedure` | `app.procedure().use(authenticated)` — same pattern |
-| `httpBatchLink` | `batchFetchTransport` |
-| `@trpc/react-query` hooks | `useResultQuery` / shell hooks |
-| `errorFormatter` | gone — error data is a wire codec, not a formatted shape |
-| adapter `onError` | `onError` + `onInternalError` on `createFetchHandler` |
-| `createCaller` | `createServerClient` (parity mode) |
-| `queryClient.setDefaultOptions({ onError })` | a shell |
+| tRPC                                         | result-rpc                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `initTRPC.context<Ctx>().create()`           | `rpc.context<Ctx>()`                                                     |
+| `t.procedure.input(z...).query(fn)`          | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                    |
+| `t.middleware` + `ctx` spread                | `app.middleware<Added>().errors({...}).use(...)`                         |
+| `protectedProcedure`                         | `app.procedure().use(authenticated)` — same pattern                      |
+| `httpBatchLink`                              | `batchFetchTransport`                                                    |
+| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
+| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
+| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
+| `createCaller`                               | `createServerClient` (parity mode)                                       |
+| `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
 
 Two things have no tRPC equivalent and are the actual work: every procedure
 declares its error union (this is where the two-failure-channel debt gets paid
@@ -2259,7 +2277,7 @@ with its own tests:
    severity-routed server captures, and a defect whose captured exception
    carries the same incident id the client received — correlation with no
    request-id plumbing.
-7. **07-tracker** — the whole surface as one real app, built *blind* by an
+7. **07-tracker** — the whole surface as one real app, built _blind_ by an
    engineer working from the docs alone (its `FRICTION.md` is the honest
    log). A team issue tracker: session layer, entity models with the
    zero-refetch assign patch and a `touch` cascade, declared invalidation,

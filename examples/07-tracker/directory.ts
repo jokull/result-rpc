@@ -12,9 +12,8 @@ export const upstreamErrors = defineErrors("upstream", {
 
 export const fetchMemberIds = (fetchDirectory: () => Promise<unknown>) =>
   gen(async function* () {
-    const payload = yield* await tryPromise(
-      fetchDirectory,
-      (cause) => upstreamErrors.unreachable({ reason: String(cause) }),
+    const payload = yield* await tryPromise(fetchDirectory, (cause) =>
+      upstreamErrors.unreachable({ reason: String(cause) }),
     );
     if (
       typeof payload !== "object" ||

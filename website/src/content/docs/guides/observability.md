@@ -18,13 +18,14 @@ that fights the framework. Four taps, one per tier:
 const client = createClient({
   contract,
   transport,
-  onEvent: (event) => Sentry.addBreadcrumb({
-    category: `rpc.${event.type}`,
-    message: event.path,
-    level: event.type === "failure" ? "warning" : "info",
-    data: event,
-  }),
-})
+  onEvent: (event) =>
+    Sentry.addBreadcrumb({
+      category: `rpc.${event.type}`,
+      message: event.path,
+      level: event.type === "failure" ? "warning" : "info",
+      data: event,
+    }),
+});
 // event: call | success | failure | retry | skew
 //      | claimed  ← a shell took ownership: { path, tag, owner, effect }
 
@@ -33,23 +34,23 @@ const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
   procedure: (client: AppClient) => client.auth.me,
   onError: (error) => {
-    Sentry.captureMessage(`signed out: ${error._tag}`, "info")
-    redirect("/login")
+    Sentry.captureMessage(`signed out: ${error._tag}`, "info");
+    redirect("/login");
   },
-})
+});
 
 // 3. Server, declared errors: policy included, so severity routes the sink.
 createFetchHandler({
   router,
   onError: ({ error, policy, procedurePath, httpStatus }) => {
-    metrics.increment(error._tag, { status: httpStatus })
-    if (policy?.severity === "error") Sentry.captureMessage(error._tag)
+    metrics.increment(error._tag, { status: httpStatus });
+    if (policy?.severity === "error") Sentry.captureMessage(error._tag);
   },
   // 4. Server, defects: the only place causes and stacks exist.
   onInternalError: ({ incidentId, cause, procedurePath, phase }) => {
-    Sentry.captureException(cause, { tags: { incidentId, procedurePath, phase } })
+    Sentry.captureException(cause, { tags: { incidentId, procedurePath, phase } });
   },
-})
+});
 ```
 
 The wire stream is redaction-safe by construction: events carry paths, tags,
@@ -60,6 +61,6 @@ For inline observation of a single Result, the tap combinators return the
 original value unchanged:
 
 ```ts
-tapError(await client.doc.rename(input), (error) => log.warn(error._tag))
+tapError(await client.doc.rename(input), (error) => log.warn(error._tag));
 // also: tap(result, fn), tapBoth(result, { ok, error })
 ```

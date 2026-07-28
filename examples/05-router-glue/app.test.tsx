@@ -4,8 +4,9 @@ import { createDocHandler } from "../03-docs/server.js";
 import { makeDocClient } from "../03-docs/ui.js";
 import { FrameworkApp, makeWorld, world } from "./app.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 

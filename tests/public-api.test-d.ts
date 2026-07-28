@@ -17,14 +17,20 @@ import { createClient, type ClientErrors } from "../src/client/index.js";
 import { defineModel } from "../src/model.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
-import { defectErrors, defineErrors, defineLayer, defineService, errorCatalog, resolveServices, staleErrors, transportErrors } from "../src/index.js";
+import {
+  defectErrors,
+  defineErrors,
+  defineLayer,
+  defineService,
+  errorCatalog,
+  resolveServices,
+  staleErrors,
+  transportErrors,
+} from "../src/index.js";
 import { defineShell, layerShell, type ClaimedBy, type ValueOf } from "../src/react/index.js";
 
 type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends
-  (<T>() => T extends B ? 1 : 2)
-    ? true
-    : false;
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 
 const Missing = error({
@@ -62,30 +68,24 @@ const visibilityErrors = defineErrors("visibility", {
   },
 });
 
-export type _OmittedVisibilityIsPublic = Assert<Equal<
-  typeof DefaultPublic.policy.visibility,
-  "public"
->>;
-export type _ExplicitPrivateVisibilityIsPreserved = Assert<Equal<
-  typeof PrivateFailure.policy.visibility,
-  "private"
->>;
-export type _PublicHttpStatusIsOptional = Assert<Equal<
-  typeof DefaultPublic.policy.httpStatus,
-  number | undefined
->>;
-export type _PrivateHttpStatusDoesNotExist = Assert<Equal<
-  typeof PrivateFailure.policy.httpStatus,
-  undefined
->>;
-export type _NamespacedDefaultVisibilityIsPublic = Assert<Equal<
-  typeof visibilityErrors.publicByDefault.policy.visibility,
-  "public"
->>;
-export type _NamespacedPrivateVisibilityIsPreserved = Assert<Equal<
-  typeof visibilityErrors.privateDetail.policy.visibility,
-  "private"
->>;
+export type _OmittedVisibilityIsPublic = Assert<
+  Equal<typeof DefaultPublic.policy.visibility, "public">
+>;
+export type _ExplicitPrivateVisibilityIsPreserved = Assert<
+  Equal<typeof PrivateFailure.policy.visibility, "private">
+>;
+export type _PublicHttpStatusIsOptional = Assert<
+  Equal<typeof DefaultPublic.policy.httpStatus, number | undefined>
+>;
+export type _PrivateHttpStatusDoesNotExist = Assert<
+  Equal<typeof PrivateFailure.policy.httpStatus, undefined>
+>;
+export type _NamespacedDefaultVisibilityIsPublic = Assert<
+  Equal<typeof visibilityErrors.publicByDefault.policy.visibility, "public">
+>;
+export type _NamespacedPrivateVisibilityIsPreserved = Assert<
+  Equal<typeof visibilityErrors.privateDetail.policy.visibility, "private">
+>;
 
 // @ts-expect-error Private errors have no HTTP projection.
 error({ tag: "type/private-with-status", visibility: "private", httpStatus: 500 });
@@ -120,9 +120,9 @@ const procedure = r
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .errors({ Missing })
-  .query(({ input, errors }) => input.id === "missing"
-    ? err(errors.Missing({ id: input.id }))
-    : ok(input.id));
+  .query(({ input, errors }) =>
+    input.id === "missing" ? err(errors.Missing({ id: input.id })) : ok(input.id),
+  );
 
 r.procedure()
   .input(wire.object({}))
@@ -209,14 +209,12 @@ type ExpectedError =
   | ClientBoundaryError;
 
 export type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;
-export type _ClientCarriesTheWholePublicErrorUnion = Assert<Equal<
-  ClientErrors<typeof client>,
-  ExpectedError
->>;
-export type _EveryClientErrorIsPublic = Assert<Equal<
-  ClientErrors<typeof client>["visibility"],
-  "public"
->>;
+export type _ClientCarriesTheWholePublicErrorUnion = Assert<
+  Equal<ClientErrors<typeof client>, ExpectedError>
+>;
+export type _EveryClientErrorIsPublic = Assert<
+  Equal<ClientErrors<typeof client>["visibility"], "public">
+>;
 
 declare const unknownFailure: unknown;
 if (client.$errors.is(unknownFailure)) {
@@ -251,10 +249,9 @@ void optimisticContext;
 
 const subscription = runtime.subscription(client.example.subscription, { id: "valid" });
 type SubscriptionResult = ReturnType<typeof subscription.getCurrentState>["result"];
-export type _SubscriptionResultIsClosed = Assert<Equal<
-  Exclude<SubscriptionResult, undefined>,
-  Result<string, ExpectedError>
->>;
+export type _SubscriptionResultIsClosed = Assert<
+  Equal<Exclude<SubscriptionResult, undefined>, Result<string, ExpectedError>>
+>;
 
 // --- Shell narrowing -------------------------------------------------------
 
@@ -295,28 +292,26 @@ export type _ShellSubtractsExactlyTheClaimedTags = Assert<
 >;
 
 // The chain accumulates: the innermost layer sees its parents' claims too.
-export type _ChainAccumulates = Assert<Equal<
-  ClaimedBy<typeof AuthShell>,
-  ClaimedBy<typeof StaleShell> | "type/conflict"
->>;
+export type _ChainAccumulates = Assert<
+  Equal<ClaimedBy<typeof AuthShell>, ClaimedBy<typeof StaleShell> | "type/conflict">
+>;
 
 // The guaranteed value is not optional inside the layer.
-export type _ProvidedValueIsGuaranteed = Assert<Equal<
-  ValueOf<typeof AuthShell>,
-  { userId: string }
->>;
+export type _ProvidedValueIsGuaranteed = Assert<
+  Equal<ValueOf<typeof AuthShell>, { userId: string }>
+>;
 
 // --- Layer factory ---------------------------------------------------------
 
-const ViewerCodec = wire.object({ id: wire.string })
-type Viewer = InputOf<typeof ViewerCodec>
+const ViewerCodec = wire.object({ id: wire.string });
+type Viewer = InputOf<typeof ViewerCodec>;
 
 const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
   provides: ViewerCodec,
   errors: { Conflict },
-})
+});
 
 defineLayer({
   name: "private-layer",
@@ -324,12 +319,11 @@ defineLayer({
   provides: wire.string,
   // @ts-expect-error Layer failures cross the RPC boundary and must be public.
   errors: { PrivateFailure },
-})
+});
 
 const sessionMiddleware = SessionLayer.middleware(r, ({ context, errors }) =>
-  context.authenticated
-    ? ok({ id: "u_1" })
-    : err(errors.Conflict({ id: "u_1" })))
+  context.authenticated ? ok({ id: "u_1" }) : err(errors.Conflict({ id: "u_1" })),
+);
 
 // The middleware adds the layer value to context under the declared key.
 const layered = r
@@ -337,38 +331,39 @@ const layered = r
   .input(wire.object({}))
   .output(wire.string)
   .use(sessionMiddleware)
-  .query(({ context }) => ok(context.viewer.id))
-void layered
+  .query(({ context }) => ok(context.viewer.id));
+void layered;
 
 r.procedure()
   .input(wire.object({}))
   .output(wire.string)
   .use(sessionMiddleware)
   // @ts-expect-error The layer value is exactly the provides codec's type.
-  .query(({ context }) => ok(context.viewer.missing))
+  .query(({ context }) => ok(context.viewer.missing));
 
 // The context procedure's contract carries the layer value and union.
-const sessionContract = SessionLayer.contract(r)
+const sessionContract = SessionLayer.contract(r);
 type SessionOutput = typeof sessionContract extends {
-  readonly _def: { readonly output: WireCodec<infer T, any> }
-} ? T : never
-export type _LayerContractOutput = Assert<Equal<SessionOutput, Viewer>>
+  readonly _def: { readonly output: WireCodec<infer T, any> };
+}
+  ? T
+  : never;
+export type _LayerContractOutput = Assert<Equal<SessionOutput, Viewer>>;
 
 // The derived shell claims exactly the layer union plus its parents' claims.
 const SessionShell = layerShell(SessionLayer, {
   from: DefectShell,
   procedure: client.example.procedure,
-})
-export type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>
-export type _LayerShellHandled = Assert<Equal<
-  ClaimedBy<typeof SessionShell>,
-  ClaimedBy<typeof DefectShell> | "type/conflict"
->>
+});
+export type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>;
+export type _LayerShellHandled = Assert<
+  Equal<ClaimedBy<typeof SessionShell>, ClaimedBy<typeof DefectShell> | "type/conflict">
+>;
 
 // --- Optional layers and refinement ----------------------------------------
 
-const MaybeViewerCodec = wire.union([ViewerCodec, wire.null] as const)
-type MaybeViewer = InputOf<typeof MaybeViewerCodec>
+const MaybeViewerCodec = wire.union([ViewerCodec, wire.null] as const);
+type MaybeViewer = InputOf<typeof MaybeViewerCodec>;
 
 // optional: always establishes, may provide null
 const CookieLayer = defineLayer({
@@ -376,7 +371,7 @@ const CookieLayer = defineLayer({
   key: "account",
   provides: MaybeViewerCodec,
   errors: {},
-})
+});
 
 // required: narrows the same key, contributes the failure union
 const AccountLayer = CookieLayer.require({
@@ -385,10 +380,10 @@ const AccountLayer = CookieLayer.require({
   errors: { Missing },
   refine: ({ value, errors }) =>
     value === null ? err(errors.Missing({ id: "anonymous" })) : ok(value),
-})
+});
 
-const cookieMiddleware = CookieLayer.middleware(r, () => ok(null as MaybeViewer))
-const accountMiddleware = AccountLayer.middleware(r)
+const cookieMiddleware = CookieLayer.middleware(r, () => ok(null as MaybeViewer));
+const accountMiddleware = AccountLayer.middleware(r);
 
 // context grows and narrows monotonically through the chain
 r.procedure()
@@ -396,10 +391,10 @@ r.procedure()
   .output(wire.string)
   .use(cookieMiddleware)
   .query(({ context }) => {
-    type _Nullable = Assert<Equal<typeof context.account, MaybeViewer>>
-    void (0 as unknown as _Nullable)
-    return ok("")
-  })
+    type _Nullable = Assert<Equal<typeof context.account, MaybeViewer>>;
+    void (0 as unknown as _Nullable);
+    return ok("");
+  });
 
 r.procedure()
   .input(wire.object({}))
@@ -407,26 +402,25 @@ r.procedure()
   .use(cookieMiddleware)
   .use(accountMiddleware)
   .query(({ context }) => {
-    type _Narrowed = Assert<Equal<typeof context.account, Viewer>>
-    void (0 as unknown as _Narrowed)
-    return ok(context.account.id)
-  })
+    type _Narrowed = Assert<Equal<typeof context.account, Viewer>>;
+    void (0 as unknown as _Narrowed);
+    return ok(context.account.id);
+  });
 
 // the refined layer's shell provides the narrowed value and claims its union
 const CookieShell = layerShell(CookieLayer, {
   from: DefectShell,
   procedure: client.example.procedure,
-})
+});
 const AccountShell = layerShell(AccountLayer, {
   from: CookieShell,
   procedure: client.example.procedure,
-})
-export type _OptionalShellValue = Assert<Equal<ValueOf<typeof CookieShell>, MaybeViewer>>
-export type _RequiredShellValue = Assert<Equal<ValueOf<typeof AccountShell>, Viewer>>
-export type _RequiredShellHandled = Assert<Equal<
-  ClaimedBy<typeof AccountShell>,
-  ClaimedBy<typeof CookieShell> | "type/missing"
->>
+});
+export type _OptionalShellValue = Assert<Equal<ValueOf<typeof CookieShell>, MaybeViewer>>;
+export type _RequiredShellValue = Assert<Equal<ValueOf<typeof AccountShell>, Viewer>>;
+export type _RequiredShellHandled = Assert<
+  Equal<ClaimedBy<typeof AccountShell>, ClaimedBy<typeof CookieShell> | "type/missing">
+>;
 
 // --- Middleware dependencies and services ----------------------------------
 
@@ -436,10 +430,10 @@ const auditedAccount = r
   .after(cookieMiddleware)
   .errors({ Missing })
   .use(({ context, next }) => {
-    type _SeesDepOutput = Assert<Equal<typeof context.account, MaybeViewer>>
-    void (0 as unknown as _SeesDepOutput)
-    return next({ context: { ...context, audited: true as const } })
-  })
+    type _SeesDepOutput = Assert<Equal<typeof context.account, MaybeViewer>>;
+    void (0 as unknown as _SeesDepOutput);
+    return next({ context: { ...context, audited: true as const } });
+  });
 
 const auditedProcedure = r
   .procedure()
@@ -447,13 +441,13 @@ const auditedProcedure = r
   .output(wire.string)
   .use(auditedAccount) // one use() pulls cookieMiddleware in too
   .query(({ context }) => {
-    type _HasDep = Assert<Equal<typeof context.account, MaybeViewer>>
-    void (0 as unknown as _HasDep)
-    type _HasOwn = Assert<Equal<typeof context.audited, true>>
-    void (0 as unknown as _HasOwn)
-    return ok("")
-  })
-void auditedProcedure
+    type _HasDep = Assert<Equal<typeof context.account, MaybeViewer>>;
+    void (0 as unknown as _HasDep);
+    type _HasOwn = Assert<Equal<typeof context.audited, true>>;
+    void (0 as unknown as _HasOwn);
+    return ok("");
+  });
+void auditedProcedure;
 
 // Chained .after: each dependency shifts the handler input further.
 const needsViewer = r
@@ -461,125 +455,137 @@ const needsViewer = r
   .after(cookieMiddleware)
   .after(accountMiddleware)
   .use(({ context, next }) => {
-    type _FullyNarrowed = Assert<Equal<typeof context.account, Viewer>>
-    void (0 as unknown as _FullyNarrowed)
-    return next({ context: { ...context, ok: true as const } })
-  })
-void needsViewer
+    type _FullyNarrowed = Assert<Equal<typeof context.account, Viewer>>;
+    void (0 as unknown as _FullyNarrowed);
+    return next({ context: { ...context, ok: true as const } });
+  });
+void needsViewer;
 
 // A middleware whose input demands context the procedure cannot supply is rejected.
 declare const demandsViewer: import("../src/index.js").Middleware<
   { viewer: Viewer },
   { viewer: Viewer; ok: true },
   {}
->
+>;
 r.procedure()
   .input(wire.object({}))
   .output(wire.string)
   // @ts-expect-error the root context has no viewer
-  .use(demandsViewer)
+  .use(demandsViewer);
 
 // Services: the resolved record is fully typed and dependency-ordered.
 const DbService = defineService("db", {
   create: () => ({ query: (sql: string) => [sql] }),
-})
+});
 const UsersService = defineService("users", {
   needs: { db: DbService },
   create: ({ db }) => {
-    type _DepTyped = Assert<Equal<typeof db, { query: (sql: string) => string[] }>>
-    void (0 as unknown as _DepTyped)
-    return { byId: (id: string) => db.query(id) }
+    type _DepTyped = Assert<Equal<typeof db, { query: (sql: string) => string[] }>>;
+    void (0 as unknown as _DepTyped);
+    return { byId: (id: string) => db.query(id) };
   },
-})
-declare const resolved: Awaited<ReturnType<typeof resolveServices<{
-  db: typeof DbService
-  users: typeof UsersService
-}>>>
-export type _ResolvedTyped = Assert<Equal<typeof resolved.users, { byId: (id: string) => string[] }>>
+});
+declare const resolved: Awaited<
+  ReturnType<
+    typeof resolveServices<{
+      db: typeof DbService;
+      users: typeof UsersService;
+    }>
+  >
+>;
+export type _ResolvedTyped = Assert<
+  Equal<typeof resolved.users, { byId: (id: string) => string[] }>
+>;
 
 // --- Router-level inference --------------------------------------------------
 
-type Inputs = RouterInputs<typeof router>
-type Outputs = RouterOutputs<typeof router>
-type Errors = RouterErrors<typeof router>
+type Inputs = RouterInputs<typeof router>;
+type Outputs = RouterOutputs<typeof router>;
+type Errors = RouterErrors<typeof router>;
 
-const exampleInputCodec = wire.object({ id: wire.string })
-export type _RouterInput = Assert<Equal<Inputs["example"]["procedure"], InputOf<typeof exampleInputCodec>>>
-export type _RouterOutput = Assert<Equal<Outputs["example"]["procedure"], string>>
-export type _RouterError = Assert<Equal<Errors["example"]["procedure"], ReturnType<typeof Missing>>>
+const exampleInputCodec = wire.object({ id: wire.string });
+export type _RouterInput = Assert<
+  Equal<Inputs["example"]["procedure"], InputOf<typeof exampleInputCodec>>
+>;
+export type _RouterOutput = Assert<Equal<Outputs["example"]["procedure"], string>>;
+export type _RouterError = Assert<
+  Equal<Errors["example"]["procedure"], ReturnType<typeof Missing>>
+>;
 
 // --- Namespaced errors -------------------------------------------------------
 
 const nsErrors = defineErrors("billing", {
   cardDeclined: { data: wire.object({ code: wire.string }), httpStatus: 402 },
   planExpired: { httpStatus: 403 },
-})
-export type _NsTagDerived = Assert<Equal<
-  ReturnType<typeof nsErrors.cardDeclined>["_tag"],
-  "billing/card-declined"
->>
-export type _NsDataTyped = Assert<Equal<
-  ReturnType<typeof nsErrors.cardDeclined>["data"]["code"],
-  string
->>
+});
+export type _NsTagDerived = Assert<
+  Equal<ReturnType<typeof nsErrors.cardDeclined>["_tag"], "billing/card-declined">
+>;
+export type _NsDataTyped = Assert<
+  Equal<ReturnType<typeof nsErrors.cardDeclined>["data"]["code"], string>
+>;
 // data-free members call with no arguments
-void nsErrors.planExpired()
+void nsErrors.planExpired();
 // @ts-expect-error the namespaced map is exhaustive for catalogs too
-errorCatalog(nsErrors, { "billing/card-declined": () => "" })
+errorCatalog(nsErrors, { "billing/card-declined": () => "" });
 
 // --- Result composition ------------------------------------------------------
 
-import { toResult as toResultReact } from "../src/react/index.js"
-import { all, gen, tryPromise } from "../src/index.js"
-void toResultReact
+import { toResult as toResultReact } from "../src/react/index.js";
+import { all, gen, tryPromise } from "../src/index.js";
+void toResultReact;
 
-const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 })
+const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 });
 
-declare const findResult: Result<string, ReturnType<typeof Missing>>
-declare const parseResult: Result<number, ReturnType<typeof Conflict2>>
+declare const findResult: Result<string, ReturnType<typeof Missing>>;
+declare const parseResult: Result<number, ReturnType<typeof Conflict2>>;
 
 // gen accumulates exactly the yielded error union.
 const genOutcome = gen(function* () {
-  const doc = yield* findResult
-  const size = yield* parseResult
-  return `${doc}:${size}`
-})
-export type _GenAccumulatesYieldedUnion = Assert<Equal<
-  typeof genOutcome,
-  Result<string, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
->>
+  const doc = yield* findResult;
+  const size = yield* parseResult;
+  return `${doc}:${size}`;
+});
+export type _GenAccumulatesYieldedUnion = Assert<
+  Equal<
+    typeof genOutcome,
+    Result<string, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+  >
+>;
 
 // async gen returns a Promise of the same accumulation.
 const genAsyncOutcome = gen(async function* () {
-  const doc = yield* findResult
-  return doc.length
-})
-export type _GenAsyncIsPromise = Assert<Equal<
-  typeof genAsyncOutcome,
-  Promise<Result<number, ReturnType<typeof Missing>>>
->>
+  const doc = yield* findResult;
+  return doc.length;
+});
+export type _GenAsyncIsPromise = Assert<
+  Equal<typeof genAsyncOutcome, Promise<Result<number, ReturnType<typeof Missing>>>>
+>;
 
 // all() collects tuple values positionally and unions the errors.
-const allOutcome = all([findResult, parseResult] as const)
-type AllValue = Extract<typeof allOutcome, { ok: true }>["value"]
-type AllError = Extract<typeof allOutcome, { ok: false }>["error"]
-export type _AllTupleIsPositional = Assert<Equal<
-  [AllValue[0], AllValue[1], AllValue["length"]],
-  [string, number, 2]
->>
-export type _AllUnionsErrors = Assert<Equal<
-  AllError,
-  ReturnType<typeof Missing> | ReturnType<typeof Conflict2>
->>
+const allOutcome = all([findResult, parseResult] as const);
+type AllValue = Extract<typeof allOutcome, { ok: true }>["value"];
+type AllError = Extract<typeof allOutcome, { ok: false }>["error"];
+export type _AllTupleIsPositional = Assert<
+  Equal<[AllValue[0], AllValue[1], AllValue["length"]], [string, number, 2]>
+>;
+export type _AllUnionsErrors = Assert<
+  Equal<AllError, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
 
 // tryPromise requires a tagged error from the catch handler.
-const adopted = tryPromise(async () => 1, () => Missing({ id: "x" }))
-export type _TryPromiseTagged = Assert<Equal<
-  typeof adopted,
-  Promise<Result<number, ReturnType<typeof Missing>>>
->>
-// @ts-expect-error catch must return a tagged error, not an Error subclass
-void tryPromise(async () => 1, (cause) => new Error(String(cause)))
+const adopted = tryPromise(
+  async () => 1,
+  () => Missing({ id: "x" }),
+);
+export type _TryPromiseTagged = Assert<
+  Equal<typeof adopted, Promise<Result<number, ReturnType<typeof Missing>>>>
+>;
+void tryPromise(
+  async () => 1,
+  // @ts-expect-error catch must return a tagged error, not an Error subclass
+  (cause) => new Error(String(cause)),
+);
 
 // --- Regression: an implemented procedure keeps its contract's kind ---------
 // `ProcedureImplementer.handler()` once widened the kind to
@@ -587,28 +593,38 @@ void tryPromise(async () => 1, (cause) => new Error(String(cause)))
 // client fail the `$kind: "query"` constraint — so `runtime.prefetch(...)`
 // (the RSC server-prefetch path) could not typecheck against a server client.
 // Found by the Waku RSC example; pinned here.
-const kindContract = rpc.context<{}>()
+const kindContract = rpc
+  .context<{}>()
   .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .query();
-const kindMutationContract = rpc.context<{}>()
+const kindMutationContract = rpc
+  .context<{}>()
   .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .mutation();
 
-const kindImplemented = rpc.context<{}>()
+const kindImplemented = rpc
+  .context<{}>()
   .implement(kindContract)
   .handler(({ input }) => ok(input.id));
-const kindMutationImplemented = rpc.context<{}>()
+const kindMutationImplemented = rpc
+  .context<{}>()
   .implement(kindMutationContract)
   .handler(({ input }) => ok(input.id));
 
-type ImplementedQueryKind = typeof kindImplemented extends
-  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
-type ImplementedMutationKind = typeof kindMutationImplemented extends
-  { readonly _def: { readonly kind: infer TKind } } ? TKind : never;
+type ImplementedQueryKind = typeof kindImplemented extends {
+  readonly _def: { readonly kind: infer TKind };
+}
+  ? TKind
+  : never;
+type ImplementedMutationKind = typeof kindMutationImplemented extends {
+  readonly _def: { readonly kind: infer TKind };
+}
+  ? TKind
+  : never;
 
 export type _ImplementedQueryStaysAQuery = Assert<Equal<ImplementedQueryKind, "query">>;
 export type _ImplementedMutationStaysAMutation = Assert<Equal<ImplementedMutationKind, "mutation">>;
@@ -646,8 +662,9 @@ const _allNeedsAReason = ScopedUser.all();
 const ScopedCard = ScopedUser.pick("id", "name");
 type Flat<T> = { readonly [K in keyof T]: T[K] };
 type ScopedCardValue = Flat<InputOf<typeof ScopedCard>>;
-export type _ViewShipsOnlyWhatItNames =
-  Assert<Equal<ScopedCardValue, { readonly id: string; readonly name: string }>>;
+export type _ViewShipsOnlyWhatItNames = Assert<
+  Equal<ScopedCardValue, { readonly id: string; readonly name: string }>
+>;
 
 // select(): `true` for own fields, a codec for anything nested or computed.
 const ScopedRow = ScopedUser.select({
@@ -657,12 +674,17 @@ const ScopedRow = ScopedUser.select({
   mutualCount: wire.number,
 });
 type ScopedRowValue = Flat<InputOf<typeof ScopedRow>>;
-export type _SelectMixesFieldsCodecsAndComputed = Assert<Equal<ScopedRowValue, {
-  readonly id: string;
-  readonly name: string;
-  readonly friend: InputOf<typeof ScopedCard>;
-  readonly mutualCount: number;
-}>>;
+export type _SelectMixesFieldsCodecsAndComputed = Assert<
+  Equal<
+    ScopedRowValue,
+    {
+      readonly id: string;
+      readonly name: string;
+      readonly friend: InputOf<typeof ScopedCard>;
+      readonly mutualCount: number;
+    }
+  >
+>;
 
 // The identity rule survives every form: a projection without its key is not
 // an entity, it is data.

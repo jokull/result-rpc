@@ -4,40 +4,40 @@ description: "Procedures, middleware, and routers: the shared contract both side
 ---
 
 ```ts
-import { rpc, wire, type InputOf } from "result-rpc"
-import { DocNotFound, Unauthorized } from "./errors"
+import { rpc, wire, type InputOf } from "result-rpc";
+import { DocNotFound, Unauthorized } from "./errors";
 
 interface AppContext {
-  docs: DocRepository
-  auth: AuthService
+  docs: DocRepository;
+  auth: AuthService;
 }
 
-export const app = rpc.context<AppContext>()
+export const app = rpc.context<AppContext>();
 
 const DocCodec = wire.object({
   id: wire.string,
   title: wire.string,
   savedAt: wire.date,
-})
-type Doc = InputOf<typeof DocCodec>
+});
+type Doc = InputOf<typeof DocCodec>;
 
 export const getDocContract = app
   .procedure()
   .input(wire.object({ id: wire.string }))
   .output(DocCodec)
   .errors({ Unauthorized, DocNotFound })
-  .query()
+  .query();
 
 export const appContract = app.contract({
   doc: {
     byId: getDocContract,
   },
-})
+});
 ```
 
-One honest difference from tRPC: tRPC ships the router's *type* to the client
+One honest difference from tRPC: tRPC ships the router's _type_ to the client
 (`import type AppRouter`), and in exchange the client can neither decode rich
-values nor validate anything. result-rpc ships a small *value* — the contract:
+values nor validate anything. result-rpc ships a small _value_ — the contract:
 codecs, tags, and policies, no middleware or handler code, safe in any browser
 bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
@@ -50,25 +50,25 @@ the browser boundary, not a required style.)
 ## Implement the contract on the server
 
 ```ts
-import { err, ok } from "result-rpc"
-import { app, getDocContract } from "./contract"
+import { err, ok } from "result-rpc";
+import { app, getDocContract } from "./contract";
 
 export const getDoc = app
   .implement(getDocContract)
   .use(authenticated)
   .handler(async ({ input, errors, context }) => {
-    const doc = await context.docs.find(input.id)
+    const doc = await context.docs.find(input.id);
 
-    if (!doc) return err(errors.DocNotFound({ docId: input.id }))
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }));
 
-    return ok(doc)
-  })
+    return ok(doc);
+  });
 ```
 
 The handler must return the declared Result:
 
 ```ts
-Result<Doc, Unauthorized | DocNotFound>
+Result<Doc, Unauthorized | DocNotFound>;
 ```
 
 Returning a different tag is a type error. Smuggling an undeclared or
@@ -83,48 +83,45 @@ Here, middleware declares what it contributes, and the contribution lands in
 the union:
 
 ```ts
-import { err } from "result-rpc"
-import { app } from "./doc"
-import { Unauthorized } from "./errors"
+import { err } from "result-rpc";
+import { app } from "./doc";
+import { Unauthorized } from "./errors";
 
 const authenticated = app
   .middleware<{ user: User }>()
   .errors({ Unauthorized })
   .use(async ({ context, errors, next }) => {
-    const user = await context.auth.user()
+    const user = await context.auth.user();
 
     if (!user) {
-      return err(errors.Unauthorized({}))
+      return err(errors.Unauthorized({}));
     }
 
     return next({
       context: { ...context, user },
-    })
-  })
+    });
+  });
 
-export const getDoc = app
-  .implement(getDocContract)
-  .use(authenticated)
-  .handler(/* ... */)
+export const getDoc = app.implement(getDocContract).use(authenticated).handler(/* ... */);
 ```
 
 The procedure now returns:
 
 ```ts
-Result<Doc, Unauthorized | DocNotFound>
+Result<Doc, Unauthorized | DocNotFound>;
 ```
 
 Builders are immutable, so a base forks freely — the `protectedProcedure`
 pattern is one line:
 
 ```ts
-const protectedProcedure = app.procedure().use(authenticated)
+const protectedProcedure = app.procedure().use(authenticated);
 
 const renameDoc = protectedProcedure
   .input(RenameInput)
   .output(DocCodec)
-  .errors({ DocNotFound, DocLocked })   // only its own domain errors;
-  .mutation(/* ... */)                     // the auth union rides in with the base
+  .errors({ DocNotFound, DocLocked }) // only its own domain errors;
+  .mutation(/* ... */); // the auth union rides in with the base
 ```
 
 Middleware definitions also join the handler's `errors` bag, so a handler can
@@ -142,16 +139,16 @@ than silently overridden.
 ## Create the router and server
 
 ```ts
-import { createFetchHandler } from "result-rpc/server"
-import { app, getDoc } from "./doc"
+import { createFetchHandler } from "result-rpc/server";
+import { app, getDoc } from "./doc";
 
 export const appRouter = app.router({
   doc: {
     byId: getDoc,
   },
-})
+});
 
-export type AppRouter = typeof appRouter
+export type AppRouter = typeof appRouter;
 
 // Nested inference helpers mirror the router's shape — works on contracts too:
 // type Inputs = RouterInputs<AppRouter>;  Inputs["doc"]["byId"]  → { id: string }
@@ -167,9 +164,9 @@ export const handleRpc = createFetchHandler({
     docs,
   }),
   onInternalError: ({ incidentId, phase, cause, procedurePath }) => {
-    logger.error({ incidentId, phase, cause, procedurePath })
+    logger.error({ incidentId, phase, cause, procedurePath });
   },
-})
+});
 ```
 
 `onError` is the observability tap: it fires for every declared error that
@@ -179,8 +176,8 @@ one hook feeds metrics and logging:
 
 ```ts
 onError: ({ error, policy, procedurePath, httpStatus }) => {
-  metrics.count(error._tag, { severity: policy?.severity })
-}
+  metrics.count(error._tag, { severity: policy?.severity });
+};
 ```
 
 Malformed input is the client's fault, not an incident: it becomes a public

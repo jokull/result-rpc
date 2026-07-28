@@ -5,7 +5,12 @@ import { err, error, ok, wire } from "../index.js";
 import { createClient } from "../client/client.js";
 import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
-import { createQueryRuntime, type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
+import {
+  createQueryRuntime,
+  type MutationState,
+  type QueryState,
+  type SubscriptionState,
+} from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../framework-errors.js";
@@ -17,23 +22,25 @@ import {
   useResultSuspenseQuery,
 } from "./index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const r = rpc.context<{}>();
-const value = r.procedure()
+const value = r
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .query(({ input }) => ok(input.id));
 const SessionExpired = error({ tag: "session/expired", httpStatus: 401 });
-const rename = r.procedure()
+const rename = r
+  .procedure()
   .input(wire.object({ title: wire.string }))
   .output(wire.string)
   .errors({ SessionExpired })
-  .mutation(({ input }) => input.title === "expired"
-    ? err(SessionExpired())
-    : ok(input.title));
-const eventContract = r.procedure()
+  .mutation(({ input }) => (input.title === "expired" ? err(SessionExpired()) : ok(input.title)));
+const eventContract = r
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .subscription();
@@ -67,7 +74,11 @@ describe("React bindings", () => {
 
     let renderer: ReactTestRenderer | undefined;
     await act(async () => {
-      renderer = create(<ResultRpcProvider runtime={runtime}><Probe /></ResultRpcProvider>);
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Probe />
+        </ResultRpcProvider>,
+      );
       await settle();
     });
     expect(queryState?.state).toBe("success");
@@ -94,7 +105,9 @@ describe("React bindings", () => {
     await act(async () => {
       renderer = create(
         <ResultRpcProvider runtime={runtime}>
-          <SessionShell.Provider><Probe /></SessionShell.Provider>
+          <SessionShell.Provider>
+            <Probe />
+          </SessionShell.Provider>
         </ResultRpcProvider>,
       );
       await settle();
@@ -134,7 +147,9 @@ describe("React bindings", () => {
       renderer = create(
         <ResultRpcProvider runtime={runtime}>
           <SubscriptionProbe />
-          <Suspense fallback={<span>loading</span>}><SuspenseProbe /></Suspense>
+          <Suspense fallback={<span>loading</span>}>
+            <SuspenseProbe />
+          </Suspense>
         </ResultRpcProvider>,
       );
       await settle();
@@ -172,7 +187,11 @@ describe("React bindings", () => {
 
     let renderer: ReactTestRenderer | undefined;
     await act(async () => {
-      renderer = create(<ResultRpcProvider runtime={runtime}><Host /></ResultRpcProvider>);
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Host />
+        </ResultRpcProvider>,
+      );
       await settle();
     });
     await act(async () => {
@@ -204,7 +223,11 @@ describe("React bindings", () => {
 
     let renderer: ReactTestRenderer | undefined;
     await act(async () => {
-      renderer = create(<ResultRpcProvider runtime={runtime}><Probe /></ResultRpcProvider>);
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Probe />
+        </ResultRpcProvider>,
+      );
       await settle();
     });
     let rejection: unknown;

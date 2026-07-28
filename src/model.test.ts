@@ -46,8 +46,9 @@ describe("defineModel", () => {
   });
 
   test("a missing key field in the shape is rejected at definition", () => {
-    expect(() => defineModel("broken", { key: "id" as never, shape: { name: wire.string } }))
-      .toThrow('key "id"');
+    expect(() =>
+      defineModel("broken", { key: "id" as never, shape: { name: wire.string } }),
+    ).toThrow('key "id"');
   });
 });
 
@@ -71,11 +72,15 @@ describe("collectEntities", () => {
 
   test("entities inside Map and Set values are collected", () => {
     const decoded = Doc.all("test fixture").decode({
-      id: "d1", title: "A", author: { id: "u1", name: "J", avatarUrl: "x" },
+      id: "d1",
+      title: "A",
+      author: { id: "u1", name: "J", avatarUrl: "x" },
     });
     if (!decoded.ok) throw new Error("decode failed");
     const container = new Map([["docs", new Set([decoded.value])]]);
-    const keys = collectEntities(container).map((entity) => entity.model.name).sort();
+    const keys = collectEntities(container)
+      .map((entity) => entity.model.name)
+      .sort();
     expect(keys).toEqual(["doc", "user"]);
   });
 });
@@ -93,7 +98,8 @@ describe("patchEntity", () => {
   test("replaces every occurrence by identity and leaves unrelated subtrees by reference", () => {
     const root = decode();
     const { value, changed } = patchEntity(root, User as never, "u1", (current) =>
-      mergeByExistingKeys(current, { avatarUrl: "new.png" }));
+      mergeByExistingKeys(current, { avatarUrl: "new.png" }),
+    );
     expect(changed).toBe(true);
     const docs = value as readonly { title: string; author: { avatarUrl: string } }[];
     expect(docs[0]!.author.avatarUrl).toBe("new.png");
@@ -106,9 +112,11 @@ describe("patchEntity", () => {
   test("patched entity objects stay branded, so a second patch still finds them", () => {
     const root = decode();
     const first = patchEntity(root, User as never, "u1", (current) =>
-      mergeByExistingKeys(current, { avatarUrl: "v2.png" }));
+      mergeByExistingKeys(current, { avatarUrl: "v2.png" }),
+    );
     const second = patchEntity(first.value, User as never, "u1", (current) =>
-      mergeByExistingKeys(current, { avatarUrl: "v3.png" }));
+      mergeByExistingKeys(current, { avatarUrl: "v3.png" }),
+    );
     expect(second.changed).toBe(true);
     const docs = second.value as readonly { author: { avatarUrl: string } }[];
     expect(docs[0]!.author.avatarUrl).toBe("v3.png");
@@ -117,7 +125,8 @@ describe("patchEntity", () => {
   test("no matching change returns the original root by reference", () => {
     const root = decode();
     const unchanged = patchEntity(root, User as never, "u1", (current) =>
-      mergeByExistingKeys(current, { avatarUrl: "old.png" }));
+      mergeByExistingKeys(current, { avatarUrl: "old.png" }),
+    );
     expect(unchanged.changed).toBe(false);
     expect(unchanged.value).toBe(root);
     const missing = patchEntity(root, User as never, "nobody", (current) => current);
@@ -133,15 +142,20 @@ describe("patchEntity", () => {
     const { value } = patchEntity(root, Doc as never, "d1", (current) =>
       mergeByExistingKeys(current, {
         title: "renamed",
-        author: { id: "u9" },      // not in the projection: must not appear
-      }));
+        author: { id: "u9" }, // not in the projection: must not appear
+      }),
+    );
     const summary = (value as Record<string, unknown>[])[0]!;
     expect(summary).toEqual({ id: "d1", title: "renamed" });
     expect("author" in summary).toBe(false);
   });
 
   test("cycles and shared references survive patching", () => {
-    interface Node extends Record<string, unknown> { id: string; title: string; self?: Node }
+    interface Node extends Record<string, unknown> {
+      id: string;
+      title: string;
+      self?: Node;
+    }
     const decoded = Doc.pick("id", "title").decode({ id: "d1", title: "A" });
     if (!decoded.ok) throw new Error("decode failed");
     const node = decoded.value as unknown as Node;
@@ -149,7 +163,8 @@ describe("patchEntity", () => {
     const shared = { node };
     const root = { left: shared, right: shared };
     const { value, changed } = patchEntity(root, Doc as never, "d1", (current) =>
-      mergeByExistingKeys(current, { title: "B" }));
+      mergeByExistingKeys(current, { title: "B" }),
+    );
     expect(changed).toBe(true);
     const patched = value as { left: { node: Node }; right: { node: Node } };
     expect(patched.left.node.title).toBe("B");

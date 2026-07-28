@@ -10,11 +10,7 @@
  */
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  useResultMutation,
-  useResultPaginatedQuery,
-  useResultQuery,
-} from "result-rpc/react";
+import { useResultMutation, useResultPaginatedQuery, useResultQuery } from "result-rpc/react";
 import { client } from "../rpc-client.js";
 import type { SpotRow } from "../models.js";
 import { FeedSkeleton, StatsSkeleton } from "./skeleton.js";
@@ -65,11 +61,7 @@ export const Feed = () => {
         ))}
       </ul>
       {feed.hasNext && (
-        <button
-          className="load-more"
-          onClick={feed.fetchNext}
-          disabled={feed.fetchingNext}
-        >
+        <button className="load-more" onClick={feed.fetchNext} disabled={feed.fetchingNext}>
           {feed.fetchingNext ? "Loading…" : "Load more"}
         </button>
       )}
@@ -130,11 +122,7 @@ export const AddSpotForm = () => {
         placeholder="Suggest a spot (unique name)"
         aria-label="Spot name"
       />
-      <select
-        value={city}
-        onChange={(e) => setCity(e.target.value)}
-        aria-label="City"
-      >
+      <select value={city} onChange={(e) => setCity(e.target.value)} aria-label="City">
         {["Kyoto", "Tokyo", "Osaka", "Nara", "Kanazawa", "Hakone"].map((c) => (
           <option key={c}>{c}</option>
         ))}

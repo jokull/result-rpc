@@ -15,10 +15,10 @@ export const cancelled = Object.freeze({
 });
 
 export const isCancelled = (value: unknown): value is typeof cancelled =>
-  value !== null
-  && typeof value === "object"
-  && "_tag" in value
-  && value._tag === "control/cancelled";
+  value !== null &&
+  typeof value === "object" &&
+  "_tag" in value &&
+  value._tag === "control/cancelled";
 
 /**
  * The control sentinel a shell-claimed mutation rejects with. Same family as
@@ -36,10 +36,10 @@ export const claimed = (info: { readonly tag: string; readonly owner: string }) 
 export type ClaimedSignal = ReturnType<typeof claimed>;
 
 export const isClaimed = (value: unknown): value is ClaimedSignal =>
-  value !== null
-  && typeof value === "object"
-  && "_tag" in value
-  && value._tag === "control/claimed";
+  value !== null &&
+  typeof value === "object" &&
+  "_tag" in value &&
+  value._tag === "control/claimed";
 
 export interface TransportResponse {
   readonly status: number;
@@ -73,10 +73,7 @@ export interface TransportRequestOptions {
 }
 
 export interface ClientTransport {
-  request(
-    envelope: RequestEnvelope,
-    options?: TransportRequestOptions,
-  ): Promise<TransportOutcome>;
+  request(envelope: RequestEnvelope, options?: TransportRequestOptions): Promise<TransportOutcome>;
   stream?(
     envelope: RequestEnvelope,
     options?: TransportRequestOptions,
@@ -229,9 +226,7 @@ interface PendingBatchItem {
 }
 
 /** Coalesces calls made in the same microtask into one HTTP request. */
-export const batchFetchTransport = (
-  options: BatchFetchTransportOptions,
-): ClientTransport => {
+export const batchFetchTransport = (options: BatchFetchTransportOptions): ClientTransport => {
   const maxItems = options.maxItems ?? 20;
   if (!Number.isSafeInteger(maxItems) || maxItems < 1) {
     throw new TypeError("maxItems must be a positive integer");
@@ -264,9 +259,9 @@ export const batchFetchTransport = (
       return;
     }
 
-    const timeoutMs = Math.min(...active.map(
-      (item) => item.options.timeoutMs ?? options.timeoutMs ?? 30_000,
-    ));
+    const timeoutMs = Math.min(
+      ...active.map((item) => item.options.timeoutMs ?? options.timeoutMs ?? 30_000),
+    );
     const timeoutController = new AbortController();
     let timedOut = false;
     const timeout = setTimeout(() => {
@@ -368,15 +363,16 @@ export const batchFetchTransport = (
 
   const streaming = fetchTransport(options);
   return {
-    request: (envelope, requestOptions = {}) => new Promise((resolve, reject) => {
-      if (requestOptions.signal?.aborted) return reject(cancelled);
-      queue.push({ envelope, options: requestOptions, resolve, reject });
-      if (queue.length >= maxItems) void flush();
-      else if (!scheduled) {
-        scheduled = true;
-        queueMicrotask(flush);
-      }
-    }),
+    request: (envelope, requestOptions = {}) =>
+      new Promise((resolve, reject) => {
+        if (requestOptions.signal?.aborted) return reject(cancelled);
+        queue.push({ envelope, options: requestOptions, resolve, reject });
+        if (queue.length >= maxItems) void flush();
+        else if (!scheduled) {
+          scheduled = true;
+          queueMicrotask(flush);
+        }
+      }),
     stream: streaming.stream!,
   };
 };

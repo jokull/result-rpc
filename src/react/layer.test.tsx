@@ -1,14 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import {
-  defectErrors,
-  defineLayer,
-  err,
-  error,
-  ok,
-  transportErrors,
-  wire,
-} from "../index.js";
+import { defectErrors, defineLayer, err, error, ok, transportErrors, wire } from "../index.js";
 import { createClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
@@ -16,8 +8,9 @@ import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { ResultRpcProvider, defineShell, layerShell } from "./index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const Unauthorized = error({
   tag: "auth/unauthorized",
@@ -53,7 +46,8 @@ const app = rpc.context<AppContext>();
 const authenticated = AuthLayer.middleware(app, async ({ context, errors }) =>
   context.sessionUserId === undefined
     ? err(errors.Unauthorized({}))
-    : ok({ id: context.sessionUserId, email: `${context.sessionUserId}@example.test` }));
+    : ok({ id: context.sessionUserId, email: `${context.sessionUserId}@example.test` }),
+);
 
 // shared: the context procedure contract, also derived
 const whoamiContract = AuthLayer.contract(app);
@@ -61,7 +55,8 @@ const whoamiContract = AuthLayer.contract(app);
 // server: its implementation is the middleware's context value, nothing else
 const whoami = AuthLayer.procedure(app, whoamiContract, authenticated);
 
-const docById = app.procedure()
+const docById = app
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(wire.string)
   .errors({ Unauthorized, TripNotFound })
@@ -248,8 +243,7 @@ describe("layer factory", () => {
       name: "viewer",
       provides: UserCodec,
       errors: { Unauthorized },
-      refine: ({ value, errors }) =>
-        value === null ? err(errors.Unauthorized({})) : ok(value),
+      refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized({})) : ok(value)),
     });
 
     interface CookieContext {
@@ -257,7 +251,8 @@ describe("layer factory", () => {
     }
     const cookieApp = rpc.context<CookieContext>();
     const session = SessionLayer.middleware(cookieApp, ({ context }) =>
-      ok(context.cookieUserId === undefined ? null : { id: context.cookieUserId }));
+      ok(context.cookieUserId === undefined ? null : { id: context.cookieUserId }),
+    );
     const requireViewer = ViewerLayer.middleware(cookieApp);
 
     const sessionContract = SessionLayer.contract(cookieApp);
@@ -265,7 +260,8 @@ describe("layer factory", () => {
     const cookieRouter = cookieApp.router({
       session: SessionLayer.procedure(cookieApp, sessionContract, session),
       viewer: ViewerLayer.procedure(cookieApp, viewerContract, session, requireViewer),
-      greet: cookieApp.procedure()
+      greet: cookieApp
+        .procedure()
         .input(wire.object({}))
         .output(wire.string)
         .use(session)
@@ -345,8 +341,7 @@ describe("layer factory", () => {
       name: "viewer-c",
       provides: UserCodec,
       errors: { Unauthorized },
-      refine: ({ value, errors }) =>
-        value === null ? err(errors.Unauthorized({})) : ok(value),
+      refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized({})) : ok(value)),
     });
 
     let sessionRuns = 0;
@@ -360,13 +355,15 @@ describe("layer factory", () => {
 
     const cookieRouter = cookieApp.router({
       // only the bundled middleware is used; session comes along in order
-      greet: cookieApp.procedure()
+      greet: cookieApp
+        .procedure()
         .input(wire.object({}))
         .output(wire.string)
         .use(requireViewer)
         .query(({ context }) => ok(`hi ${context.viewer.id}`)),
       // explicit + bundled: session must still run exactly once per request
-      both: cookieApp.procedure()
+      both: cookieApp
+        .procedure()
         .input(wire.object({}))
         .output(wire.string)
         .use(session)
@@ -406,8 +403,7 @@ describe("layer factory", () => {
       name: "viewer-resume",
       provides: UserCodec,
       errors: { Unauthorized },
-      refine: ({ value, errors }) =>
-        value === null ? err(errors.Unauthorized()) : ok(value),
+      refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized()) : ok(value)),
     });
 
     // mutable server-side session: starts valid, gets revoked, comes back
@@ -415,11 +411,13 @@ describe("layer factory", () => {
     let serial = 0;
     const app2 = rpc.context<{}>();
     const session2 = SessionLayer2.middleware(app2, () =>
-      ok(sessionUser === undefined ? null : { id: sessionUser }));
+      ok(sessionUser === undefined ? null : { id: sessionUser }),
+    );
     const authenticated2 = ViewerLayer2.middleware(app2, session2);
     const router2 = app2.router({
       me: ViewerLayer2.procedure(app2, authenticated2),
-      secret: app2.procedure()
+      secret: app2
+        .procedure()
         .output(wire.string)
         .errors({ Unauthorized })
         .use(authenticated2)
@@ -498,11 +496,13 @@ describe("layer factory", () => {
       provides: wire.union([wire.object({}), wire.null] as const),
       errors: {},
     });
-    expect(() => SessionLayer.require({
-      name: "viewer-b",
-      provides: wire.object({}),
-      errors: {},
-      refine: ({ value }) => ok(value ?? {}),
-    })).toThrow(/cannot fail is the parent layer/);
+    expect(() =>
+      SessionLayer.require({
+        name: "viewer-b",
+        provides: wire.object({}),
+        errors: {},
+        refine: ({ value }) => ok(value ?? {}),
+      }),
+    ).toThrow(/cannot fail is the parent layer/);
   });
 });

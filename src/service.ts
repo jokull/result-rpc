@@ -19,10 +19,7 @@
 
 type MaybePromise<T> = T | Promise<T>;
 
-export interface ServiceDefinition<
-  TValue,
-  TNeeds extends ServiceDefinitionMap = {},
-> {
+export interface ServiceDefinition<TValue, TNeeds extends ServiceDefinitionMap = {}> {
   readonly $service: true;
   readonly name: string;
   readonly needs: TNeeds;
@@ -34,22 +31,20 @@ export type AnyServiceDefinition = ServiceDefinition<any, any>;
 
 export type ServiceDefinitionMap = Readonly<Record<string, AnyServiceDefinition>>;
 
-export type ServiceValue<TDefinition> = TDefinition extends ServiceDefinition<
-  infer TValue,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any
->
-  ? TValue
-  : never;
+export type ServiceValue<TDefinition> =
+  TDefinition extends ServiceDefinition<
+    infer TValue,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any
+  >
+    ? TValue
+    : never;
 
 export type ResolvedServices<TDefinitions extends ServiceDefinitionMap> = {
   readonly [TKey in keyof TDefinitions]: ServiceValue<TDefinitions[TKey]>;
 };
 
-export interface DefineServiceOptions<
-  TValue,
-  TNeeds extends ServiceDefinitionMap,
-> {
+export interface DefineServiceOptions<TValue, TNeeds extends ServiceDefinitionMap> {
   /** Services this one depends on, by the property name `create` receives. */
   readonly needs?: TNeeds;
   readonly create: (needs: ResolvedServices<TNeeds>) => MaybePromise<TValue>;
@@ -89,9 +84,7 @@ export const resolveServices = async <const TDefinitions extends ServiceDefiniti
     const cached = memo.get(definition);
     if (cached) return cached;
     if (building.has(definition)) {
-      throw new TypeError(
-        `Service dependency cycle: ${[...path, definition.name].join(" -> ")}`,
-      );
+      throw new TypeError(`Service dependency cycle: ${[...path, definition.name].join(" -> ")}`);
     }
     building.add(definition);
     const pending = (async () => {

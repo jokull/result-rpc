@@ -28,8 +28,12 @@ describe("attack-11 double apply", () => {
   test("output entity + handler touch(): the patched query is not refetched", async () => {
     const db = { user: { id: "u1", name: "old" } };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-    const setName = app.procedure()
+    const me = app
+      .procedure()
+      .output(User.all("test fixture"))
+      .query(({ context }) => ok(context.db.user));
+    const setName = app
+      .procedure()
       .input(wire.object({ name: wire.string }))
       .output(User.all("test fixture"))
       .mutation(({ input, context, touch }) => {
@@ -67,7 +71,10 @@ describe("attack-11 double apply", () => {
     // delivered the fresh fields, invalidating the same query is double-apply.
     expect(requests).toBe(before + 1);
 
-    stop(); header.destroy(); mutation.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    mutation.destroy();
+    runtime.clear();
   });
 
   test("cross-entity casualty: patching entity A kills touch-invalidation for entity B in the same query", async () => {
@@ -80,15 +87,17 @@ describe("attack-11 double apply", () => {
       doc: { id: "d1", title: "Roadmap" } as { id: string; title: string } | undefined,
     };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const docs = app.procedure()
+    const docs = app
+      .procedure()
       .output(wire.array(Doc.all("test fixture")))
-      .query(({ context }) => ok(context.db.doc
-        ? [{ ...context.db.doc, author: context.db.user }]
-        : []));
+      .query(({ context }) =>
+        ok(context.db.doc ? [{ ...context.db.doc, author: context.db.user }] : []),
+      );
     // One mutation: renames the user (returns the entity) AND deletes the doc
     // (touch — a deleted entity cannot be returned). Exactly the README's
     // decision table, both rows at once.
-    const renameAndPurge = app.procedure()
+    const renameAndPurge = app
+      .procedure()
       .input(wire.object({ name: wire.string }))
       .output(User.all("test fixture"))
       .mutation(({ input, context, touch }) => {
@@ -123,6 +132,9 @@ describe("attack-11 double apply", () => {
     // first, the invalidation misses and the deleted doc stays on screen.
     expect(state.value.length).toBe(0);
 
-    stop(); list.destroy(); mutation.destroy(); runtime.clear();
+    stop();
+    list.destroy();
+    mutation.destroy();
+    runtime.clear();
   });
 });

@@ -12,22 +12,23 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
 export const waitFor = <T, E extends AnyTaggedError>(
   observer: ResultQueryObserver<T, E>,
   predicate: (state: QueryState<T, E>) => boolean,
-): Promise<QueryState<T, E>> => new Promise((resolve, reject) => {
-  let unsubscribe: () => void = () => undefined;
-  const timeout = setTimeout(() => {
-    unsubscribe();
-    reject(new Error("Timed out waiting for query state"));
-  }, 6_000);
-  const check = () => {
-    const state = observer.getCurrentState();
-    if (!predicate(state)) return;
-    clearTimeout(timeout);
-    unsubscribe();
-    resolve(state);
-  };
-  unsubscribe = observer.subscribe(check);
-  check();
-});
+): Promise<QueryState<T, E>> =>
+  new Promise((resolve, reject) => {
+    let unsubscribe: () => void = () => undefined;
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Timed out waiting for query state"));
+    }, 6_000);
+    const check = () => {
+      const state = observer.getCurrentState();
+      if (!predicate(state)) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve(state);
+    };
+    unsubscribe = observer.subscribe(check);
+    check();
+  });
 
 /** Build a client over an in-process fetch handler, with a request counter. */
 export const localClient = <TRouter extends Parameters<typeof createFetchHandler>[0]["router"]>(

@@ -6,7 +6,7 @@ description: "One query, one domain error, a provider, and a hook \u2014 the sma
 The smallest possible app: one procedure, one domain error, no shells. This is
 `examples/01-hello` in the repository, verbatim.
 
-Coming from tRPC, watch for two differences. The handler *returns* its
+Coming from tRPC, watch for two differences. The handler _returns_ its
 failure — `err(...)` against a declared union — instead of throwing it. And
 the component switches over one channel that includes the transport: there is
 no `query.error` on the side, and no `Result` buried inside `query.data`
@@ -15,26 +15,28 @@ either.
 ## Declare the error and the procedure
 
 ```ts
-import { err, error, ok, rpc, wire } from "result-rpc"
+import { err, error, ok, rpc, wire } from "result-rpc";
 
 const GreetingNotFound = error({
   tag: "greeting/not-found",
   data: wire.object({ name: wire.string }),
   httpStatus: 404,
-})
+});
 
-const app = rpc.context<{}>()
+const app = rpc.context<{}>();
 
 export const router = app.router({
-  greet: app.procedure()
+  greet: app
+    .procedure()
     .input(wire.object({ name: wire.string }))
     .output(wire.string)
     .errors({ GreetingNotFound })
     .query(({ input, errors }) =>
       input.name === "nobody"
         ? err(errors.GreetingNotFound({ name: input.name }))
-        : ok(`Hello, ${input.name}!`)),
-})
+        : ok(`Hello, ${input.name}!`),
+    ),
+});
 ```
 
 The handler must return the declared Result — returning an undeclared tag is a
@@ -43,12 +45,12 @@ type error, and smuggling one at runtime yields a sanitized `server/internal`.
 ## Serve it
 
 ```ts
-import { createFetchHandler } from "result-rpc/server"
+import { createFetchHandler } from "result-rpc/server";
 
 export const handler = createFetchHandler({
   router,
   createContext: () => ({}),
-})
+});
 ```
 
 `handler` is a `(request: Request) => Promise<Response>` — mount it on any
@@ -58,41 +60,41 @@ route handlers).
 ## Call it
 
 ```ts
-import { createClient, fetchTransport } from "result-rpc/client"
+import { createClient, fetchTransport } from "result-rpc/client";
 
 export const client = createClient({
   router,
   transport: fetchTransport({ url: "/rpc" }),
-})
+});
 ```
 
 ## Render it
 
 ```tsx
-import { ResultRpcProvider, useResultQuery } from "result-rpc/react"
+import { ResultRpcProvider, useResultQuery } from "result-rpc/react";
 
 export function App({ name }: { name: string }) {
   return (
     <ResultRpcProvider client={client}>
       <Greeting name={name} />
     </ResultRpcProvider>
-  )
+  );
 }
 
 function Greeting({ name }: { name: string }) {
-  const greeting = useResultQuery(client.greet, { name })
+  const greeting = useResultQuery(client.greet, { name });
 
   switch (greeting.state) {
     case "pending":
-      return <p>…</p>
+      return <p>…</p>;
     case "success":
-      return <p>{greeting.value}</p>
+      return <p>{greeting.value}</p>;
     case "failure":
       switch (greeting.error._tag) {
         case "greeting/not-found":
-          return <p>No greeting for {greeting.error.data.name}</p>
+          return <p>No greeting for {greeting.error.data.name}</p>;
         default:
-          return <p>Something went wrong</p>
+          return <p>Something went wrong</p>;
       }
   }
 }

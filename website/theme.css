@@ -27,7 +27,9 @@ textarea {
   font-family: var(--blume-font-body);
 }
 
-body { background: var(--result-canvas); }
+body {
+  background: var(--result-canvas);
+}
 
 h1,
 h2,

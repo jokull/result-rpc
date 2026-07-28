@@ -61,12 +61,12 @@ should now contain this new doc" needs a declaration — the same boundary
 Graphcache draws with manual updaters, except ours is typed and lives in
 the contract. The mutation writer's decision table:
 
-| The write changes… | Use |
-| --- | --- |
-| Fields of an entity | return the entity — auto-patch everywhere |
-| Fields, but the output must stay scalar | `.writes(Doc, (input) => input.id)` — invalidation by identity |
-| List membership | `.affects(listQuery)` |
-| Entities the output can't mention (cascades, **deletes**) | `touch(Model, id)` in the handler |
+| The write changes…                                        | Use                                                            |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| Fields of an entity                                       | return the entity — auto-patch everywhere                      |
+| Fields, but the output must stay scalar                   | `.writes(Doc, (input) => input.id)` — invalidation by identity |
+| List membership                                           | `.affects(listQuery)`                                          |
+| Entities the output can't mention (cascades, **deletes**) | `touch(Model, id)` in the handler                              |
 
 `touch` rides the response envelope as `model:id` keys — identities only,
 never values — and invalidates by identity client-side:
@@ -89,13 +89,13 @@ const rename = useResultMutation(client.doc.rename, {
     rollback: cache.updateEntity(Doc, input.id, (doc) => ({ ...doc, title: input.title })),
   }),
   onFailure: (_e, _i, ctx) => ctx?.rollback(),
-})
+});
 ```
 
 One line patches the detail view, every list row, every breadcrumb. And if
 the client mints ids (cuid2, nanoid, uuidv7), optimistic **creates** stop
 being a reconciliation problem: the optimistic entity is born under its
-*final* identity, so the server's response is a no-op patch or a field
+_final_ identity, so the server's response is a no-op patch or a field
 correction — nothing re-keys, nothing flickers, and the id doubles as a
 natural idempotency key. Add
 [fractional indexing](https://github.com/rocicorp/fractional-indexing) and
@@ -145,24 +145,29 @@ ergonomics:
 ```ts
 export const User = defineModel("user", {
   key: "id",
-  shape: { id: wire.string, name: wire.string, email: wire.string,
-           latestLat: wire.number, latestLng: wire.number },
-})
+  shape: {
+    id: wire.string,
+    name: wire.string,
+    email: wire.string,
+    latestLat: wire.number,
+    latestLng: wire.number,
+  },
+});
 
 // Name the audiences once, beside the model.
-export const UserRef  = User.pick("id", "name")                  // a mention
-export const UserCard = User.pick("id", "name", "avatarUrl")     // a card
-export const UserSelf = User.all("the viewer is the subject of this record")
+export const UserRef = User.pick("id", "name"); // a mention
+export const UserCard = User.pick("id", "name", "avatarUrl"); // a card
+export const UserSelf = User.all("the viewer is the subject of this record");
 ```
 
 ```ts
-friends.output(wire.array(UserCard))   // can only ever ship three fields
-me.output(UserSelf)                     // wide, and it says why
+friends.output(wire.array(UserCard)); // can only ever ship three fields
+me.output(UserSelf); // wide, and it says why
 ```
 
 **Why it is not merely style.** The dangerous version of this bug is not
 picking the wrong field today — that is visible in the diff of the endpoint
-that leaks. It is someone adding `latestLat` to the model *next month* for the
+that leaks. It is someone adding `latestLat` to the model _next month_ for the
 profile page, and every output that consumed the whole model silently
 beginning to ship it. That leak appears in a diff which does not touch the
 leaking endpoint, so no reviewer of that change is looking at your friend
@@ -171,11 +176,11 @@ which closes the entire class.
 
 Three forms, in order of how often you should reach for them:
 
-| Form | Use it for |
-| --- | --- |
-| `Model.pick("id", …)` | the flat 80% case; the key field is mandatory |
-| `Model.select({ … })` | nesting and computed fields (below) |
-| `Model.all("why")` | genuinely every field — costs a sentence that lands in review |
+| Form                  | Use it for                                                    |
+| --------------------- | ------------------------------------------------------------- |
+| `Model.pick("id", …)` | the flat 80% case; the key field is mandatory                 |
+| `Model.select({ … })` | nesting and computed fields (below)                           |
+| `Model.all("why")`    | genuinely every field — costs a sentence that lands in review |
 
 `select` takes one flat map: `true` for the model's own fields, a **codec** for
 anything nested or computed, so relationships and one-off aggregates read
@@ -185,10 +190,10 @@ alike and every level keeps entity identity:
 export const HotelCard = Hotel.select({
   id: true,
   name: true,
-  topReviewer: UserCard,                    // another model's view — still patches
-  recentReviews: wire.array(ReviewRow),     // to-many
-  reviewCount: wire.number,                 // computed, not a column
-})
+  topReviewer: UserCard, // another model's view — still patches
+  recentReviews: wire.array(ReviewRow), // to-many
+  reviewCount: wire.number, // computed, not a column
+});
 ```
 
 Be clear-eyed about what this buys: **selection is not authorization.** Picking
@@ -198,9 +203,9 @@ reviewable act instead of an invisible consequence of an edit somewhere else.
 
 Two supporting properties make the guarantee hold end to end. With the
 [Drizzle bridge](/guides/drizzle/) there are two allowlists, and they answer
-different questions — `columns:` on the model asks *may this column ever leave
-the database* (`passwordHash`: never, anywhere), while `.pick()` at the output
-asks *does this endpoint ship it*. And at the cache layer, a patch only
+different questions — `columns:` on the model asks _may this column ever leave
+the database_ (`passwordHash`: never, anywhere), while `.pick()` at the output
+asks _does this endpoint ship it_. And at the cache layer, a patch only
 overwrites keys a row **already holds**, so a mutation returning `UserSelf`
 cannot add coordinates to a cached `UserCard` row.
 
@@ -212,7 +217,7 @@ shape must be classified. Every new query starts life as one-off
 a model when you notice recurrence, and apply one rule: **will a mutation
 somewhere else ever need to update this field on this screen without a
 refetch?** No → leave it a one-off. Yes → model the keyed core, and
-only its *context-free* fields — values that are true about the entity in
+only its _context-free_ fields — values that are true about the entity in
 every query (`name`, `phone`), never values relative to the query's input (a
 `minAvailable` computed over the requested date range lives in the
 surrounding one-off shape, where it is immune to patching by construction).

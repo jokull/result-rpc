@@ -13,7 +13,5 @@ const client = createClient({
 
 test("01-hello round-trips success and failure over the wire", async () => {
   expect(await client.greet({ name: "Jokull" })).toEqual(ok("Hello, Jokull!"));
-  expect(await client.greet({ name: "nobody" })).toEqual(
-    err(GreetingNotFound({ name: "nobody" })),
-  );
+  expect(await client.greet({ name: "nobody" })).toEqual(err(GreetingNotFound({ name: "nobody" })));
 });

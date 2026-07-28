@@ -48,73 +48,63 @@ const feed = app.implement(feedContract).handler(async ({ input, context }) => {
   });
 });
 
-const spotById = app
-  .implement(spotByIdContract)
-  .handler(async ({ input, errors, context }) => {
-    const row = (
-      await context.db.select().from(spots).where(eq(spots.id, input.id)).limit(1)
-    )[0];
-    if (!row) return err(errors.notFound({ spotId: input.id }));
-    return ok(row);
-  });
+const spotById = app.implement(spotByIdContract).handler(async ({ input, errors, context }) => {
+  const row = (await context.db.select().from(spots).where(eq(spots.id, input.id)).limit(1))[0];
+  if (!row) return err(errors.notFound({ spotId: input.id }));
+  return ok(row);
+});
 
-const likeSpot = app
-  .implement(likeSpotContract)
-  .handler(async ({ input, errors, context }) => {
-    // Reference the canary against runtime input so the minifier cannot
-    // constant-fold it away — it must survive in the SERVER bundle only.
-    if (input.id === SERVER_SECRET) {
-      return err(errors.notFound({ spotId: SERVER_SECRET }));
-    }
-    const updated = (
-      await context.db
-        .update(spots)
-        .set({ likes: sql`${spots.likes} + 1` })
-        .where(eq(spots.id, input.id))
-        .returning()
-    )[0];
-    if (!updated) return err(errors.notFound({ spotId: input.id }));
-    return ok(updated);
-  });
+const likeSpot = app.implement(likeSpotContract).handler(async ({ input, errors, context }) => {
+  // Reference the canary against runtime input so the minifier cannot
+  // constant-fold it away — it must survive in the SERVER bundle only.
+  if (input.id === SERVER_SECRET) {
+    return err(errors.notFound({ spotId: SERVER_SECRET }));
+  }
+  const updated = (
+    await context.db
+      .update(spots)
+      .set({ likes: sql`${spots.likes} + 1` })
+      .where(eq(spots.id, input.id))
+      .returning()
+  )[0];
+  if (!updated) return err(errors.notFound({ spotId: input.id }));
+  return ok(updated);
+});
 
-const addSpot = app
-  .implement(addSpotContract)
-  .handler(async ({ input, errors, context }) => {
-    const row = {
-      id: `spot-${Date.now().toString(36)}`,
-      name: input.name,
-      city: input.city,
-      description: input.description,
-      likes: 0,
-    };
-    // Attempting the insert IS the uniqueness check — `tryDb` turns the
-    // constraint outcome into a Result instead of a thrown driver error.
-    const inserted = await tryDb(context.db.insert(spots).values(row).returning());
-    if (!inserted.ok) {
-      return matchError(inserted.error, {
-        "db/unique-violation": () => err(errors.nameTaken({ name: input.name })),
-        "db/foreign-key-violation": (e) => {
-          throw e;
-        },
-        "db/not-null-violation": (e) => {
-          throw e;
-        },
-        "db/check-violation": (e) => {
-          throw e;
-        },
-        "db/query-failure": (e) => {
-          throw e;
-        },
-      });
-    }
-    return ok(inserted.value[0]!);
-  });
+const addSpot = app.implement(addSpotContract).handler(async ({ input, errors, context }) => {
+  const row = {
+    id: `spot-${Date.now().toString(36)}`,
+    name: input.name,
+    city: input.city,
+    description: input.description,
+    likes: 0,
+  };
+  // Attempting the insert IS the uniqueness check — `tryDb` turns the
+  // constraint outcome into a Result instead of a thrown driver error.
+  const inserted = await tryDb(context.db.insert(spots).values(row).returning());
+  if (!inserted.ok) {
+    return matchError(inserted.error, {
+      "db/unique-violation": () => err(errors.nameTaken({ name: input.name })),
+      "db/foreign-key-violation": (e) => {
+        throw e;
+      },
+      "db/not-null-violation": (e) => {
+        throw e;
+      },
+      "db/check-violation": (e) => {
+        throw e;
+      },
+      "db/query-failure": (e) => {
+        throw e;
+      },
+    });
+  }
+  return ok(inserted.value[0]!);
+});
 
 const overview = app.implement(overviewContract).handler(async ({ context }) => {
   const totals = (
-    await context.db
-      .select({ spotCount: count(), totalLikes: sum(spots.likes) })
-      .from(spots)
+    await context.db.select({ spotCount: count(), totalLikes: sum(spots.likes) }).from(spots)
   )[0]!;
   const top = (
     await context.db

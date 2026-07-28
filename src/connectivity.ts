@@ -62,9 +62,7 @@ const attach = () => {
  * first subscriber and detach on the last, so SSR and node test runs that
  * never subscribe pay nothing.
  */
-export const subscribeConnectivity = (
-  listener: ConnectivityListener,
-): (() => void) => {
+export const subscribeConnectivity = (listener: ConnectivityListener): (() => void) => {
   if (listeners.size === 0) attach();
   listeners.add(listener);
   return () => {

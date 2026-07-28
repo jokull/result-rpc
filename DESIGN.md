@@ -9,11 +9,11 @@ failures are declared tagged instances with a canonical wire form. There is no p
 
 Research was performed against clean, current `main` checkouts on 2026-07-22:
 
-| Project | Commit | Relevant prior art |
-| --- | --- | --- |
-| better-result | `0d1d792f4e409cf08cbee1a10a64ec951636577f` (v2.10.0) | Result composition, generator inference, tagged matching |
-| tRPC | `340811ba5320637fbaf48fccf3dbfdd258bd34db` | Mature RPC lifecycle, batching, links, TanStack Query integration |
-| oRPC | `428ad93edc4a718783f9cabda82cce0b10d155e5` | Per-procedure error maps, middleware error composition, schema-shaped error data |
+| Project       | Commit                                               | Relevant prior art                                                               |
+| ------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| better-result | `0d1d792f4e409cf08cbee1a10a64ec951636577f` (v2.10.0) | Result composition, generator inference, tagged matching                         |
+| tRPC          | `340811ba5320637fbaf48fccf3dbfdd258bd34db`           | Mature RPC lifecycle, batching, links, TanStack Query integration                |
+| oRPC          | `428ad93edc4a718783f9cabda82cce0b10d155e5`           | Per-procedure error maps, middleware error composition, schema-shaped error data |
 
 ## What overlaps, and where each abstraction stops
 
@@ -27,16 +27,12 @@ Research was performed against clean, current `main` checkouts on 2026-07-22:
   endpoint-specific `ORPCError<Code, Data>` unions. It still appends
   `ThrowableError`, which defaults to `Error`.
 
-The missing abstraction is a *closed operation failure union* that is accumulated
+The missing abstraction is a _closed operation failure union_ that is accumulated
 by server composition and expanded by each client-side boundary.
 
 ```ts
 type CallError<P> =
-  | GlobalErrors<P>
-  | MiddlewareErrors<P>
-  | ProcedureErrors<P>
-  | TransportErrors
-  | ProtocolErrors
+  GlobalErrors<P> | MiddlewareErrors<P> | ProcedureErrors<P> | TransportErrors | ProtocolErrors;
 ```
 
 No open `Error`, `unknown`, or string is part of this public union.
@@ -145,15 +141,15 @@ TanStack's `data: T | undefined` and `error: E | null` model. If `T` itself is
 `Result<Value, DomainError>`, the UI receives:
 
 ```ts
-data: Result<Value, DomainError> | undefined
-error: TransportOrFrameworkError | null
+data: Result<Value, DomainError> | undefined;
+error: TransportOrFrameworkError | null;
 ```
 
 Treating `Err` as successful query data also disables or distorts retries,
 `failureCount`, paused-network behavior, error boundaries, and failed-query cache
 semantics.
 
-The adapter should instead reject tagged failures *internally* so TanStack Query
+The adapter should instead reject tagged failures _internally_ so TanStack Query
 can do its job, then project the observer state into one public `Result` channel.
 The cache contains successful `T`, not `Result<T, E>`.
 
@@ -191,7 +187,7 @@ type ClientBoundaryError =
   | Tagged<"client/timeout", { timeoutMs: number }>
   | Tagged<"client/http-failure", { status: number }>
   | Tagged<"client/protocol-violation", { reason: ProtocolReason }>
-  | Tagged<"client/decode-failure", { target: "success" | "error" }>
+  | Tagged<"client/decode-failure", { target: "success" | "error" }>;
 ```
 
 Do not put response bodies, headers, raw thrown values, or URLs containing secrets
@@ -285,12 +281,12 @@ const DocNotFound = error({
   httpStatus: 404,
   retry: "never",
   visibility: "public",
-})
+});
 
-const failure = DocNotFound({ docId: "doc_123" })
-failure instanceof Error       // true
-DocNotFound.is(failure)         // true
-failure.toJSON()                // { _tag: "doc/not-found", data: { docId: "doc_123" } }
+const failure = DocNotFound({ docId: "doc_123" });
+failure instanceof Error; // true
+DocNotFound.is(failure); // true
+failure.toJSON(); // { _tag: "doc/not-found", data: { docId: "doc_123" } }
 ```
 
 Properties:
@@ -311,8 +307,7 @@ Use a plain discriminated union:
 
 ```ts
 type Result<T, E extends AnyTaggedError> =
-  | Readonly<{ ok: true; value: T }>
-  | Readonly<{ ok: false; error: E }>
+  Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; error: E }>;
 ```
 
 Standalone combinators preserve better-result's best type behavior:
@@ -335,26 +330,25 @@ tests assert the actual byte/JSON round doc.
 The declared map is authoritative:
 
 ```ts
-const authenticated = rpc.middleware()
-  .errors({ Unauthorized })
-  .use(/* ... */)
+const authenticated = rpc.middleware().errors({ Unauthorized }).use(/* ... */);
 
-const getDoc = rpc.procedure()
+const getDoc = rpc
+  .procedure()
   .use(authenticated)
   .input(GetDocInput)
   .output(Doc)
   .errors({ DocNotFound })
   .query(async ({ input, errors }) => {
-    const doc = await findDoc(input.id)
-    if (!doc) return err(errors.DocNotFound({ docId: input.id }))
-    return ok(doc)
-  })
+    const doc = await findDoc(input.id);
+    if (!doc) return err(errors.DocNotFound({ docId: input.id }));
+    return ok(doc);
+  });
 ```
 
 The handler's error type is exactly the composed declaration:
 
 ```ts
-Result<Doc, Unauthorized | DocNotFound>
+Result<Doc, Unauthorized | DocNotFound>;
 ```
 
 Middleware maps merge into procedure maps. Tag collisions are errors unless the
@@ -366,7 +360,7 @@ by `server/internal`.
 Unknown thrown server values follow the same sanitized path:
 
 ```ts
-Tagged<"server/internal", { incidentId: string }>
+Tagged<"server/internal", { incidentId: string }>;
 ```
 
 Its HTTP status is 500 and its public text is fixed. The original message, cause,
@@ -378,18 +372,18 @@ Conceptual envelopes:
 
 ```ts
 type SuccessEnvelope<TWire extends WireValue> = {
-  ok: true
-  value: TWire
-}
+  ok: true;
+  value: TWire;
+};
 
 type FailureEnvelope = {
-  ok: false
+  ok: false;
   error: {
-    _tag: string
-    data: WireValue
-  }
-  incidentId?: string
-}
+    _tag: string;
+    data: WireValue;
+  };
+  incidentId?: string;
+};
 ```
 
 The decoder does not trust a transmitted “defined” or “inferable” flag. It:
@@ -431,10 +425,10 @@ Internally:
 
 ```ts
 const queryFn = async () => {
-  const result = await client.doc.get(input)
-  if (!result.ok) throw result.error
-  return result.value
-}
+  const result = await client.doc.get(input);
+  if (!result.ok) throw result.error;
+  return result.value;
+};
 ```
 
 The query engine caches `Doc`, retries tagged transient failures, pauses work,
@@ -449,20 +443,20 @@ settled state as the imperative client's `Result`):
 ```ts
 type ResultQueryState<T, E> =
   | {
-      state: "pending"
-      fetch: "fetching" | "paused"
+      state: "pending";
+      fetch: "fetching" | "paused";
     }
   | {
-      state: "success"
-      value: T
-      fetch: "idle" | "fetching" | "paused"
+      state: "success";
+      value: T;
+      fetch: "idle" | "fetching" | "paused";
     }
   | {
-      state: "failure"
-      error: E
-      previous?: T
-      fetch: "idle" | "fetching" | "paused"
-    }
+      state: "failure";
+      error: E;
+      previous?: T;
+      fetch: "idle" | "fetching" | "paused";
+    };
 ```
 
 `previous` represents stale cached success after a failed refetch; it is not a

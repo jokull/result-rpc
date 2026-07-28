@@ -57,7 +57,15 @@ export type {
 } from "./service.js";
 
 export { defineLayer } from "./layer.js";
-export type { AnyLayer, DefineLayerOptions, Layer, LayerErrors, LayerShape, LayerValue, RequiredLayer } from "./layer.js";
+export type {
+  AnyLayer,
+  DefineLayerOptions,
+  Layer,
+  LayerErrors,
+  LayerShape,
+  LayerValue,
+  RequiredLayer,
+} from "./layer.js";
 
 export { rpc } from "./server/contract.js";
 export type {
@@ -125,7 +133,13 @@ export type { ClientBoundaryError } from "./framework-errors.js";
 export { contractDigest } from "./contract-digest.js";
 
 export { defineModel } from "./model.js";
-export type { AnyModel, DefineModelOptions, ModelDefinition, ModelKeyInput, ModelValue } from "./model.js";
+export type {
+  AnyModel,
+  DefineModelOptions,
+  ModelDefinition,
+  ModelKeyInput,
+  ModelValue,
+} from "./model.js";
 
 export { fieldIssues, validateStandard } from "./standard-schema.js";
 export type { StandardValidation } from "./standard-schema.js";

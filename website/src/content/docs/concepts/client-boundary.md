@@ -30,12 +30,12 @@ close over ship to every visitor.
 
 Two different values, two different payloads:
 
-- **`contract()`** — procedure *shapes* only: input codec, output codec, declared
+- **`contract()`** — procedure _shapes_ only: input codec, output codec, declared
   error definitions, `.affects()`/`.writes()` invalidation maps. No handlers, no
   middleware. This is the browser-safe surface, and the client only ever reads
   these fields.
-- **`router()`** (and any implemented procedure) — *everything the contract has,
-  plus the handler function and its middleware chain*, which close over your
+- **`router()`** (and any implemented procedure) — _everything the contract has,
+  plus the handler function and its middleware chain_, which close over your
   database, your services, your environment. Server-only.
 
 The client engine never calls a handler — it reads `input`, `output`,
@@ -61,13 +61,13 @@ Two client entries, bundled and grepped:
 
 ```ts
 // ✅ client-good.ts — imports the standalone contract
-import { appContract } from "./contract"
-createClient({ contract: appContract, transport })
+import { appContract } from "./contract";
+createClient({ contract: appContract, transport });
 // bundle: STRIPE_SECRET_KEY → 0 hits. db driver → 0 hits.
 
 // ☠️ client-bad.ts — imports the router
-import { appRouter } from "./server"
-createClient({ router: appRouter, transport })
+import { appRouter } from "./server";
+createClient({ router: appRouter, transport });
 // bundle: STRIPE_SECRET_KEY → SHIPPED. db driver → SHIPPED.
 ```
 
@@ -112,8 +112,8 @@ export const appRouter = rpc.context<AppContext>().router({ users: { get: getUse
 
 ```ts
 // client.ts — imports the contract only
-import { appContract } from "./contract"
-export const client = createClient({ contract: appContract, transport })
+import { appContract } from "./contract";
+export const client = createClient({ contract: appContract, transport });
 ```
 
 Three cheap rules keep this honest:
@@ -128,7 +128,7 @@ Three cheap rules keep this honest:
 
 ## Isomorphic loaders are a second leak vector
 
-The rule above is about *what you import*. Some frameworks add a second hazard:
+The rule above is about _what you import_. Some frameworks add a second hazard:
 code that **looks** server-side but runs in both places.
 
 TanStack Router/Start **loaders are isomorphic** — they run on the server during
@@ -144,17 +144,17 @@ loader:
 
 ```ts
 // ☠️ the loader imports the server module directly — ships the db on client nav
-import { db } from "./db"
+import { db } from "./db";
 export const Route = createFileRoute("/")({
   loader: async () => db.query.spots.findMany(),
-})
+});
 
 // ✅ the server wall is a server function; the loader only calls it
 const loadSpots = createServerFn().handler(async () => {
-  const { db } = await import("./db")          // server-only, never bundled
-  return runtime.dehydrate()
-})
-export const Route = createFileRoute("/")({ loader: () => loadSpots() })
+  const { db } = await import("./db"); // server-only, never bundled
+  return runtime.dehydrate();
+});
+export const Route = createFileRoute("/")({ loader: () => loadSpots() });
 ```
 
 The general test applies to any framework: **for every module a client bundle can
@@ -180,7 +180,7 @@ boundary — the thing a "nasty server type graph" would otherwise cost you.
 
 ## What is safe to expose
 
-The contract *is* your public API surface, and everything in it reaches the
+The contract _is_ your public API surface, and everything in it reaches the
 client by design — that is correct and not a leak:
 
 - **Field names and shapes** in your codecs (the client must decode them).
@@ -189,7 +189,7 @@ client by design — that is correct and not a leak:
   from procedure, middleware, and layer error maps. They are server-side
   composition currency; the runtime also sanitizes an unsafe cast or
   JavaScript bypass to `server/internal` at the wire.
-- **`.affects()`/`.writes()` maps** — these run *on the client* (cache
+- **`.affects()`/`.writes()` maps** — these run _on the client_ (cache
   invalidation), so they are meant to ship. Keep them pure input→input
   transforms; never close a secret into one.
 

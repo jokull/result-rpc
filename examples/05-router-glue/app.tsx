@@ -22,7 +22,13 @@ import {
   routeShell,
   type ResultRouterContext,
 } from "./router-glue.js";
-import { SessionLayer, DocForbidden, DocLocked, DocNotFound, ViewerLayer } from "../03-docs/domain.js";
+import {
+  SessionLayer,
+  DocForbidden,
+  DocLocked,
+  DocNotFound,
+  ViewerLayer,
+} from "../03-docs/domain.js";
 import type { DocClient } from "../03-docs/ui.js";
 
 // -- shells: one chain, defined at module level ----------------------------------------
@@ -51,8 +57,8 @@ export const DocShell = defineShell({
 const rootRoute = createRootRouteWithContext<ResultRouterContext<DocClient>>()({
   component: () => (
     <BoundaryProvider>
-        <ConnectionBanner />
-        <Outlet />
+      <ConnectionBanner />
+      <Outlet />
     </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
@@ -97,7 +103,10 @@ const docRoute = createRoute({
   path: "/docs/$docId",
   // TS 7 no longer infers these from the parent route's context here, so the
   // route names the shape it already declared on the root route.
-  loader: ({ context, params }: {
+  loader: ({
+    context,
+    params,
+  }: {
     context: ResultRouterContext<DocClient>;
     params: { docId: string };
   }) => context.runtime.prefetch(context.client.doc.byId, { id: params.docId }),
@@ -173,10 +182,13 @@ function DocMissing() {
   return latest ? <p role="alert">No doc named {latest.data.docId}.</p> : null;
 }
 
-const renameMessages = errorCatalog({ DocLocked, DocForbidden }, {
-  "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
-  "doc/forbidden": () => "Only the owner can rename this doc",
-});
+const renameMessages = errorCatalog(
+  { DocLocked, DocForbidden },
+  {
+    "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+    "doc/forbidden": () => "Only the owner can rename this doc",
+  },
+);
 
 function DocDetail() {
   const { docId } = docRoute.useParams();
@@ -190,12 +202,8 @@ function DocDetail() {
     <article>
       <h1>{doc.value.title}</h1>
       <p>Viewer: {viewer.name}</p>
-      <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>
-        Rename
-      </button>
-      {rename.state === "failure" && (
-        <p role="alert">{renameMessages(rename.error)}</p>
-      )}
+      <button onClick={() => void rename.mutate({ id: docId, title: "Renamed" })}>Rename</button>
+      {rename.state === "failure" && <p role="alert">{renameMessages(rename.error)}</p>}
     </article>
   );
 }

@@ -12,22 +12,22 @@ export const docEventsContract = app
   .input(wire.object({ docId: wire.string }))
   .output(DocEvent)
   .errors({ Unauthorized, DocNotFound })
-  .subscription()
+  .subscription();
 
 export const docEvents = app
   .implement(docEventsContract)
   .use(authenticated)
   .stream(async function* ({ input, errors, context }) {
-    const doc = await context.docs.find(input.docId)
+    const doc = await context.docs.find(input.docId);
     if (!doc) {
-      yield err(errors.DocNotFound({ docId: input.docId }))
-      return
+      yield err(errors.DocNotFound({ docId: input.docId }));
+      return;
     }
 
     for await (const event of context.docs.events(input.docId)) {
-      yield ok(event)
+      yield ok(event);
     }
-  })
+  });
 ```
 
 The direct client is an async iterable of the same Result union. React
@@ -35,10 +35,10 @@ observes connection state independently from the latest event or terminal
 failure:
 
 ```tsx
-const events = useResultSubscription(client.doc.events, { docId })
+const events = useResultSubscription(client.doc.events, { docId });
 
-events.connection // "connecting" | "open" | "reconnecting" | "paused" | "closed"
-events.result     // Ok<DocEvent> | Err<GetDocEventsError> | undefined
+events.connection; // "connecting" | "open" | "reconnecting" | "paused" | "closed"
+events.result; // Ok<DocEvent> | Err<GetDocEventsError> | undefined
 ```
 
 Subscriptions are the one hook that keeps a `result` envelope. Queries and

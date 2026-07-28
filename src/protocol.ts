@@ -9,11 +9,12 @@ export const CONTRACT_HEADER = "x-result-rpc-contract";
 
 const matchesContentType = (value: string | null, mediaType: string): boolean => {
   if (value === null) return false;
-  const [type, ...parameters] = value.toLowerCase().split(";").map((part) => part.trim());
+  const [type, ...parameters] = value
+    .toLowerCase()
+    .split(";")
+    .map((part) => part.trim());
   const serializerVersions = parameters.filter((parameter) => parameter.startsWith("sv="));
-  return type === mediaType
-    && serializerVersions.length === 1
-    && serializerVersions[0] === "sv=1";
+  return type === mediaType && serializerVersions.length === 1 && serializerVersions[0] === "sv=1";
 };
 
 export const isProtocolContentType = (value: string | null): boolean =>
@@ -81,9 +82,7 @@ export const decodeRequestEnvelope = (value: unknown): RequestEnvelope | undefin
   return value as unknown as RequestEnvelope;
 };
 
-export const decodeBatchRequestEnvelope = (
-  value: unknown,
-): BatchRequestEnvelope | undefined => {
+export const decodeBatchRequestEnvelope = (value: unknown): BatchRequestEnvelope | undefined => {
   if (!isRecord(value) || value.v !== PROTOCOL_VERSION || !Array.isArray(value.batch)) {
     return undefined;
   }
@@ -102,19 +101,17 @@ export const decodeResponseEnvelope = (value: unknown): ResponseEnvelope | undef
   }
   if (value.ok === true && "value" in value) return value as unknown as SuccessEnvelope;
   if (
-    value.ok === false
-    && isRecord(value.error)
-    && typeof value.error._tag === "string"
-    && "data" in value.error
+    value.ok === false &&
+    isRecord(value.error) &&
+    typeof value.error._tag === "string" &&
+    "data" in value.error
   ) {
     return value as unknown as FailureEnvelope;
   }
   return undefined;
 };
 
-export const decodeBatchResponseEnvelope = (
-  value: unknown,
-): BatchResponseEnvelope | undefined => {
+export const decodeBatchResponseEnvelope = (value: unknown): BatchResponseEnvelope | undefined => {
   if (!isRecord(value) || value.v !== PROTOCOL_VERSION || !Array.isArray(value.batch)) {
     return undefined;
   }
@@ -132,11 +129,12 @@ export const decodeBatchResponseEnvelope = (
 
 export const decodeStreamFrame = (value: unknown): StreamFrame | undefined => {
   if (
-    !isRecord(value)
-    || value.v !== PROTOCOL_VERSION
-    || !Number.isSafeInteger(value.seq)
-    || typeof value.done !== "boolean"
-  ) return undefined;
+    !isRecord(value) ||
+    value.v !== PROTOCOL_VERSION ||
+    !Number.isSafeInteger(value.seq) ||
+    typeof value.done !== "boolean"
+  )
+    return undefined;
   if (value.done) return { v: PROTOCOL_VERSION, seq: value.seq as number, done: true };
   const response = decodeResponseEnvelope(value.response);
   return response === undefined

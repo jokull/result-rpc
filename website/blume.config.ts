@@ -2,8 +2,7 @@ import { defineConfig } from "blume";
 
 export default defineConfig({
   title: "result-rpc",
-  description:
-    "Typed RPC for React. One Result and one wire-safe error union per procedure.",
+  description: "Typed RPC for React. One Result and one wire-safe error union per procedure.",
   logo: {
     href: "/",
     image: "/result-rpc-lockup-blue.svg",
@@ -22,11 +21,7 @@ export default defineConfig({
     sidebar: [
       {
         label: "Start here",
-        items: [
-          "/start/introduction",
-          "/start/installation",
-          "/start/quickstart",
-        ],
+        items: ["/start/introduction", "/start/installation", "/start/quickstart"],
       },
       {
         label: "The contract",
@@ -52,11 +47,7 @@ export default defineConfig({
       },
       {
         label: "Failure ownership",
-        items: [
-          "/concepts/shells",
-          "/concepts/layers",
-          "/concepts/deploys",
-        ],
+        items: ["/concepts/shells", "/concepts/layers", "/concepts/deploys"],
       },
       {
         label: "Guides",
@@ -72,11 +63,7 @@ export default defineConfig({
       },
       {
         label: "Reference",
-        items: [
-          "/reference/examples",
-          "/reference/sharp-edges",
-          "/reference/agent-skill",
-        ],
+        items: ["/reference/examples", "/reference/sharp-edges", "/reference/agent-skill"],
       },
     ],
   },

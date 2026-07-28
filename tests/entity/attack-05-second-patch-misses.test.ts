@@ -28,9 +28,15 @@ const User = defineModel("a05-user", {
 });
 
 const boot = () => {
-  const app = rpc.context<{ readonly db: { user: { id: string; name: string; avatarUrl: string } } }>();
-  const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-  const setAvatar = app.procedure()
+  const app = rpc.context<{
+    readonly db: { user: { id: string; name: string; avatarUrl: string } };
+  }>();
+  const me = app
+    .procedure()
+    .output(User.all("test fixture"))
+    .query(({ context }) => ok(context.db.user));
+  const setAvatar = app
+    .procedure()
     .input(wire.object({ avatarUrl: wire.string }))
     .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -75,10 +81,15 @@ describe("attack-05 repeated patches", () => {
     const afterSecond = header.getCurrentState();
     if (afterSecond.state !== "success") throw new Error("unreachable");
     // ATTACK ASSERTION: the second patch must land too.
-    expect({ avatarUrl: afterSecond.value.avatarUrl, stillBranded })
-      .toEqual({ avatarUrl: "v3.png", stillBranded: 1 });
+    expect({ avatarUrl: afterSecond.value.avatarUrl, stillBranded }).toEqual({
+      avatarUrl: "v3.png",
+      stillBranded: 1,
+    });
 
-    stop(); header.destroy(); mutation.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    mutation.destroy();
+    runtime.clear();
   });
 
   test("cache.updateEntity twice: the second optimistic patch still lands", async () => {
@@ -97,6 +108,8 @@ describe("attack-05 repeated patches", () => {
     // ATTACK ASSERTION
     expect(second?.name).toBe("N3");
 
-    stop(); header.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    runtime.clear();
   });
 });

@@ -112,7 +112,11 @@ function Greeting() {
   // avatarUrl updates HERE the instant setAvatar succeeds anywhere below:
   // the mutation returns the user entity, and this header's whoami query
   // contains user:{id} — patched in place, no refetch.
-  return <header>Welcome back, {viewer.name} [{viewer.avatarUrl}]</header>;
+  return (
+    <header>
+      Welcome back, {viewer.name} [{viewer.avatarUrl}]
+    </header>
+  );
 }
 
 /** The flagship: change the avatar, watch the header — zero refetches. */
@@ -120,8 +124,7 @@ export function AvatarForm() {
   const client = useResultClient<DocClient>();
   const setAvatar = ViewerShell.useMutation(client.auth.setAvatar);
   return (
-    <button onClick={() =>
-      void setAvatar.mutate({ avatarUrl: "v2.png" }).catch(() => undefined)}>
+    <button onClick={() => void setAvatar.mutate({ avatarUrl: "v2.png" }).catch(() => undefined)}>
       Update avatar
     </button>
   );
@@ -129,11 +132,14 @@ export function AvatarForm() {
 
 // -- the page ------------------------------------------------------------------------
 
-const renameMessages = errorCatalog({ DocNotFound, DocLocked, DocForbidden }, {
-  "doc/not-found": () => "This doc was deleted while you were editing",
-  "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
-  "doc/forbidden": () => "Only the owner can rename this doc",
-});
+const renameMessages = errorCatalog(
+  { DocNotFound, DocLocked, DocForbidden },
+  {
+    "doc/not-found": () => "This doc was deleted while you were editing",
+    "doc/locked": (failure) => `Locked by ${failure.data.lockedBy}`,
+    "doc/forbidden": () => "Only the owner can rename this doc",
+  },
+);
 
 export function DocPage({ docId }: { docId: string }) {
   const client = useResultClient<DocClient>();
@@ -157,16 +163,16 @@ export function DocPage({ docId }: { docId: string }) {
         <article>
           <h1>{doc.value.title}</h1>
           <p>Planned by {viewer.name}</p>
-          <form onSubmit={(event) => {
-            event.preventDefault();
-            const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
-            // claimed/cancelled rejections are control flow, not outcomes
-            void rename.mutate({ id: docId, title: field.value }).catch(() => undefined);
-          }}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
+              // claimed/cancelled rejections are control flow, not outcomes
+              void rename.mutate({ id: docId, title: field.value }).catch(() => undefined);
+            }}
+          >
             <input name="title" defaultValue={doc.value.title} />
-            {rename.state === "failure" && (
-              <p role="alert">{renameMessages(rename.error)}</p>
-            )}
+            {rename.state === "failure" && <p role="alert">{renameMessages(rename.error)}</p>}
           </form>
         </article>
       );

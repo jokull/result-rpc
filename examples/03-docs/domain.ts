@@ -78,6 +78,5 @@ export const ViewerLayer = SessionLayer.require({
   name: "viewer",
   provides: UserCodec,
   errors: authErrors,
-  refine: ({ value, errors }) =>
-    value === null ? err(errors.Unauthorized()) : ok(value),
+  refine: ({ value, errors }) => (value === null ? err(errors.Unauthorized()) : ok(value)),
 });

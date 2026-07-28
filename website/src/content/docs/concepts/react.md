@@ -6,11 +6,11 @@ description: "Result-native queries: exhaustive states, stale data on failed ref
 Hand the provider your client; it owns a query runtime for its lifetime:
 
 ```tsx
-import { ResultRpcProvider } from "result-rpc/react"
-import { client } from "./client"
+import { ResultRpcProvider } from "result-rpc/react";
+import { client } from "./client";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <ResultRpcProvider client={client}>{children}</ResultRpcProvider>
+  return <ResultRpcProvider client={client}>{children}</ResultRpcProvider>;
 }
 ```
 
@@ -20,34 +20,21 @@ SSR prefetching, imperative cache access.
 Query a procedure:
 
 ```tsx
-import { useResultQuery } from "result-rpc/react"
-import { client } from "./client"
+import { useResultQuery } from "result-rpc/react";
+import { client } from "./client";
 
 export function DocPage({ id }: { id: string }) {
-  const doc = useResultQuery(client.doc.byId, { id })
+  const doc = useResultQuery(client.doc.byId, { id });
 
   switch (doc.state) {
     case "pending":
-      return doc.fetch === "paused"
-        ? <OfflinePlaceholder />
-        : <DocSkeleton />
+      return doc.fetch === "paused" ? <OfflinePlaceholder /> : <DocSkeleton />;
 
     case "success":
-      return (
-        <DocView
-          doc={doc.value}
-          refreshing={doc.fetch === "fetching"}
-        />
-      )
+      return <DocView doc={doc.value} refreshing={doc.fetch === "fetching"} />;
 
     case "failure":
-      return (
-        <DocFailure
-          error={doc.error}
-          previous={doc.previous}
-          retry={doc.refetch}
-        />
-      )
+      return <DocFailure error={doc.error} previous={doc.previous} retry={doc.refetch} />;
   }
 }
 ```
@@ -56,8 +43,8 @@ export function DocPage({ id }: { id: string }) {
 under its own state, so the impossible combinations are unrepresentable:
 
 ```ts
-doc.value  // Doc      — only when doc.state === "success"
-doc.error  // GetDocError — only when doc.state === "failure"
+doc.value; // Doc      — only when doc.state === "success"
+doc.error; // GetDocError — only when doc.state === "failure"
 ```
 
 When Result-typed code needs the settled outcome as the same `Result` the
@@ -90,7 +77,7 @@ if (doc.state === "failure" && doc.previous) {
       <DocView doc={doc.previous} stale />
       <RefreshFailure error={doc.error} />
     </>
-  )
+  );
 }
 ```
 
@@ -102,7 +89,7 @@ channel.
 When an operation is waiting for connectivity:
 
 ```ts
-doc.fetch === "paused"
+doc.fetch === "paused";
 ```
 
 This does not consume a retry or immediately become `client/offline`. An
@@ -113,14 +100,18 @@ operation as a failure.
 
 ```tsx
 // Server
-const runtime = createQueryRuntime({ client: serverClient })
+const runtime = createQueryRuntime({ client: serverClient });
 
-await runtime.prefetch(serverClient.doc.byId, { id })
+await runtime.prefetch(serverClient.doc.byId, { id });
 
-const dehydrated = runtime.dehydrate()
+const dehydrated = runtime.dehydrate();
 
 // Browser
-return <ResultRpcProvider client={client} hydrate={dehydrated}>{children}</ResultRpcProvider>
+return (
+  <ResultRpcProvider client={client} hydrate={dehydrated}>
+    {children}
+  </ResultRpcProvider>
+);
 ```
 
 The cache format is versioned and each hydrated success is validated against

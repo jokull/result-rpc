@@ -4,37 +4,33 @@ description: "Result-state mutations, optimistic arcs, and declared invalidation
 ---
 
 ```tsx
-import { useResultMutation } from "result-rpc/react"
-import { client } from "./client"
+import { useResultMutation } from "result-rpc/react";
+import { client } from "./client";
 
 function RenameDoc({ id }: { id: string }) {
   const rename = useResultMutation(client.doc.rename, {
     optimistic: ({ title }, cache) => {
-      const rollback = cache.update(
-        client.doc.byId,
-        { id },
-        doc => doc && { ...doc, title },
-      )
+      const rollback = cache.update(client.doc.byId, { id }, (doc) => doc && { ...doc, title });
 
-      return { rollback }
+      return { rollback };
     },
     onFailure: (_error, _input, context) => {
-      context?.rollback()
+      context?.rollback();
     },
     onCancel: (_input, context) => {
-      context?.rollback()
+      context?.rollback();
     },
-  })
+  });
 
   async function submit(title: string) {
-    const result = await rename.mutate({ id, title })
+    const result = await rename.mutate({ id, title });
 
     if (!result.ok && result.error._tag === "doc/title-conflict") {
-      focusTitleField()
+      focusTitleField();
     }
   }
 
-  return <RenameForm pending={rename.state === "pending"} onSubmit={submit} />
+  return <RenameForm pending={rename.state === "pending"} onSubmit={submit} />;
 }
 ```
 
@@ -57,23 +53,25 @@ resets lifecycle state and rejects the pending `mutate` promise with the
 
 ## Declared invalidation
 
-You noticed what the example above does *not* contain: `onSettled` with a
+You noticed what the example above does _not_ contain: `onSettled` with a
 `cache.invalidate` call. That line — the most-repeated and most-forgotten
 line in any React Query app, whose absence is a stale-UI bug — lives in the
 contract now. A mutation declares its blast radius once, where it is defined:
 
 ```ts
-const byId = app.procedure()
+const byId = app
+  .procedure()
   .input(wire.object({ id: wire.string }))
   .output(DocCodec)
-  .query()
+  .query();
 
-const rename = app.procedure()
+const rename = app
+  .procedure()
   .input(wire.object({ id: wire.string, title: wire.string }))
   .output(DocCodec)
-  .affects(byId, (input) => ({ id: input.id }))   // rename touches this doc
-  .affects(list)                                  // and every cached list page
-  .mutation()
+  .affects(byId, (input) => ({ id: input.id })) // rename touches this doc
+  .affects(list) // and every cached list page
+  .mutation();
 ```
 
 Every `useResultMutation` of `rename` — in any component, forever —

@@ -17,14 +17,7 @@ import { DDL, spots } from "./schema";
 // does not exist yet. `next dev`/`next start` both run from the project root.
 const DB_PATH = join(process.cwd(), "spots.sqlite");
 
-const CITIES = [
-  "Kyoto",
-  "Tokyo",
-  "Osaka",
-  "Nara",
-  "Kanazawa",
-  "Hakone",
-] as const;
+const CITIES = ["Kyoto", "Tokyo", "Osaka", "Nara", "Kanazawa", "Hakone"] as const;
 
 const NAMES = [
   "Fushimi Inari at dawn",

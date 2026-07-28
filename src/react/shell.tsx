@@ -163,13 +163,10 @@ export interface Shell<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyShell = Shell<any, any, any, any>;
 
-export type ClaimedBy<TShell> = TShell extends Shell<infer THandled, any, any, any>
-  ? THandled
-  : never;
+export type ClaimedBy<TShell> =
+  TShell extends Shell<infer THandled, any, any, any> ? THandled : never;
 
-export type ValueOf<TShell> = TShell extends Shell<any, any, infer TValue, any>
-  ? TValue
-  : never;
+export type ValueOf<TShell> = TShell extends Shell<any, any, infer TValue, any> ? TValue : never;
 
 export interface DefineShellOptions<
   TDefinitions extends ErrorDefinitionMap,
@@ -194,7 +191,6 @@ export interface DefineShellOptions<
   readonly provide?: (props: TProps) => TValue;
 }
 
-
 const internals = new WeakMap<AnyShell, ShellInternals>();
 
 const internalsOf = (shell: AnyShell): ShellInternals => {
@@ -207,7 +203,10 @@ const createNode = (
   onError: ((error: never, value: unknown) => void) | undefined,
   valueRef: { current: unknown },
 ): ShellNode => {
-  const entries = new Map<string, { readonly error: AnyTaggedError; readonly retry?: () => void }>();
+  const entries = new Map<
+    string,
+    { readonly error: AnyTaggedError; readonly retry?: () => void }
+  >();
   const listeners = new Set<() => void>();
   let changed: Array<() => void> = [];
   const retryAll = () => {
@@ -267,8 +266,7 @@ export const defineShell = <
 >(
   options: DefineShellOptions<TDefinitions, TParent, TProps, TValue>,
 ): Shell<
-  | TagsOf<TDefinitions>
-  | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
+  TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
   TProps,
   TValue,
   ErrorUnion<TDefinitions>
@@ -277,9 +275,7 @@ export const defineShell = <
   const parentInternals = parent ? internalsOf(parent) : undefined;
   const ownTags = new Set(Object.values(options.claims).map((definition) => definition.tag));
   if (ownTags.size === 0 && options.provide === undefined) {
-    throw new TypeError(
-      `Shell ${options.name} claims no errors and provides no value`,
-    );
+    throw new TypeError(`Shell ${options.name} claims no errors and provides no value`);
   }
   for (const enclosing of parentInternals?.chain ?? []) {
     for (const tag of ownTags) {
@@ -300,37 +296,34 @@ export const defineShell = <
     context,
     chain: [],
   };
-  (self as { chain: readonly ShellInternals[] }).chain = [
-    self,
-    ...(parentInternals?.chain ?? []),
-  ];
+  (self as { chain: readonly ShellInternals[] }).chain = [self, ...(parentInternals?.chain ?? [])];
 
   const parentContext = parentInternals?.context ?? missingParentContext;
 
   const Provider = (props: TProps & { readonly children?: ReactNode }): ReactNode => {
     const enclosing = useContext(parentContext);
     if (parentInternals && !enclosing) {
-      throw new TypeError(
-        `Shell ${options.name} must be mounted inside ${parentInternals.name}`,
-      );
+      throw new TypeError(`Shell ${options.name} must be mounted inside ${parentInternals.name}`);
     }
     const value = options.provide ? options.provide(props) : (undefined as TValue);
     const valueRef = useRef<unknown>(value);
     valueRef.current = value;
-    const [node] = useState(() => createNode(
-        options.onError as ((error: never, value: unknown) => void) | undefined,
-        valueRef,
-      ));
+    const [node] = useState(() =>
+      createNode(options.onError as ((error: never, value: unknown) => void) | undefined, valueRef),
+    );
     const mount = useMemo<ShellMount>(() => ({ node, value }), [node, value]);
     const parentScope = useContext(ClaimScopeContext);
-    const entry = useMemo<ClaimEntry>(() => ({
-      name: options.name,
-      effect,
-      tags: ownTags,
-      report: node.report,
-      release: node.release,
-      whenChanged: node.whenChanged,
-    }), [node]);
+    const entry = useMemo<ClaimEntry>(
+      () => ({
+        name: options.name,
+        effect,
+        tags: ownTags,
+        report: node.report,
+        release: node.release,
+        whenChanged: node.whenChanged,
+      }),
+      [node],
+    );
     const scope = useMemo(() => [...parentScope, entry], [parentScope, entry]);
     return createElement(
       context.Provider,
@@ -377,8 +370,7 @@ export const defineShell = <
       return useResultSubscription(procedure, input, subscriptionOptions);
     },
   } as unknown as Shell<
-    | TagsOf<TDefinitions>
-    | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
+    TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
     TProps,
     TValue,
     ErrorUnion<TDefinitions>
@@ -455,8 +447,7 @@ export const layerShell = <
   layer: LayerShape<TKey, TValue, TDefinitions>,
   options: LayerShellOptions<TParent, TProcedureClient, TValue>,
 ): Shell<
-  | TagsOf<TDefinitions>
-  | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
+  TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
   LayerShellProviderProps,
   TValue,
   ErrorUnion<TDefinitions>
@@ -470,12 +461,12 @@ export const layerShell = <
     ...(options.onError === undefined
       ? {}
       : {
-        onError: (error: ErrorUnion<TDefinitions>) =>
-          (options.onError as (error: AnyTaggedError, value: TValue | undefined) => void)(
-            error,
-            valueHolder.current,
-          ),
-      }),
+          onError: (error: ErrorUnion<TDefinitions>) =>
+            (options.onError as (error: AnyTaggedError, value: TValue | undefined) => void)(
+              error,
+              valueHolder.current,
+            ),
+        }),
     provide: (props: { readonly value: TValue }) => props.value,
   });
   const parent = options.from as AnyShell | undefined;
@@ -506,7 +497,10 @@ export const layerShell = <
    * `updatedAt` on the context procedure — e.g. after signing back in), every
    * operation this shell is holding retries automatically.
    */
-  const AutoResume = ({ stamp, children }: {
+  const AutoResume = ({
+    stamp,
+    children,
+  }: {
     readonly stamp: number;
     readonly children?: ReactNode;
   }): ReactNode => {
@@ -545,8 +539,7 @@ export const layerShell = <
   };
 
   const shell = { ...inner, Provider } as unknown as Shell<
-    | TagsOf<TDefinitions>
-    | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
+    TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
     LayerShellProviderProps,
     TValue,
     ErrorUnion<TDefinitions>

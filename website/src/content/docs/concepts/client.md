@@ -4,15 +4,15 @@ description: "Every call resolves Result with the complete union; batching, canc
 ---
 
 ```ts
-import { createClient, batchFetchTransport } from "result-rpc/client"
-import { appContract } from "../shared/contract"
+import { createClient, batchFetchTransport } from "result-rpc/client";
+import { appContract } from "../shared/contract";
 
 export const client = createClient({
   contract: appContract,
   transport: batchFetchTransport({ url: "/rpc" }),
-})
+});
 
-const result = await client.doc.byId({ id: "doc_123" })
+const result = await client.doc.byId({ id: "doc_123" });
 ```
 
 Calls issued in the same microtask share one HTTP request. Every batch item
@@ -24,11 +24,11 @@ procedure's **own input codec** rejects throws a `TypeError` at the call site
 and never reaches the wire. That is a programmer error — the types prevent it
 for structural codecs, and for runtime-validating codecs (`wire.standard`)
 your form validates the human first (see [Forms and the
-wire](/guides/forms/)). Errors-as-values is a contract about *outcomes of
-operations*, not a net under code the compiler already rejects.
+wire](/guides/forms/)). Errors-as-values is a contract about _outcomes of
+operations_, not a net under code the compiler already rejects.
 
 The direct client is the honest base: it always resolves the complete union.
-Narrowing is a property of where a call is *rendered*, and the direct client
+Narrowing is a property of where a call is _rendered_, and the direct client
 is not rendered anywhere, so it never subtracts anything. Every failure in the
 union is already a reified `TaggedError`: definition `.is()` guards,
 `instanceof Error`, `toJSON`, and direct `yield*` all work after transport.
@@ -45,7 +45,7 @@ Result<
   | HttpFailure
   | ProtocolViolation
   | DecodeFailure
->
+>;
 ```
 
 Handle the union with an ordinary switch (`result.error satisfies never` in
@@ -54,12 +54,15 @@ message catalog, a metrics mapper — once, from the same definition map
 middleware and shells use:
 
 ```ts
-import { errorCatalog } from "result-rpc"
+import { errorCatalog } from "result-rpc";
 
-const message = errorCatalog({ DocNotFound, Unauthorized }, {
-  "doc/not-found": (e) => `Doc ${e.data.docId} is gone`,
-  "auth/unauthorized": () => "Sign in to continue",
-})
+const message = errorCatalog(
+  { DocNotFound, Unauthorized },
+  {
+    "doc/not-found": (e) => `Doc ${e.data.docId} is gone`,
+    "auth/unauthorized": () => "Sign in to continue",
+  },
+);
 ```
 
 Adding a definition to the map breaks every catalog missing the new tag. For
@@ -78,14 +81,11 @@ consuming a retry, or entering an error boundary.
 Direct calls accept an `AbortSignal`:
 
 ```ts
-const controller = new AbortController()
+const controller = new AbortController();
 
-const pending = client.doc.byId(
-  { id: "doc_123" },
-  { signal: controller.signal },
-)
+const pending = client.doc.byId({ id: "doc_123" }, { signal: controller.signal });
 
-controller.abort()
+controller.abort();
 ```
 
 Internally result-rpc uses a tagged `control/cancelled` sentinel so
@@ -98,15 +98,15 @@ the two events apart when the UX differs.
 ## Server-side calls keep wire parity
 
 ```ts
-import { createServerClient } from "result-rpc/server"
-import { appRouter } from "./router"
+import { createServerClient } from "result-rpc/server";
+import { appRouter } from "./router";
 
 const serverClient = createServerClient(appRouter, {
   mode: "parity",
   context,
-})
+});
 
-const result = await serverClient.doc.byId({ id: "doc_123" })
+const result = await serverClient.doc.byId({ id: "doc_123" });
 ```
 
 Parity mode executes locally but still applies input, output, and error

@@ -10,8 +10,9 @@ import { boundaryShells } from "./boundary.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { ResultRpcProvider } from "./index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -21,19 +22,21 @@ const Gone = error({ tag: "boundary-test/gone", httpStatus: 410 });
 const makeSkewedPair = () => {
   const server = rpc.context<{}>();
   const serverRouter = server.router({
-    thing: server.procedure()
+    thing: server
+      .procedure()
       .input(wire.object({ id: wire.string, revision: wire.number }))
       .output(wire.string)
       .errors({ Gone })
-      .query(({ input }) => input.id === "gone"
-        ? err(Gone())
-        : ok(`${input.id}@${input.revision}`)),
+      .query(({ input }) =>
+        input.id === "gone" ? err(Gone()) : ok(`${input.id}@${input.revision}`),
+      ),
   });
   const handler = createFetchHandler({ router: serverRouter, createContext: () => ({}) });
 
   const stale = rpc.context<{}>();
   const staleRouter = stale.router({
-    thing: stale.procedure()
+    thing: stale
+      .procedure()
       .input(wire.object({ id: wire.string }))
       .output(wire.string)
       .query(({ input }) => ok(input.id)),
@@ -70,10 +73,9 @@ describe("boundaryShells", () => {
     });
 
     function Probe() {
-      const state = StaleShell.useQuery(
-        (client as unknown as { thing: never }).thing,
-        { id: "a" } as never,
-      );
+      const state = StaleShell.useQuery((client as unknown as { thing: never }).thing, {
+        id: "a",
+      } as never);
       return <p>state:{(state as { state: string }).state}</p>;
     }
 
@@ -107,10 +109,7 @@ describe("boundaryShells", () => {
 
     let held: { latest?: { _tag: string } } = {};
     function Probe() {
-      void StaleShell.useQuery(
-        (client as unknown as { thing: never }).thing,
-        { id: "a" } as never,
-      );
+      void StaleShell.useQuery((client as unknown as { thing: never }).thing, { id: "a" } as never);
       held = StaleShell.useHeld() as typeof held;
       return null;
     }
@@ -137,7 +136,10 @@ describe("boundaryShells", () => {
   test("reconnect resumes held transport failures automatically", async () => {
     const app = rpc.context<{}>();
     const router = app.router({
-      ping: app.procedure().input(wire.object({})).output(wire.string)
+      ping: app
+        .procedure()
+        .input(wire.object({}))
+        .output(wire.string)
         .query(() => ok("pong")),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
@@ -148,13 +150,13 @@ describe("boundaryShells", () => {
     });
     let offline = true;
     const transport: ClientTransport = {
-      request: async (...args) => offline
-        ? { ok: false, reason: "offline" }
-        : local.request(...args),
+      request: async (...args) =>
+        offline ? { ok: false, reason: "offline" } : local.request(...args),
     };
     const client = createClient({ router, transport });
-    const { TransportShell, BoundaryProvider, useConnectivity } =
-      boundaryShells({ name: "test-c" });
+    const { TransportShell, BoundaryProvider, useConnectivity } = boundaryShells({
+      name: "test-c",
+    });
 
     let status: string | undefined;
     function Probe() {
@@ -193,7 +195,10 @@ describe("boundaryShells", () => {
   test("useConnectivity tracks the browser's own offline claim", async () => {
     const app = rpc.context<{}>();
     const router = app.router({
-      ping: app.procedure().input(wire.object({})).output(wire.string)
+      ping: app
+        .procedure()
+        .input(wire.object({}))
+        .output(wire.string)
         .query(() => ok("pong")),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
@@ -245,7 +250,10 @@ describe("boundaryShells", () => {
   test("a mutation held offline drains on reconnect without being replayed", async () => {
     const app = rpc.context<{}>();
     const router = app.router({
-      save: app.procedure().input(wire.object({ note: wire.string })).output(wire.string)
+      save: app
+        .procedure()
+        .input(wire.object({ note: wire.string }))
+        .output(wire.string)
         .mutation(({ input }) => ok(input.note)),
     });
     let attempts = 0;
@@ -256,11 +264,14 @@ describe("boundaryShells", () => {
       },
     };
     const client = createClient({ router, transport });
-    const { TransportShell, BoundaryProvider, useConnectivity } =
-      boundaryShells({ name: "test-e" });
+    const { TransportShell, BoundaryProvider, useConnectivity } = boundaryShells({
+      name: "test-e",
+    });
 
     let net: { status: string; held: number } | undefined;
-    let mutationState: { mutate: (input: { note: string }) => Promise<unknown>; state: string } | undefined;
+    let mutationState:
+      | { mutate: (input: { note: string }) => Promise<unknown>; state: string }
+      | undefined;
     function Probe() {
       mutationState = TransportShell.useMutation(client.save, { retry: false }) as never;
       net = useConnectivity();

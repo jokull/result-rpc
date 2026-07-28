@@ -144,9 +144,7 @@ export function HotelDesk({ hotelId }: { hotelId: string }) {
           </p>
           <button
             onClick={() =>
-              void updatePhone
-                .mutate({ id: hotelId, phone: "+81-3-9999" })
-                .catch(() => undefined)
+              void updatePhone.mutate({ id: hotelId, phone: "+81-3-9999" }).catch(() => undefined)
             }
           >
             Update Okura phone
@@ -385,11 +383,10 @@ export function RenameTourForm({ id, locale }: { id: string; locale: Locale }) {
     // the two locale variants; the optimistic patch lands everywhere the
     // (id, locale) entity is cached and nowhere else.
     optimistic: (input, cache) => ({
-      rollback: cache.updateEntity(
-        TourContent,
-        { id: input.id, locale: input.locale },
-        (tour) => ({ ...tour, title: input.title }),
-      ),
+      rollback: cache.updateEntity(TourContent, { id: input.id, locale: input.locale }, (tour) => ({
+        ...tour,
+        title: input.title,
+      })),
     }),
     onFailure: (_error, _input, context) => context?.rollback(),
     onCancel: (_input, context) => context?.rollback(),

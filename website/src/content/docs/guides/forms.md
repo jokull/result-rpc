@@ -4,10 +4,10 @@ description: "Forms validate humans; wires validate applications. The bridge: va
 ---
 
 Two validations live near each other here, and they are not the same thing.
-A form validates a *human*: values arrive as strings, get coerced, deserve
+A form validates a _human_: values arrive as strings, get coerced, deserve
 progressive per-field feedback, and usually cover only a slice of the
 eventual input — the id comes from the route, the author from the session.
-The wire validates an *application boundary*: values arrive typed, complete,
+The wire validates an _application boundary_: values arrive typed, complete,
 and possibly hostile. Collapsing the two into one schema is tempting and
 almost never right — the form wants "looks like an email while you type",
 the wire wants "is a string, or 400".
@@ -24,10 +24,11 @@ as a procedure's input codec — validation on both sides of the wire, plus
 the serializer preflight a plain validator can't give you:
 
 ```ts
-const rename = app.procedure()
-  .input(wire.standard(RenameInput))   // your Valibot/Zod schema, as the wire codec
+const rename = app
+  .procedure()
+  .input(wire.standard(RenameInput)) // your Valibot/Zod schema, as the wire codec
   .output(DocCodec)
-  .mutation()
+  .mutation();
 ```
 
 (Async schemas are rejected — wire validation is synchronous — and the
@@ -41,11 +42,11 @@ form-side companion to `wire.standard`. Per-field feedback before a request
 exists, no `~standard` spec plumbing:
 
 ```ts
-import { validateStandard } from "result-rpc"
+import { validateStandard } from "result-rpc";
 
-const validated = validateStandard(RenameInput, { id, title })
-if (!validated.ok) return setFieldErrors(validated.fields)  // dot-joined keys
-await rename.mutate(validated.value)
+const validated = validateStandard(RenameInput, { id, title });
+if (!validated.ok) return setFieldErrors(validated.fields); // dot-joined keys
+await rename.mutate(validated.value);
 ```
 
 **Server rejections land on fields.** Whatever validates the form, the
@@ -54,14 +55,14 @@ codec still validates the wire — and when a request fails there,
 keys:
 
 ```tsx
-const result = await rename.mutate(toInput(form.values))
+const result = await rename.mutate(toInput(form.values));
 if (!result.ok && result.error._tag === "server/bad-request") {
-  setFieldErrors(fieldIssues(result.error))
+  setFieldErrors(fieldIssues(result.error));
   // { "title": ["Expected a string"], "author.email": ["Expected an email"] }
 }
 ```
 
-The paths are shaped like the *input*. When the form edits a projection of
+The paths are shaped like the _input_. When the form edits a projection of
 the input — it usually does — map the keys where the shapes diverge, in the
 same place you already map values (`toInput` above). The mapping is the
 honest artifact: it is where "what the human edits" and "what the wire

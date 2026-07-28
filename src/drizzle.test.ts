@@ -11,11 +11,15 @@ const hotels = sqliteTable("hotels", {
   secret: text("secret").notNull(),
 });
 
-const tourContent = sqliteTable("tour_content", (c) => ({
-  id: text("id").notNull(),
-  locale: text("locale", { enum: ["en", "ja"] }).notNull(),
-  title: text("title").notNull(),
-}), (t) => [primaryKey({ columns: [t.id, t.locale] })]);
+const tourContent = sqliteTable(
+  "tour_content",
+  (_columns) => ({
+    id: text("id").notNull(),
+    locale: text("locale", { enum: ["en", "ja"] }).notNull(),
+    title: text("title").notNull(),
+  }),
+  (t) => [primaryKey({ columns: [t.id, t.locale] })],
+);
 
 describe("modelFromDrizzle", () => {
   test("derives shape and single inline primary key; allowlist excludes the rest", () => {
@@ -30,7 +34,9 @@ describe("modelFromDrizzle", () => {
     expect(decoded.value.phone).toBeNull();
     expect(collectEntities([decoded.value]).map((entity) => entity.id)).toEqual(["h1"]);
     // the allowlist is the wire: a column not named does not decode
-    expect(Hotel.all("test fixture").decode({ id: "h1", name: "x", phone: null, secret: "s" }).ok).toBe(false);
+    expect(
+      Hotel.all("test fixture").decode({ id: "h1", name: "x", phone: null, secret: "s" }).ok,
+    ).toBe(false);
   });
 
   test("composite keys are explicit; enum columns become literal unions", () => {
@@ -39,24 +45,33 @@ describe("modelFromDrizzle", () => {
       key: ["id", "locale"],
     });
     expect(TourContent.keyFields).toEqual(["id", "locale"]);
-    const decoded = TourContent.all("test fixture").decode({ id: "t1", locale: "en", title: "Tokyo" });
+    const decoded = TourContent.all("test fixture").decode({
+      id: "t1",
+      locale: "en",
+      title: "Tokyo",
+    });
     expect(decoded.ok).toBe(true);
-    expect(TourContent.all("test fixture").decode({ id: "t1", locale: "fr", title: "x" }).ok).toBe(false);
-    expect(collectEntities([decoded.ok ? decoded.value : {}]).map((entity) => entity.id))
-      .toEqual(["t1:en"]);
+    expect(TourContent.all("test fixture").decode({ id: "t1", locale: "fr", title: "x" }).ok).toBe(
+      false,
+    );
+    expect(collectEntities([decoded.ok ? decoded.value : {}]).map((entity) => entity.id)).toEqual([
+      "t1:en",
+    ]);
   });
 
   test("errors are actionable: missing column, missing key", () => {
-    expect(() => modelFromDrizzle("dz-bad", hotels, { columns: ["id", "nope" as never] }))
-      .toThrow(/no column "nope"/);
-    expect(() => modelFromDrizzle("dz-nokey", tourContent, { columns: ["id", "title"] }))
-      .toThrow(/pass `key` explicitly/);
+    expect(() => modelFromDrizzle("dz-bad", hotels, { columns: ["id", "nope" as never] })).toThrow(
+      /no column "nope"/,
+    );
+    expect(() => modelFromDrizzle("dz-nokey", tourContent, { columns: ["id", "title"] })).toThrow(
+      /pass `key` explicitly/,
+    );
   });
 
   test("type-level: ModelValue matches the drizzle select subset", () => {
     const Hotel = modelFromDrizzle("dz-hotel-t", hotels, { columns: ["id", "name", "phone"] });
-    const value: { id: string; name: string; phone: string | null } = null as never as
-      import("./model.js").ModelValue<typeof Hotel>;
+    const value: { id: string; name: string; phone: string | null } =
+      null as never as import("./model.js").ModelValue<typeof Hotel>;
     void value;
   });
 });
@@ -67,7 +82,9 @@ describe("tryDb", () => {
     const { drizzle } = await import("drizzle-orm/bun-sqlite");
     const client = new Database(":memory:");
     client.run("PRAGMA foreign_keys = ON");
-    client.run("CREATE TABLE things (id TEXT PRIMARY KEY, label TEXT NOT NULL UNIQUE, parent TEXT REFERENCES things(id))");
+    client.run(
+      "CREATE TABLE things (id TEXT PRIMARY KEY, label TEXT NOT NULL UNIQUE, parent TEXT REFERENCES things(id))",
+    );
     return drizzle({ client });
   };
   const things = sqliteTable("things", {
@@ -88,7 +105,9 @@ describe("tryDb", () => {
       expect(dupe.error.data).toEqual({ constraint: "things.label" });
     }
 
-    const orphan = await tryDb(db.insert(things).values({ id: "c", label: "y", parent: "missing" }));
+    const orphan = await tryDb(
+      db.insert(things).values({ id: "c", label: "y", parent: "missing" }),
+    );
     expect(orphan.ok).toBe(false);
     if (!orphan.ok) expect(orphan.error._tag).toBe("db/foreign-key-violation");
 

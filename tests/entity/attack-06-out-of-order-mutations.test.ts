@@ -28,8 +28,12 @@ describe("attack-06 out-of-order mutation responses", () => {
   test("cache converges to the server's final state", async () => {
     const db = { user: { id: "u1", name: "initial" } };
     const app = rpc.context<{ readonly db: typeof db }>();
-    const me = app.procedure().output(User.all("test fixture")).query(({ context }) => ok(context.db.user));
-    const setName = app.procedure()
+    const me = app
+      .procedure()
+      .output(User.all("test fixture"))
+      .query(({ context }) => ok(context.db.user));
+    const setName = app
+      .procedure()
       .input(wire.object({ name: wire.string, delayMs: wire.number }))
       .output(User.all("test fixture"))
       .mutation(async ({ input, context }) => {
@@ -70,6 +74,10 @@ describe("attack-06 out-of-order mutation responses", () => {
     // server's final state with no manual step.
     await waitFor(header, (s) => s.state === "success" && s.value.name === "B");
 
-    stop(); header.destroy(); mutA.destroy(); mutB.destroy(); runtime.clear();
+    stop();
+    header.destroy();
+    mutA.destroy();
+    mutB.destroy();
+    runtime.clear();
   });
 });

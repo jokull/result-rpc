@@ -42,9 +42,21 @@ const Doc = defineModel("oracle-doc", {
   },
 });
 
-interface UserRow { id: string; name: string; avatarUrl: string }
-interface DocRow { id: string; title: string; ownerId: string; archived: boolean }
-interface Db { users: Map<string, UserRow>; docs: Map<string, DocRow> }
+interface UserRow {
+  id: string;
+  name: string;
+  avatarUrl: string;
+}
+interface DocRow {
+  id: string;
+  title: string;
+  ownerId: string;
+  archived: boolean;
+}
+interface Db {
+  users: Map<string, UserRow>;
+  docs: Map<string, DocRow>;
+}
 
 const makeWorld = () => {
   const db: Db = {
@@ -66,20 +78,25 @@ const makeWorld = () => {
     doc,
     owner: database.users.get(doc.ownerId)!,
   });
-  const userById = app.procedure()
+  const userById = app
+    .procedure()
     .input(wire.object({ id: wire.string }))
     .output(User.all("test fixture"))
     .query(({ input, context }) => ok(context.db.users.get(input.id)!));
-  const docsList = app.procedure()
+  const docsList = app
+    .procedure()
     .input(wire.object({}))
     .output(wire.array(rowCodec))
     .query(({ context }) =>
-      ok([...context.db.docs.values()].map((doc) => rowFor(context.db, doc))));
-  const docById = app.procedure()
+      ok([...context.db.docs.values()].map((doc) => rowFor(context.db, doc))),
+    );
+  const docById = app
+    .procedure()
     .input(wire.object({ id: wire.string }))
     .output(rowCodec)
     .query(({ input, context }) => ok(rowFor(context.db, context.db.docs.get(input.id)!)));
-  const renameUser = app.procedure()
+  const renameUser = app
+    .procedure()
     .input(wire.object({ id: wire.string, name: wire.string }))
     .output(User.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -87,7 +104,8 @@ const makeWorld = () => {
       context.db.users.set(input.id, user);
       return ok(user);
     });
-  const setAvatar = app.procedure()
+  const setAvatar = app
+    .procedure()
     .input(wire.object({ id: wire.string, avatarUrl: wire.string }))
     .output(User.pick("id", "avatarUrl"))
     .mutation(({ input, context }) => {
@@ -96,7 +114,8 @@ const makeWorld = () => {
       // strict output encoding: a pick output must be returned pick-shaped
       return ok({ id: user.id, avatarUrl: user.avatarUrl });
     });
-  const renameDoc = app.procedure()
+  const renameDoc = app
+    .procedure()
     .input(wire.object({ id: wire.string, title: wire.string }))
     .output(Doc.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -104,7 +123,8 @@ const makeWorld = () => {
       context.db.docs.set(input.id, doc);
       return ok(doc);
     });
-  const archiveDoc = app.procedure()
+  const archiveDoc = app
+    .procedure()
     .input(wire.object({ id: wire.string }))
     .output(Doc.all("test fixture"))
     .mutation(({ input, context }) => {
@@ -112,7 +132,8 @@ const makeWorld = () => {
       context.db.docs.set(input.id, doc);
       return ok(doc);
     });
-  const createDoc = app.procedure()
+  const createDoc = app
+    .procedure()
     .input(wire.object({ id: wire.string, title: wire.string, ownerId: wire.string }))
     .output(Doc.all("test fixture"))
     .affects(docsList)
@@ -123,7 +144,13 @@ const makeWorld = () => {
     });
   const router = app.router({
     user: { byId: userById, rename: renameUser, setAvatar },
-    docs: { list: docsList, byId: docById, rename: renameDoc, archive: archiveDoc, create: createDoc },
+    docs: {
+      list: docsList,
+      byId: docById,
+      rename: renameDoc,
+      archive: archiveDoc,
+      create: createDoc,
+    },
   });
   const handler = createFetchHandler({ router, createContext: () => ({ db }) });
   let requests = 0;
@@ -157,13 +184,16 @@ describe("entity coherence oracle", () => {
       const { db, client, requestCount } = makeWorld();
       const runtime = createQueryRuntime({ client });
       const random = lcg(seed);
-      const pick = <T,>(items: readonly T[]): T =>
-        items[Math.floor(random() * items.length)]!;
+      const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]!;
 
       type Mounted = {
         readonly kind: "user" | "doc" | "list";
         readonly id: string | undefined;
-        readonly observer: { getCurrentState(): { state: string; fetch: string; value?: unknown }; subscribe(l: () => void): () => void; destroy(): void };
+        readonly observer: {
+          getCurrentState(): { state: string; fetch: string; value?: unknown };
+          subscribe(l: () => void): () => void;
+          destroy(): void;
+        };
         readonly stop: () => void;
       };
       const mounted: Mounted[] = [];
@@ -181,7 +211,12 @@ describe("entity coherence oracle", () => {
           mounted.push({ kind, id, observer, stop: observer.subscribe(() => undefined) });
         } else {
           const observer = runtime.observe(client.docs.list, {}, { staleTime });
-          mounted.push({ kind, id: undefined, observer, stop: observer.subscribe(() => undefined) });
+          mounted.push({
+            kind,
+            id: undefined,
+            observer,
+            stop: observer.subscribe(() => undefined),
+          });
         }
       };
       const unmount = () => {
@@ -211,24 +246,36 @@ describe("entity coherence oracle", () => {
           if (entry.kind === "user") {
             expect((state as { value: UserRow }).value).toEqual(db.users.get(entry.id!)!);
           } else if (entry.kind === "doc") {
-            const value = (state as { value: { doc: DocRow; owner: Pick<UserRow, "id" | "name" | "avatarUrl"> } }).value;
+            const value = (
+              state as { value: { doc: DocRow; owner: Pick<UserRow, "id" | "name" | "avatarUrl"> } }
+            ).value;
             expect(value.doc).toEqual(db.docs.get(entry.id!)!);
             const owner = db.users.get(value.doc.ownerId)!;
-            expect(value.owner).toEqual({ id: owner.id, name: owner.name, avatarUrl: owner.avatarUrl });
+            expect(value.owner).toEqual({
+              id: owner.id,
+              name: owner.name,
+              avatarUrl: owner.avatarUrl,
+            });
           } else {
             const rows = (state as { value: ReadonlyArray<{ doc: DocRow; owner: UserRow }> }).value;
             expect(new Set(rows.map((row) => row.doc.id))).toEqual(new Set(db.docs.keys()));
             for (const row of rows) {
               expect(row.doc).toEqual(db.docs.get(row.doc.id)!);
               const owner = db.users.get(row.doc.ownerId)!;
-              expect(row.owner).toEqual({ id: owner.id, name: owner.name, avatarUrl: owner.avatarUrl });
+              expect(row.owner).toEqual({
+                id: owner.id,
+                name: owner.name,
+                avatarUrl: owner.avatarUrl,
+              });
             }
           }
         }
       };
 
       // Warm the world: one of each observer.
-      mount(); mount(); mount();
+      mount();
+      mount();
+      mount();
       await settle();
       checkCoherence();
 
@@ -242,7 +289,9 @@ describe("entity coherence oracle", () => {
           await settle();
           const before = requestCount();
           const mutation = runtime.mutation(client.user.rename);
-          const outcome = await mutation.getCurrentState().mutate({ id: pick([...db.users.keys()]), name: `name-${step}` });
+          const outcome = await mutation
+            .getCurrentState()
+            .mutate({ id: pick([...db.users.keys()]), name: `name-${step}` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -252,7 +301,9 @@ describe("entity coherence oracle", () => {
           await settle();
           const before = requestCount();
           const mutation = runtime.mutation(client.user.setAvatar);
-          const outcome = await mutation.getCurrentState().mutate({ id: pick([...db.users.keys()]), avatarUrl: `v${step}.png` });
+          const outcome = await mutation
+            .getCurrentState()
+            .mutate({ id: pick([...db.users.keys()]), avatarUrl: `v${step}.png` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -261,7 +312,9 @@ describe("entity coherence oracle", () => {
           await settle();
           const before = requestCount();
           const mutation = runtime.mutation(client.docs.rename);
-          const outcome = await mutation.getCurrentState().mutate({ id: pick([...db.docs.keys()]), title: `title-${step}` });
+          const outcome = await mutation
+            .getCurrentState()
+            .mutate({ id: pick([...db.docs.keys()]), title: `title-${step}` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -270,7 +323,9 @@ describe("entity coherence oracle", () => {
           await settle();
           const before = requestCount();
           const mutation = runtime.mutation(client.docs.archive);
-          const outcome = await mutation.getCurrentState().mutate({ id: pick([...db.docs.keys()]) });
+          const outcome = await mutation
+            .getCurrentState()
+            .mutate({ id: pick([...db.docs.keys()]) });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();

@@ -16,11 +16,7 @@ type MaybePromise<T> = T | Promise<T>;
  * The structural surface shared by base and refined layers: enough to derive a
  * client shell without caring how the server half is built.
  */
-export interface LayerShape<
-  TKey extends string,
-  TValue,
-  TDefinitions extends ErrorDefinitionMap,
-> {
+export interface LayerShape<TKey extends string, TValue, TDefinitions extends ErrorDefinitionMap> {
   readonly $layer: true;
   readonly name: string;
   readonly key: TKey;
@@ -60,11 +56,7 @@ export interface Layer<
       readonly context: TContext;
       readonly errors: TDefinitions;
     }) => MaybePromise<Result<TValue, ErrorUnion<TDefinitions>>>,
-  ): Middleware<
-    TContext,
-    TContext & { readonly [K in TKey]: TValue },
-    TDefinitions
-  >;
+  ): Middleware<TContext, TContext & { readonly [K in TKey]: TValue }, TDefinitions>;
 
   /** The context procedure's shared contract: `{} -> value` with the layer union. */
   contract<TContext>(
@@ -178,13 +170,11 @@ export interface RequiredLayer<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyLayer = Layer<string, string, any, ErrorDefinitionMap>;
 
-export type LayerValue<TLayer> = TLayer extends Layer<string, string, infer TValue, ErrorDefinitionMap>
-  ? TValue
-  : never;
+export type LayerValue<TLayer> =
+  TLayer extends Layer<string, string, infer TValue, ErrorDefinitionMap> ? TValue : never;
 
-export type LayerErrors<TLayer> = TLayer extends Layer<string, string, unknown, infer TDefinitions>
-  ? TDefinitions
-  : never;
+export type LayerErrors<TLayer> =
+  TLayer extends Layer<string, string, unknown, infer TDefinitions> ? TDefinitions : never;
 
 export interface DefineLayerOptions<
   TName extends string,
@@ -244,11 +234,7 @@ export const defineLayer = <
               [options.key]: resolved.value,
             } as TContext & { readonly [K in TKey]: TValue },
           });
-        }) as Middleware<
-          TContext,
-          TContext & { readonly [K in TKey]: TValue },
-          TDefinitions
-        >,
+        }) as Middleware<TContext, TContext & { readonly [K in TKey]: TValue }, TDefinitions>,
 
     contract: <TContext>(app: RpcFactory<TContext>) =>
       app
@@ -293,22 +279,20 @@ export const defineLayer = <
         middleware: <TContext>(app: RpcFactory<TContext>, after?: AnyMiddlewareLike) => {
           const base = app.middleware();
           const chained = after ? base.after(after) : base;
-          return chained
-            .errors(refineOptions.errors)
-            .use(async ({ context, next }) => {
-              const value = (context as { readonly [K in TKey]: TValue })[options.key];
-              const resolved = await refineOptions.refine({
-                value,
-                errors: refineOptions.errors,
-              });
-              if (!resolved.ok) return resolved;
-              return next({
-                context: {
-                  ...(context as TContext & object),
-                  [options.key]: resolved.value,
-                } as TContext & object,
-              });
+          return chained.errors(refineOptions.errors).use(async ({ context, next }) => {
+            const value = (context as { readonly [K in TKey]: TValue })[options.key];
+            const resolved = await refineOptions.refine({
+              value,
+              errors: refineOptions.errors,
             });
+            if (!resolved.ok) return resolved;
+            return next({
+              context: {
+                ...(context as TContext & object),
+                [options.key]: resolved.value,
+              } as TContext & object,
+            });
+          });
         },
 
         contract: <TContext>(app: RpcFactory<TContext>) =>
@@ -332,8 +316,14 @@ export const defineLayer = <
           ];
           return implementContextProcedure(
             app,
-            contract
-              ?? (refined.contract(app) as unknown as ProcedureContract<TContext, {}, never, ErrorDefinitionMap, "query">),
+            contract ??
+              (refined.contract(app) as unknown as ProcedureContract<
+                TContext,
+                {},
+                never,
+                ErrorDefinitionMap,
+                "query"
+              >),
             options.key,
             middlewares,
           );
@@ -352,18 +342,14 @@ const splitContract = (
   chain: readonly unknown[],
 ): [unknown | undefined, readonly AnyMiddlewareLike[]] => {
   const [head, ...rest] = chain;
-  return head !== null
-    && typeof head === "object"
-    && (head as { readonly _kind?: unknown })._kind === "procedure-contract"
+  return head !== null &&
+    typeof head === "object" &&
+    (head as { readonly _kind?: unknown })._kind === "procedure-contract"
     ? [head, rest as readonly AnyMiddlewareLike[]]
     : [undefined, chain as readonly AnyMiddlewareLike[]];
 };
 
-const implementContextProcedure = <
-  TContext,
-  TValue,
-  TDefinitions extends ErrorDefinitionMap,
->(
+const implementContextProcedure = <TContext, TValue, TDefinitions extends ErrorDefinitionMap>(
   app: RpcFactory<TContext>,
   contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
   key: string,

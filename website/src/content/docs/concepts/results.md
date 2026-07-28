@@ -15,15 +15,15 @@ shape, so a merely shape-compatible object is rejected by `err()`.
 
 ## The surface
 
-| | |
-| --- | --- |
-| Construct | `ok`, `err`, `isOk`, `isErr` |
-| Transform | `map`, `andThen`, `mapError`, `orElse` |
-| Unwrap | `match`, `matchError`, `getOrElse` |
-| Observe | `tap`, `tapError`, `tapBoth` |
-| Adopt throwing code | `tryCatch`, `tryPromise` |
-| Combine | `all` (tuple or record, first failure wins) |
-| Compose | `gen` (generator style, `yield*`) |
+|                     |                                             |
+| ------------------- | ------------------------------------------- |
+| Construct           | `ok`, `err`, `isOk`, `isErr`                |
+| Transform           | `map`, `andThen`, `mapError`, `orElse`      |
+| Unwrap              | `match`, `matchError`, `getOrElse`          |
+| Observe             | `tap`, `tapError`, `tapBoth`                |
+| Adopt throwing code | `tryCatch`, `tryPromise`                    |
+| Combine             | `all` (tuple or record, first failure wins) |
+| Compose             | `gen` (generator style, `yield*`)           |
 
 All Result operations are standalone and tree-shakeable. A
 `Promise<Result>` stays a plain promise you `await` — there is no
@@ -36,13 +36,13 @@ short-circuits the whole block on the first failure. The error union
 accumulates automatically from everything yielded — no annotations:
 
 ```ts
-import { gen } from "result-rpc"
+import { gen } from "result-rpc";
 
 const outcome = gen(function* () {
-  const doc = yield* findDoc(id)        // Result<Doc, DocNotFound>
-  const body = yield* parseBody(doc)    // Result<Body, ParseFailure>
-  return render(doc, body)
-})
+  const doc = yield* findDoc(id); // Result<Doc, DocNotFound>
+  const body = yield* parseBody(doc); // Result<Body, ParseFailure>
+  return render(doc, body);
+});
 // Result<Rendered, DocNotFound | ParseFailure>
 ```
 
@@ -51,9 +51,9 @@ type becomes a `Promise<Result>`:
 
 ```ts
 const outcome = await gen(async function* () {
-  const doc = yield* await fetchDoc(id)
-  return yield* parseBody(doc)
-})
+  const doc = yield* await fetchDoc(id);
+  return yield* parseBody(doc);
+});
 ```
 
 Three idioms worth knowing: `return yield* err(SomeError({ ... }))` fails a
@@ -68,25 +68,25 @@ The client reconstructs the Result behavior and the exact declared
 `TaggedError` type before returning:
 
 ```ts
-import { gen } from "result-rpc"
-import { client } from "./rpc-client"
-import { docErrors } from "./errors"
+import { gen } from "result-rpc";
+import { client } from "./rpc-client";
+import { docErrors } from "./errors";
 
 const outcome = await gen(async function* () {
   // The response crossed HTTP. It is still a result-rpc Result, so yield*
   // unwraps success or propagates its reconstructed TaggedError.
-  const doc = yield* await client.doc.byId({ id: "doc_missing" })
-  const body = yield* parseBody(doc.body)
-  return { doc, body }
-})
+  const doc = yield* await client.doc.byId({ id: "doc_missing" });
+  const body = yield* parseBody(doc.body);
+  return { doc, body };
+});
 
 if (!outcome.ok && docErrors.notFound.is(outcome.error)) {
-  outcome.error instanceof Error // true
-  outcome.error.data.docId        // "doc_missing"
+  outcome.error instanceof Error; // true
+  outcome.error.data.docId; // "doc_missing"
 
   const propagated = gen(function* () {
-    return yield* outcome.error   // the reconstructed error is yieldable too
-  })
+    return yield* outcome.error; // the reconstructed error is yieldable too
+  });
 }
 ```
 
@@ -101,9 +101,9 @@ procedure's error registry, so they cannot reconstruct the runtime types.
 Unwrap before crossing one of those boundaries:
 
 ```tsx
-const result = await client.doc.byId({ id })
-if (!result.ok) return <NotFound docId={result.error.data.docId} />
-return <DocView doc={result.value} /> // pass T, not Result<T, E>
+const result = await client.doc.byId({ id });
+if (!result.ok) return <NotFound docId={result.error.data.docId} />;
+return <DocView doc={result.value} />; // pass T, not Result<T, E>
 ```
 
 ## The worked example: an upstream service, composed to the screen
@@ -116,27 +116,27 @@ The service keeps its own precise error vocabulary:
 
 ```ts
 // server/services/rates.ts
-import { defineErrors, err, gen, tryPromise, wire } from "result-rpc"
+import { defineErrors, err, gen, tryPromise, wire } from "result-rpc";
 
 export const upstream = defineErrors("upstream", {
   unavailable: { data: wire.object({ status: wire.number }), httpStatus: 502, retry: "transient" },
   malformed: { data: wire.object({ reason: wire.string }), httpStatus: 502 },
-})
+});
 
 export const safeJsonFetch = (url: string) =>
   gen(async function* () {
     const response = yield* await tryPromise(
       () => fetch(url),
       () => upstream.unavailable({ status: 0 }),
-    )
+    );
     if (!response.ok) {
-      return yield* err(upstream.unavailable({ status: response.status }))
+      return yield* err(upstream.unavailable({ status: response.status }));
     }
     return yield* await tryPromise(
       () => response.json() as Promise<unknown>,
       (cause) => upstream.malformed({ reason: String(cause) }),
-    )
-  })
+    );
+  });
 // Promise<Result<unknown, UpstreamUnavailable | UpstreamMalformed>>
 ```
 
@@ -151,29 +151,32 @@ collapses them with `mapError`, and only the coarse tag enters the contract:
 
 ```ts
 // server/router.ts
-import { error, gen, err, mapError, ok, wire } from "result-rpc"
-import { safeJsonFetch } from "./services/rates"
+import { error, gen, err, mapError, ok, wire } from "result-rpc";
+import { safeJsonFetch } from "./services/rates";
 
 const RatesUnavailable = error({
   tag: "rates/unavailable",
   data: wire.object({}),
   httpStatus: 503,
   retry: "transient",
-})
+});
 
-const quote = app.procedure()
+const quote = app
+  .procedure()
   .input(wire.object({ currency: wire.string }))
   .output(wire.object({ currency: wire.string, rate: wire.number }))
   .errors({ RatesUnavailable })
-  .query(({ input, errors }) => gen(async function* () {
-    const payload = yield* mapError(
-      await safeJsonFetch(`https://rates.example/api/${input.currency}`),
-      () => errors.RatesUnavailable({}),   // two granular tags → one declared tag
-    )
-    const rate = (payload as { rate?: number }).rate
-    if (typeof rate !== "number") return yield* err(errors.RatesUnavailable({}))
-    return { currency: input.currency, rate }
-  }))
+  .query(({ input, errors }) =>
+    gen(async function* () {
+      const payload = yield* mapError(
+        await safeJsonFetch(`https://rates.example/api/${input.currency}`),
+        () => errors.RatesUnavailable({}), // two granular tags → one declared tag
+      );
+      const rate = (payload as { rate?: number }).rate;
+      if (typeof rate !== "number") return yield* err(errors.RatesUnavailable({}));
+      return { currency: input.currency, rate };
+    }),
+  );
 ```
 
 The type system enforces the collapse: a handler returning an undeclared
@@ -186,12 +189,15 @@ query has, and the domain branch is exactly one tag wide:
 
 ```tsx
 function Quote({ currency }: { currency: string }) {
-  const quote = AppShell.useQuery(client.rates.quote, { currency })
+  const quote = AppShell.useQuery(client.rates.quote, { currency });
 
   switch (quote.state) {
-    case "pending": return <Skeleton />
-    case "success": return <Rate value={quote.value.rate} />
-    case "failure": return <RatesDown retry={quote.refetch} />
+    case "pending":
+      return <Skeleton />;
+    case "success":
+      return <Rate value={quote.value.rate} />;
+    case "failure":
+      return <RatesDown retry={quote.refetch} />;
     // quote.error: RatesUnavailable — the upstream vocabulary never leaked
   }
 }
@@ -214,15 +220,15 @@ const session = defineLayer({
   key: "viewer",
   provides: ViewerCodec,
   errors: { SessionExpired, SessionRevoked },
-})
+});
 
 const sessionMiddleware = session.middleware(app, ({ context, errors }) =>
   gen(async function* () {
-    const token = yield* readToken(context.headers, errors)    // Result<Token, SessionExpired>
-    const viewer = yield* await lookupViewer(token, errors)    // Result<Viewer, SessionRevoked>
-    return viewer
+    const token = yield* readToken(context.headers, errors); // Result<Token, SessionExpired>
+    const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
+    return viewer;
   }),
-)
+);
 ```
 
 Everything downstream of the middleware sees `context.viewer` as guaranteed;

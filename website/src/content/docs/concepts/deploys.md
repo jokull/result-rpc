@@ -7,7 +7,7 @@ Every deploy opens a compatibility window: new server, old tabs. In most
 stacks the window is invisible — a stale client's failures are
 indistinguishable from bugs (bad requests, decode failures), Sentry counts
 every deploy as an incident spike, and the "fix" is a user who happens to
-press reload. Closed unions make the window *more* acute, not less: a stale
+press reload. Closed unions make the window _more_ acute, not less: a stale
 client cannot even decode an error tag added after it was built.
 
 result-rpc makes the window a detected, owned state:
@@ -20,20 +20,20 @@ result-rpc makes the window a detected, owned state:
    a `skew` ClientEvent — observability sees the drift before anything fails.
 3. When a request **fails** with a contract-shaped tag (`server/bad-request`,
    `client/decode-failure`, `client/protocol-violation`,
-   `client/http-failure`) *while the digests differ*, the failure is
+   `client/http-failure`) _while the digests differ_, the failure is
    reclassified as `client/stale`, carrying the original tag. Matching
    digests change nothing — a real defect stays a defect, and successful
    calls are never touched.
 
 And `client/stale` has a built-in owner: the boundary's `StaleShell` claims
 it, holds the affected operations, and reacts — by default with a page
-reload, because the reload fetches the current client, which *is* the fix.
+reload, because the reload fetches the current client, which _is_ the fix.
 Override it to taste:
 
 ```tsx
 const { BoundaryProvider } = boundaryShells({
   onStale: () => toast("A new version is available", { action: reload }),
-})
+});
 ```
 
 The automatic digest reads what codecs expose, so a field-level change inside
@@ -49,14 +49,14 @@ createClient({ contract, contractVersion: BUILD_SHA, ... })
 Detection is failure-gated, so the coarser stamp is safe: matching successful
 calls are never reclassified.
 
-`contractVersion` *replaces* the structural digest entirely — it does not
+`contractVersion` _replaces_ the structural digest entirely — it does not
 combine with it. Matching version strings on both sides suppress stale
 reclassification even when the underlying shapes differ, which is exactly
 the escape hatch a deliberately loose client (a canary, a test double, a
 tolerant reader during an expand window) needs.
 
 The whole mid-deploy arc is pinned as a runnable test in
-`examples/07-tracker`: a deliberately *stale-shaped* client — the old
+`examples/07-tracker`: a deliberately _stale-shaped_ client — the old
 deploy, no schema preflight — sends a bad request across the real wire, the
 server's input decode rejects it, and `server/bad-request` comes back
 projected onto form fields with `fieldIssues`, asserted at exactly one wire

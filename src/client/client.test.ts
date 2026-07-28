@@ -55,23 +55,27 @@ const broken = r
 const rich = r
   .procedure()
   .input(wire.object({ fail: wire.boolean }))
-  .output(wire.object({
-    at: wire.date,
-    sequence: wire.bigint,
-    missing: wire.undefined,
-    pattern: wire.regexp,
-    url: wire.url,
-  }))
+  .output(
+    wire.object({
+      at: wire.date,
+      sequence: wire.bigint,
+      missing: wire.undefined,
+      pattern: wire.regexp,
+      url: wire.url,
+    }),
+  )
   .errors({ Expired })
-  .query(({ input, errors }) => input.fail
-    ? err(errors.Expired({ at: new Date("2026-01-01T00:00:00.000Z"), sequence: 9n }))
-    : ok({
-        at: new Date("2026-01-01T00:00:00.000Z"),
-        sequence: 9n,
-        missing: undefined,
-        pattern: /trip/giu,
-        url: new URL("https://example.test/trip"),
-      }));
+  .query(({ input, errors }) =>
+    input.fail
+      ? err(errors.Expired({ at: new Date("2026-01-01T00:00:00.000Z"), sequence: 9n }))
+      : ok({
+          at: new Date("2026-01-01T00:00:00.000Z"),
+          sequence: 9n,
+          missing: undefined,
+          pattern: /trip/giu,
+          url: new URL("https://example.test/trip"),
+        }),
+  );
 
 const eventsContract = r
   .procedure()
@@ -82,10 +86,12 @@ const eventsContract = r
 const events = r.implement(eventsContract).stream(async function* ({ input, errors }) {
   yield ok({ at: new Date("2026-01-01T00:00:00.000Z"), sequence: 1n });
   if (input.fail) {
-    yield err(errors.Expired({
-      at: new Date("2026-01-02T00:00:00.000Z"),
-      sequence: 2n,
-    }));
+    yield err(
+      errors.Expired({
+        at: new Date("2026-01-02T00:00:00.000Z"),
+        sequence: 2n,
+      }),
+    );
     return;
   }
   yield ok({ at: new Date("2026-01-03T00:00:00.000Z"), sequence: 3n });
@@ -129,8 +135,11 @@ describe("unary client and server", () => {
       .errors({ NotFound })
       .query();
     const contract = r.contract({ shared: { byId: contractProcedure } });
-    const implementation = r.implement(contractProcedure).handler(({ input, errors }) =>
-      input.id === "one" ? ok("first") : err(errors.NotFound({ id: input.id })));
+    const implementation = r
+      .implement(contractProcedure)
+      .handler(({ input, errors }) =>
+        input.id === "one" ? ok("first") : err(errors.NotFound({ id: input.id })),
+      );
     const contractHandler = createFetchHandler({
       router: r.router({ shared: { byId: implementation } }),
       createContext: () => ({ values: new Map() }),
@@ -146,8 +155,9 @@ describe("unary client and server", () => {
 
     expect("handler" in contractProcedure._def).toBe(false);
     expect(await contractClient.shared.byId({ id: "one" })).toEqual(ok("first"));
-    expect(await contractClient.shared.byId({ id: "missing" }))
-      .toEqual(err(NotFound({ id: "missing" })));
+    expect(await contractClient.shared.byId({ id: "missing" })).toEqual(
+      err(NotFound({ id: "missing" })),
+    );
   });
 
   test("round trips a successful procedure", async () => {
@@ -204,7 +214,9 @@ describe("unary client and server", () => {
   test("aborts a shared batch only after every item is cancelled", async () => {
     let sharedAborted = false;
     let markStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     const batched = createClient({
       router,
       transport: batchFetchTransport({
@@ -213,10 +225,14 @@ describe("unary client and server", () => {
           markStarted?.();
           return new Promise<Response>((_resolve, reject) => {
             const signal = init?.signal;
-            signal?.addEventListener("abort", () => {
-              sharedAborted = true;
-              reject(new DOMException("aborted", "AbortError"));
-            }, { once: true });
+            signal?.addEventListener(
+              "abort",
+              () => {
+                sharedAborted = true;
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true },
+            );
           });
         }) as unknown as typeof globalThis.fetch,
       }),
@@ -226,11 +242,15 @@ describe("unary client and server", () => {
     const firstCall = batched.value.byId({ id: "one" }, { signal: first.signal });
     const secondCall = batched.value.byId({ id: "one" }, { signal: second.signal });
     const firstRejected = firstCall.then(
-      () => { throw new Error("first batch item unexpectedly resolved"); },
+      () => {
+        throw new Error("first batch item unexpectedly resolved");
+      },
       (failure) => failure,
     );
     const secondRejected = secondCall.then(
-      () => { throw new Error("second batch item unexpectedly resolved"); },
+      () => {
+        throw new Error("second batch item unexpectedly resolved");
+      },
       (failure) => failure,
     );
     await started;
@@ -299,14 +319,20 @@ describe("unary client and server", () => {
     for await (const result of client.value.events({ fail: true })) received.push(result);
 
     expect(received).toHaveLength(2);
-    expect(received[0]).toEqual(ok({
-      at: new Date("2026-01-01T00:00:00.000Z"),
-      sequence: 1n,
-    }));
-    expect(received[1]).toEqual(err(Expired({
-      at: new Date("2026-01-02T00:00:00.000Z"),
-      sequence: 2n,
-    })));
+    expect(received[0]).toEqual(
+      ok({
+        at: new Date("2026-01-01T00:00:00.000Z"),
+        sequence: 1n,
+      }),
+    );
+    expect(received[1]).toEqual(
+      err(
+        Expired({
+          at: new Date("2026-01-02T00:00:00.000Z"),
+          sequence: 2n,
+        }),
+      ),
+    );
   });
 
   test("sanitizes an unknown server exception", async () => {
@@ -384,9 +410,13 @@ describe("unary client and server", () => {
         timeoutMs: 1,
         fetch: (async (_input: string | URL | Request, init?: RequestInit) =>
           new Promise<Response>((_resolve, reject) => {
-            init?.signal?.addEventListener("abort", () => {
-              reject(new DOMException("aborted", "AbortError"));
-            }, { once: true });
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true },
+            );
           })) as unknown as typeof globalThis.fetch,
       }),
     });
@@ -408,10 +438,7 @@ describe("unary client and server", () => {
         },
       },
     });
-    const result = await retrying.value.byId(
-      { id: "one" },
-      { retry: "from-error-policy" },
-    );
+    const result = await retrying.value.byId({ id: "one" }, { retry: "from-error-policy" });
     expect(result).toEqual(ok({ id: "one", value: "first" }));
     expect(attempts).toBe(2);
   });
@@ -420,10 +447,12 @@ describe("unary client and server", () => {
     let called = false;
     const invalid = createClient({
       router,
-      transport: { request: async () => {
-        called = true;
-        return { ok: false, reason: "network" };
-      } },
+      transport: {
+        request: async () => {
+          called = true;
+          return { ok: false, reason: "network" };
+        },
+      },
     });
     await expect(invalid.value.byId({ id: 123 } as never)).rejects.toThrow("Invalid input");
     expect(called).toBe(false);
@@ -435,10 +464,11 @@ describe("unary client and server", () => {
       transport: fetchTransport({
         url: "https://example.test/rpc",
         maxResponseBytes: 32,
-        fetch: (async () => new Response("x".repeat(1_000), {
-          status: 200,
-          headers: { "content-type": "application/result-rpc+devalue; sv=1" },
-        })) as unknown as typeof globalThis.fetch,
+        fetch: (async () =>
+          new Response("x".repeat(1_000), {
+            status: 200,
+            headers: { "content-type": "application/result-rpc+devalue; sv=1" },
+          })) as unknown as typeof globalThis.fetch,
       }),
     });
     const result = await bounded.value.byId({ id: "one" });
@@ -473,13 +503,16 @@ describe("observability events", () => {
     const r = rpc.context<{}>();
     let failures = 0;
     const router = r.router({
-      find: r.procedure()
+      find: r
+        .procedure()
         .input(wire.object({ id: wire.string }))
         .output(wire.string)
         .errors({ NotFound })
         .query(({ input, errors }) =>
-          input.id === "missing" ? err(errors.NotFound()) : ok(input.id)),
-      flaky: r.procedure()
+          input.id === "missing" ? err(errors.NotFound()) : ok(input.id),
+        ),
+      flaky: r
+        .procedure()
         .output(wire.string)
         .errors({ Flaky })
         .query(({ errors }) => (failures++ < 1 ? err(errors.Flaky()) : ok("recovered"))),
@@ -519,10 +552,15 @@ describe("observability events", () => {
 
   test("the stream adapts to a Sentry-shaped sink in one function", async () => {
     const breadcrumbs: { category: string; message: string; level: string; data: unknown }[] = [];
-    const fakeSentry = { addBreadcrumb: (crumb: (typeof breadcrumbs)[number]) => breadcrumbs.push(crumb) };
+    const fakeSentry = {
+      addBreadcrumb: (crumb: (typeof breadcrumbs)[number]) => breadcrumbs.push(crumb),
+    };
     const r = rpc.context<{}>();
     const router = r.router({
-      ping: r.procedure().output(wire.string).query(() => ok("pong")),
+      ping: r
+        .procedure()
+        .output(wire.string)
+        .query(() => ok("pong")),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
     const client = createClient({
@@ -532,12 +570,13 @@ describe("observability events", () => {
         fetch: ((input: string | URL | Request, init?: RequestInit) =>
           handler(new Request(input, init))) as typeof globalThis.fetch,
       }),
-      onEvent: (event) => fakeSentry.addBreadcrumb({
-        category: `rpc.${event.type}`,
-        message: "path" in event ? event.path : "",
-        level: event.type === "failure" ? "warning" : "info",
-        data: event,
-      }),
+      onEvent: (event) =>
+        fakeSentry.addBreadcrumb({
+          category: `rpc.${event.type}`,
+          message: "path" in event ? event.path : "",
+          level: event.type === "failure" ? "warning" : "info",
+          data: event,
+        }),
     });
     await client.ping();
     expect(breadcrumbs.map((crumb) => crumb.category)).toEqual(["rpc.call", "rpc.success"]);
@@ -551,7 +590,8 @@ describe("contract skew", () => {
     // shape AND its error union grew — the union change flips the digest.
     const server = rpc.context<{}>();
     const serverRouter = server.router({
-      byNumber: server.procedure()
+      byNumber: server
+        .procedure()
         .input(wire.object({ id: wire.string, revision: wire.number }))
         .output(wire.string)
         .errors({ Gone })
@@ -562,7 +602,8 @@ describe("contract skew", () => {
     // The stale client was built against the old shape.
     const stale = rpc.context<{}>();
     const staleRouter = stale.router({
-      byNumber: stale.procedure()
+      byNumber: stale
+        .procedure()
         .input(wire.object({ id: wire.string }))
         .output(wire.string)
         .query(({ input }) => ok(input.id)),
@@ -626,11 +667,13 @@ describe("content-type gate (CSRF surface)", () => {
     const envelope = serialize({ v: 1, path: "value.byId", input: { id: "one" } });
     if (!envelope.ok) throw new Error("unreachable");
     for (const contentType of ["multipart/form-data", "text/plain", "application/json"]) {
-      const response = await handler(new Request("https://example.test/rpc", {
-        method: "POST",
-        headers: { "content-type": contentType },
-        body: envelope.value,
-      }));
+      const response = await handler(
+        new Request("https://example.test/rpc", {
+          method: "POST",
+          headers: { "content-type": contentType },
+          body: envelope.value,
+        }),
+      );
       expect(response.status).toBe(400);
       expect(await response.text()).toContain("protocol/invalid-request");
     }
@@ -641,19 +684,26 @@ describe("client-boundary dev guard", () => {
   // Hermetic DOM-global control: set window/document to an exact presence,
   // run, then restore whatever was there before — so these tests are
   // deterministic no matter what ambient state other suites leave behind.
-  const withDom = <T,>(present: boolean, fn: () => T): T => {
+  const withDom = <T>(present: boolean, fn: () => T): T => {
     const g = globalThis as { window?: unknown; document?: unknown };
     const hadWindow = "window" in g;
     const hadDocument = "document" in g;
     const savedWindow = g.window;
     const savedDocument = g.document;
-    if (present) { g.window = {}; g.document = {}; }
-    else { delete g.window; delete g.document; }
+    if (present) {
+      g.window = {};
+      g.document = {};
+    } else {
+      delete g.window;
+      delete g.document;
+    }
     try {
       return fn();
     } finally {
-      if (hadWindow) g.window = savedWindow; else delete g.window;
-      if (hadDocument) g.document = savedDocument; else delete g.document;
+      if (hadWindow) g.window = savedWindow;
+      else delete g.window;
+      if (hadDocument) g.document = savedDocument;
+      else delete g.document;
     }
   };
 
@@ -671,7 +721,13 @@ describe("client-boundary dev guard", () => {
 
   const transport = () => fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
   const boundaryContract = r.contract({
-    value: { byId: r.procedure().input(wire.object({ id: wire.string })).output(wire.string).query() },
+    value: {
+      byId: r
+        .procedure()
+        .input(wire.object({ id: wire.string }))
+        .output(wire.string)
+        .query(),
+    },
   });
 
   test("warns once when a router is handed to createClient in a browser", () => {
@@ -700,7 +756,8 @@ describe("client-boundary dev guard", () => {
     withDom(true, () => {
       __resetClientBoundaryWarning();
       const warnings = withWarnCapture(() =>
-        createClient({ contract: boundaryContract, transport: transport() }));
+        createClient({ contract: boundaryContract, transport: transport() }),
+      );
       expect(warnings.length).toBe(0);
     });
     __resetClientBoundaryWarning();

@@ -64,9 +64,10 @@ const codecForColumn = (name: string, column: Column): WireCodec<unknown, WireVa
     const kind: string = column.dataType;
     if (kind.startsWith("string enum") && column.enumValues && column.enumValues.length > 0) {
       const literals = column.enumValues.map((value) => wire.literal(value));
-      return (literals.length === 1
-        ? literals[0]
-        : wire.union(literals as never)) as WireCodec<unknown, WireValue>;
+      return (literals.length === 1 ? literals[0] : wire.union(literals as never)) as WireCodec<
+        unknown,
+        WireValue
+      >;
     }
     if (kind.startsWith("string")) return wire.string as WireCodec<unknown, WireValue>;
     if (kind.startsWith("number")) return wire.number as WireCodec<unknown, WireValue>;
@@ -110,16 +111,19 @@ export const modelFromDrizzle = <
     }
     shape[columnName] = codecForColumn(columnName, column);
   }
-  const key = options.key ?? ((): string => {
-    const primaries = options.columns.filter((columnName) =>
-      tableColumns[columnName]?.primary === true);
-    if (primaries.length === 1) return primaries[0] as string;
-    throw new TypeError(
-      primaries.length === 0
-        ? `modelFromDrizzle: no inline primary key among the selected columns of ${name} — pass \`key\` explicitly (table-level composite primary keys cannot be introspected)`
-        : `modelFromDrizzle: multiple primary-key columns selected for ${name} — pass \`key\` explicitly`,
-    );
-  })();
+  const key =
+    options.key ??
+    ((): string => {
+      const primaries = options.columns.filter(
+        (columnName) => tableColumns[columnName]?.primary === true,
+      );
+      if (primaries.length === 1) return primaries[0] as string;
+      throw new TypeError(
+        primaries.length === 0
+          ? `modelFromDrizzle: no inline primary key among the selected columns of ${name} — pass \`key\` explicitly (table-level composite primary keys cannot be introspected)`
+          : `modelFromDrizzle: multiple primary-key columns selected for ${name} — pass \`key\` explicitly`,
+      );
+    })();
   return defineModel(name, { key, shape }) as unknown as ModelDefinition<
     TName,
     DrizzleModelShape<TTable, TCols[number]>
@@ -179,9 +183,11 @@ const classify = (cause: unknown): DbError => {
     const code = (current as { code?: unknown }).code;
     if (typeof code === "string") {
       const constraint = constraintFrom(current.message);
-      if (code.startsWith("SQLITE_CONSTRAINT_UNIQUE")
-        || code.startsWith("SQLITE_CONSTRAINT_PRIMARYKEY")
-        || code === "23505") {
+      if (
+        code.startsWith("SQLITE_CONSTRAINT_UNIQUE") ||
+        code.startsWith("SQLITE_CONSTRAINT_PRIMARYKEY") ||
+        code === "23505"
+      ) {
         return dbErrors.uniqueViolation({ constraint });
       }
       if (code.startsWith("SQLITE_CONSTRAINT_FOREIGNKEY") || code === "23503") {

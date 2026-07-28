@@ -4,8 +4,9 @@ import { createTodoHandler, memoryStore } from "./server.js";
 import { BoundaryProvider, makeTodoClient, TodoApp, TodoList } from "./ui.js";
 import { createQueryRuntime, ResultRpcProvider } from "../../src/react/index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 

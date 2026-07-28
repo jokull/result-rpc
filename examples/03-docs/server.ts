@@ -85,7 +85,10 @@ export const app = rpc.context<RequestContext>();
 
 // session: reads the cookie, may find nobody — cannot fail
 const session = SessionLayer.middleware(app, async ({ context }) =>
-  ok(context.sessionToken ? (await context.db.userBySession(context.sessionToken)) ?? null : null));
+  ok(
+    context.sessionToken ? ((await context.db.userBySession(context.sessionToken)) ?? null) : null,
+  ),
+);
 
 // viewer: narrows to a real user, bundles session so one .use() is the whole chain
 const authenticated = ViewerLayer.middleware(app, session);
@@ -96,12 +99,14 @@ const whoami = SessionLayer.procedure(app, session);
 const me = ViewerLayer.procedure(app, authenticated);
 
 /** Returns WHO changed: every cached query containing this user patches in place. */
-const setAvatar = app.procedure()
+const setAvatar = app
+  .procedure()
   .input(wire.object({ avatarUrl: wire.string }))
   .output(UserCodec)
   .use(authenticated)
   .mutation(async ({ input, context }) =>
-    ok(await context.db.setAvatar(context.viewer.id, input.avatarUrl)));
+    ok(await context.db.setAvatar(context.viewer.id, input.avatarUrl)),
+  );
 
 /** The tRPC protectedProcedure pattern: builders are immutable, bases fork freely. */
 const protectedProcedure = app.procedure().use(authenticated);

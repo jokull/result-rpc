@@ -95,11 +95,41 @@ export async function seedDb(): Promise<BookingsDb> {
   // second paginated surface. Okura average: 21/5 = 4.2.
   await db.insert(reviews).values([
     { id: "rv-1", hotelId: "h-okura", authorId: "u-kenji", rating: 5, body: "Best onsen in Tokyo" },
-    { id: "rv-2", hotelId: "h-okura", authorId: "u-liv", rating: 4, body: "Great breakfast spread" },
-    { id: "rv-3", hotelId: "h-okura", authorId: "u-tomas", rating: 3, body: "Rooms are small but spotless" },
-    { id: "rv-4", hotelId: "h-okura", authorId: "u-mei", rating: 5, body: "Concierge went above and beyond" },
-    { id: "rv-5", hotelId: "h-okura", authorId: "u-noah", rating: 4, body: "Quiet floors, would return" },
-    { id: "rv-6", hotelId: "h-granvia", authorId: "u-kenji", rating: 4, body: "Perfect Kyoto base" },
+    {
+      id: "rv-2",
+      hotelId: "h-okura",
+      authorId: "u-liv",
+      rating: 4,
+      body: "Great breakfast spread",
+    },
+    {
+      id: "rv-3",
+      hotelId: "h-okura",
+      authorId: "u-tomas",
+      rating: 3,
+      body: "Rooms are small but spotless",
+    },
+    {
+      id: "rv-4",
+      hotelId: "h-okura",
+      authorId: "u-mei",
+      rating: 5,
+      body: "Concierge went above and beyond",
+    },
+    {
+      id: "rv-5",
+      hotelId: "h-okura",
+      authorId: "u-noah",
+      rating: 4,
+      body: "Quiet floors, would return",
+    },
+    {
+      id: "rv-6",
+      hotelId: "h-granvia",
+      authorId: "u-kenji",
+      rating: 4,
+      body: "Perfect Kyoto base",
+    },
   ]);
 
   await db.insert(lineItems).values([

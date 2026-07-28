@@ -23,15 +23,15 @@ Bezier outlines.
 
 ## Palette
 
-| Token | Hex | Role |
-| --- | --- | --- |
-| Canvas | `#F6F1E7` | Primary light background and knockout surface |
-| Ink | `#111111` | Logo, body copy, code panels |
-| Iris | `#2E5090` | Primary brand blue, links, major fields |
-| Sky | `#A8C5D9` | Blue highlight and quiet panel source color |
-| Sky soft | `#E4EDF4` | Accent backgrounds with Ink text |
-| Sunflower | `#E7D28A` | Focused warm accent and selection color |
-| Leaf | `#6A8B5A` | Supporting status and botanical accent |
+| Token     | Hex       | Role                                          |
+| --------- | --------- | --------------------------------------------- |
+| Canvas    | `#F6F1E7` | Primary light background and knockout surface |
+| Ink       | `#111111` | Logo, body copy, code panels                  |
+| Iris      | `#2E5090` | Primary brand blue, links, major fields       |
+| Sky       | `#A8C5D9` | Blue highlight and quiet panel source color   |
+| Sky soft  | `#E4EDF4` | Accent backgrounds with Ink text              |
+| Sunflower | `#E7D28A` | Focused warm accent and selection color       |
+| Leaf      | `#6A8B5A` | Supporting status and botanical accent        |
 
 Iris should dominate solid chromatic surfaces. Primary buttons use Iris with
 warm-white text. Soft accent panels use Sky soft with Ink or Iris text.

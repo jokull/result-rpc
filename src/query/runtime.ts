@@ -84,26 +84,35 @@ type SubscriptionProcedureClientLike = ((
   options?: { readonly signal?: AbortSignal },
 ) => ResultSubscription<any, AnyTaggedError>) & { readonly $kind: "subscription" };
 
-export type SubscriptionClientInput<TProcedureClient> =
-  TProcedureClient extends (input: infer TInput, ...rest: any[]) => unknown ? TInput : never;
-export type SubscriptionClientOutput<TProcedureClient> =
-  TProcedureClient extends (...args: any[]) => ResultSubscription<infer T, any>
-    ? T
-    : never;
-export type SubscriptionClientError<TProcedureClient> =
-  TProcedureClient extends (...args: any[]) => ResultSubscription<any, infer E>
-    ? E
-    : never;
+export type SubscriptionClientInput<TProcedureClient> = TProcedureClient extends (
+  input: infer TInput,
+  ...rest: any[]
+) => unknown
+  ? TInput
+  : never;
+export type SubscriptionClientOutput<TProcedureClient> = TProcedureClient extends (
+  ...args: any[]
+) => ResultSubscription<infer T, any>
+  ? T
+  : never;
+export type SubscriptionClientError<TProcedureClient> = TProcedureClient extends (
+  ...args: any[]
+) => ResultSubscription<any, infer E>
+  ? E
+  : never;
 
-export type ProcedureClientInput<TProcedureClient> =
-  TProcedureClient extends (input: infer TInput, ...rest: any[]) => unknown
-    ? TInput
-    : never;
+export type ProcedureClientInput<TProcedureClient> = TProcedureClient extends (
+  input: infer TInput,
+  ...rest: any[]
+) => unknown
+  ? TInput
+  : never;
 
-export type ProcedureClientResult<TProcedureClient> =
-  TProcedureClient extends (...args: any[]) => Promise<infer TReturn>
-    ? TReturn
-    : never;
+export type ProcedureClientResult<TProcedureClient> = TProcedureClient extends (
+  ...args: any[]
+) => Promise<infer TReturn>
+  ? TReturn
+  : never;
 
 export type ProcedureClientOutput<TProcedureClient> =
   ProcedureClientResult<TProcedureClient> extends Result<infer TOutput, AnyTaggedError>
@@ -111,9 +120,7 @@ export type ProcedureClientOutput<TProcedureClient> =
     : never;
 
 export type ProcedureClientError<TProcedureClient> =
-  ProcedureClientResult<TProcedureClient> extends Result<unknown, infer TError>
-    ? TError
-    : never;
+  ProcedureClientResult<TProcedureClient> extends Result<unknown, infer TError> ? TError : never;
 
 /** A client function minted for a `.paginate()` procedure. */
 export type PaginatedProcedureClientLike = ((
@@ -121,26 +128,23 @@ export type PaginatedProcedureClientLike = ((
   options?: { readonly signal?: AbortSignal },
 ) => Promise<Result<Page<any, any>, AnyTaggedError>>) & { readonly $kind: "query" };
 
-export type PaginatedClientListInput<TProcedureClient> =
-  TProcedureClient extends (
-    input: PageRequest<infer TListInput, any>,
-    ...rest: any[]
-  ) => unknown
-    ? TListInput
-    : never;
-export type PaginatedClientCursor<TProcedureClient> =
-  TProcedureClient extends (
-    input: PageRequest<any, infer TCursor>,
-    ...rest: any[]
-  ) => unknown
-    ? TCursor
-    : never;
-export type PaginatedClientItem<TProcedureClient> =
-  TProcedureClient extends (
-    ...args: any[]
-  ) => Promise<Result<Page<infer TItem, any>, any>>
-    ? TItem
-    : never;
+export type PaginatedClientListInput<TProcedureClient> = TProcedureClient extends (
+  input: PageRequest<infer TListInput, any>,
+  ...rest: any[]
+) => unknown
+  ? TListInput
+  : never;
+export type PaginatedClientCursor<TProcedureClient> = TProcedureClient extends (
+  input: PageRequest<any, infer TCursor>,
+  ...rest: any[]
+) => unknown
+  ? TCursor
+  : never;
+export type PaginatedClientItem<TProcedureClient> = TProcedureClient extends (
+  ...args: any[]
+) => Promise<Result<Page<infer TItem, any>, any>>
+  ? TItem
+  : never;
 
 export type FetchState = "idle" | "fetching" | "paused";
 
@@ -153,22 +157,25 @@ interface QueryControls<T, E extends AnyTaggedError> {
 }
 
 export type QueryState<T, E extends AnyTaggedError> =
-  | (QueryControls<T, E> & Readonly<{
-      state: "pending";
-      value?: undefined;
-      error?: undefined;
-    }>)
-  | (QueryControls<T, E> & Readonly<{
-      state: "success";
-      value: T;
-      error?: undefined;
-    }>)
-  | (QueryControls<T, E> & Readonly<{
-      state: "failure";
-      error: E;
-      value?: undefined;
-      previous?: T;
-    }>);
+  | (QueryControls<T, E> &
+      Readonly<{
+        state: "pending";
+        value?: undefined;
+        error?: undefined;
+      }>)
+  | (QueryControls<T, E> &
+      Readonly<{
+        state: "success";
+        value: T;
+        error?: undefined;
+      }>)
+  | (QueryControls<T, E> &
+      Readonly<{
+        state: "failure";
+        error: E;
+        value?: undefined;
+        previous?: T;
+      }>);
 
 export interface QueryOptions<E extends AnyTaggedError> {
   readonly enabled?: boolean;
@@ -207,22 +214,25 @@ interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
  * regardless of which page carried it).
  */
 export type PaginatedState<TItem, TCursor, E extends AnyTaggedError> =
-  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
-      state: "pending";
-      rows?: undefined;
-      error?: undefined;
-    }>)
-  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
-      state: "success";
-      rows: readonly TItem[];
-      error?: undefined;
-    }>)
-  | (PaginatedControls<TItem, TCursor, E> & Readonly<{
-      state: "failure";
-      error: E;
-      rows?: undefined;
-      previous?: readonly TItem[];
-    }>);
+  | (PaginatedControls<TItem, TCursor, E> &
+      Readonly<{
+        state: "pending";
+        rows?: undefined;
+        error?: undefined;
+      }>)
+  | (PaginatedControls<TItem, TCursor, E> &
+      Readonly<{
+        state: "success";
+        rows: readonly TItem[];
+        error?: undefined;
+      }>)
+  | (PaginatedControls<TItem, TCursor, E> &
+      Readonly<{
+        state: "failure";
+        error: E;
+        rows?: undefined;
+        previous?: readonly TItem[];
+      }>);
 
 export interface ResultPaginatedObserver<TItem, TCursor, E extends AnyTaggedError> {
   readonly key: ResultQueryKey;
@@ -241,29 +251,33 @@ interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
 }
 
 export type MutationState<TInput, TOutput, TError extends AnyTaggedError> =
-  | (MutationControls<TInput, TOutput, TError> & Readonly<{
-      state: "idle";
-      value?: undefined;
-      error?: undefined;
-    }>)
-  | (MutationControls<TInput, TOutput, TError> & Readonly<{
-      state: "pending";
-      value?: undefined;
-      error?: undefined;
-      variables: TInput;
-    }>)
-  | (MutationControls<TInput, TOutput, TError> & Readonly<{
-      state: "success";
-      value: TOutput;
-      error?: undefined;
-      variables: TInput;
-    }>)
-  | (MutationControls<TInput, TOutput, TError> & Readonly<{
-      state: "failure";
-      error: TError;
-      value?: undefined;
-      variables: TInput;
-    }>);
+  | (MutationControls<TInput, TOutput, TError> &
+      Readonly<{
+        state: "idle";
+        value?: undefined;
+        error?: undefined;
+      }>)
+  | (MutationControls<TInput, TOutput, TError> &
+      Readonly<{
+        state: "pending";
+        value?: undefined;
+        error?: undefined;
+        variables: TInput;
+      }>)
+  | (MutationControls<TInput, TOutput, TError> &
+      Readonly<{
+        state: "success";
+        value: TOutput;
+        error?: undefined;
+        variables: TInput;
+      }>)
+  | (MutationControls<TInput, TOutput, TError> &
+      Readonly<{
+        state: "failure";
+        error: TError;
+        value?: undefined;
+        variables: TInput;
+      }>);
 
 export interface MutationOptions<
   TInput,
@@ -272,10 +286,7 @@ export interface MutationOptions<
   TContext = undefined,
 > {
   readonly retry?: false | number | ((error: TError, failureCount: number) => boolean);
-  readonly optimistic?: (
-    input: TInput,
-    cache: QueryCache,
-  ) => TContext | Promise<TContext>;
+  readonly optimistic?: (input: TInput, cache: QueryCache) => TContext | Promise<TContext>;
   readonly onSuccess?: (value: TOutput, input: TInput) => void | Promise<void>;
   readonly onFailure?: (
     error: TError,
@@ -344,12 +355,7 @@ export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTagge
   destroy(): void;
 }
 
-export type SubscriptionConnection =
-  | "connecting"
-  | "open"
-  | "reconnecting"
-  | "paused"
-  | "closed";
+export type SubscriptionConnection = "connecting" | "open" | "reconnecting" | "paused" | "closed";
 
 export interface SubscriptionOptions<E extends AnyTaggedError> {
   readonly retry?: false | number | ((error: E, failureCount: number) => boolean);
@@ -374,10 +380,10 @@ export interface ResultSubscriptionObserver<T, E extends AnyTaggedError> {
 const definitionFor = (
   definitions: ErrorDefinitionMap,
   failure: AnyTaggedError,
-): AnyErrorDefinition | undefined => [
-  ...Object.values(definitions),
-  ...Object.values(frameworkErrorDefinitions),
-].find((definition) => definition.tag === failure._tag);
+): AnyErrorDefinition | undefined =>
+  [...Object.values(definitions), ...Object.values(frameworkErrorDefinitions)].find(
+    (definition) => definition.tag === failure._tag,
+  );
 
 const defaultShouldRetry = (
   definitions: ErrorDefinitionMap,
@@ -423,11 +429,12 @@ const defaultRetryDelay = (
   if (isTaggedError(failure) && definitionFor(definitions, failure)?.policy.retry === "after") {
     const data = failure.data;
     if (
-      data !== null
-      && typeof data === "object"
-      && "retryAfterMs" in data
-      && typeof data.retryAfterMs === "number"
-    ) return Math.max(0, data.retryAfterMs);
+      data !== null &&
+      typeof data === "object" &&
+      "retryAfterMs" in data &&
+      typeof data.retryAfterMs === "number"
+    )
+      return Math.max(0, data.retryAfterMs);
   }
   return Math.min(250 * 2 ** failureCount, 2_000);
 };
@@ -555,10 +562,9 @@ export interface QueryRuntime {
     procedure: TProcedureClient,
     input: PaginatedClientListInput<TProcedureClient>,
     options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
-  ): Promise<Result<
-    readonly PaginatedClientItem<TProcedureClient>[],
-    ProcedureClientError<TProcedureClient>
-  >>;
+  ): Promise<
+    Result<readonly PaginatedClientItem<TProcedureClient>[], ProcedureClientError<TProcedureClient>>
+  >;
   mutation<TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(
     procedure: TProcedureClient,
     options?: MutationOptions<
@@ -589,9 +595,10 @@ export const createQueryRuntime = <TClient>(
   options: CreateQueryRuntimeOptions<TClient>,
 ): QueryRuntime => {
   if (
-    (typeof options.client !== "object" && typeof options.client !== "function")
-    || options.client === null
-  ) throw new TypeError("Expected a result-rpc client");
+    (typeof options.client !== "object" && typeof options.client !== "function") ||
+    options.client === null
+  )
+    throw new TypeError("Expected a result-rpc client");
   const clientIdentity = getClientIdentity(options.client);
   if (!clientIdentity) throw new TypeError("Expected a result-rpc client");
   // Mounted so query-core's online manager continues paused retries and
@@ -652,7 +659,8 @@ export const createQueryRuntime = <TClient>(
       if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
       const listPart = (encoded.value as { readonly list?: unknown }).list;
       const serialized = serialize(listPart, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
-      if (!serialized.ok) throw new TypeError(`Query input for ${metadata.path} is not serializable`);
+      if (!serialized.ok)
+        throw new TypeError(`Query input for ${metadata.path} is not serializable`);
       return [metadata.path, serialized.value] as const;
     }
     const encoded = metadata.procedure._def.input.encode(input ?? {});
@@ -720,8 +728,9 @@ export const createQueryRuntime = <TClient>(
     } else if (event.type === "removed") dropQueryFromIndex(event.query.queryHash);
   });
 
-  const queriesContaining = (model: AnyModel, id: string): readonly string[] =>
-    [...(entityToQueries.get(entityKey(model.name, id)) ?? [])];
+  const queriesContaining = (model: AnyModel, id: string): readonly string[] => [
+    ...(entityToQueries.get(entityKey(model.name, id)) ?? []),
+  ];
 
   /**
    * Write-through: replace the entity wherever it appears, by the projection
@@ -775,8 +784,9 @@ export const createQueryRuntime = <TClient>(
       // snapshot would erase every later independent write to other entities
       // in the same query. Capture this entity's projection-shaped value and
       // roll back by re-patching it.
-      const captured = collectEntities(previous)
-        .find((entity) => entity.model === model && entity.id === id)?.value;
+      const captured = collectEntities(previous).find(
+        (entity) => entity.model === model && entity.id === id,
+      )?.value;
       const query = queryClient.getQueryCache().get(hash);
       const wasFetching = query?.state.fetchStatus === "fetching";
       const applied = patchOneQuery(queryKey, model, id, produce);
@@ -795,8 +805,7 @@ export const createQueryRuntime = <TClient>(
       }
       if (!applied || !captured) continue;
       restores.push(() => {
-        patchOneQuery(queryKey, model, id, (current) =>
-          mergeByExistingKeys(current, captured));
+        patchOneQuery(queryKey, model, id, (current) => mergeByExistingKeys(current, captured));
       });
     }
     return restores;
@@ -804,13 +813,16 @@ export const createQueryRuntime = <TClient>(
 
   /** Invalidate every query containing any of the entity keys (`model:id`). */
   const invalidateEntityKeys = (keys: readonly string[]): Promise<void> =>
-    Promise.all(keys.flatMap((key) =>
-      [...(entityToQueries.get(key) ?? [])].map((hash) => {
-        const queryKey = queryKeyByHash.get(hash);
-        return queryKey
-          ? queryClient.invalidateQueries({ queryKey, exact: true })
-          : Promise.resolve();
-      }))).then(() => undefined);
+    Promise.all(
+      keys.flatMap((key) =>
+        [...(entityToQueries.get(key) ?? [])].map((hash) => {
+          const queryKey = queryKeyByHash.get(hash);
+          return queryKey
+            ? queryClient.invalidateQueries({ queryKey, exact: true })
+            : Promise.resolve();
+        }),
+      ),
+    ).then(() => undefined);
 
   /**
    * Per-entity write ordering. Responses carry no versions, so arrival order
@@ -838,7 +850,8 @@ export const createQueryRuntime = <TClient>(
         entityWriteSeq.set(key, seq);
       }
       patchQueriesWith(entity.model, entity.id, (current) =>
-        mergeByExistingKeys(current, entity.value));
+        mergeByExistingKeys(current, entity.value),
+      );
     }
   };
 
@@ -856,11 +869,12 @@ export const createQueryRuntime = <TClient>(
     if (!router) return undefined;
     for (const [path, procedure] of router.procedures) {
       const candidate = procedure as { readonly _def: typeof target._def };
-      const matches = procedure === (target as unknown)
-        || candidate._def === target._def
-        || (candidate._def.kind === "query"
-          && candidate._def.input === target._def.input
-          && candidate._def.output === target._def.output);
+      const matches =
+        procedure === (target as unknown) ||
+        candidate._def === target._def ||
+        (candidate._def.kind === "query" &&
+          candidate._def.input === target._def.input &&
+          candidate._def.output === target._def.output);
       if (!matches) continue;
       let node: unknown = options.client;
       for (const segment of path.split(".")) {
@@ -906,7 +920,8 @@ export const createQueryRuntime = <TClient>(
         mergeByExistingKeys(
           current,
           updater(current as ModelValue<typeof model>) as Record<string, unknown>,
-        ));
+        ),
+      );
       return () => {
         for (const restore of restores) restore();
       };
@@ -961,9 +976,9 @@ export const createQueryRuntime = <TClient>(
           return defaultShouldRetry(definitions, failureCount, failure);
         }
         if (typeof configured === "function") {
-          return isTaggedError(failure) && configured(
-            failure as ProcedureClientError<TProcedureClient>,
-            failureCount,
+          return (
+            isTaggedError(failure) &&
+            configured(failure as ProcedureClientError<TProcedureClient>, failureCount)
           );
         }
         return configured !== false && failureCount < configured;
@@ -998,10 +1013,9 @@ export const createQueryRuntime = <TClient>(
         ProcedureClientError<TProcedureClient>
       >;
 
-      const refetch = async (): Promise<QueryState<
-        ProcedureClientOutput<TProcedureClient>,
-        ProcedureClientError<TProcedureClient>
-      >> => {
+      const refetch = async (): Promise<
+        QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>
+      > => {
         const observed = await observer.refetch();
         cached = project(observed, refetch);
         return cached;
@@ -1011,10 +1025,11 @@ export const createQueryRuntime = <TClient>(
       return {
         key,
         getCurrentState: () => cached,
-        subscribe: (listener) => observer.subscribe((observed) => {
-          cached = project(observed, refetch);
-          listener();
-        }),
+        subscribe: (listener) =>
+          observer.subscribe((observed) => {
+            cached = project(observed, refetch);
+            listener();
+          }),
         refetch,
         destroy: () => observer.destroy(),
       };
@@ -1064,7 +1079,10 @@ export const createQueryRuntime = <TClient>(
         let decodable = pages !== undefined;
         for (const page of pages ?? []) {
           const decoded = metadata.procedure._def.output.decode(page);
-          if (!decoded.ok) { decodable = false; break; }
+          if (!decoded.ok) {
+            decodable = false;
+            break;
+          }
           decodedPages.push(decoded.value);
         }
         if (!decodable) {
@@ -1095,35 +1113,41 @@ export const createQueryRuntime = <TClient>(
         return configured !== false && failureCount < configured;
       };
 
-      const observer = new InfiniteQueryObserver<TPage, TError, InfiniteData<TPage>, ResultQueryKey, TCursor | null>(
-        queryClient,
-        {
-          queryKey: key,
-          queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam?: unknown }) => {
-            try {
-              const result = await procedure(
-                { list: input ?? {}, cursor: (pageParam ?? null) as TCursor | null } as PageRequest<unknown, TCursor>,
-                { signal },
-              );
-              if (!result.ok) throw result.error;
-              return result.value as TPage;
-            } catch (failure) {
-              if (isCancelled(failure)) throw new CancelledError({ revert: true });
-              throw failure;
-            }
-          },
-          initialPageParam: null,
-          // `nextCursor: null` means exhausted — query-core reads null as
-          // "no next page", so hasNext falls out of the declared shape.
-          getNextPageParam: (lastPage: TPage) => lastPage.nextCursor,
-          ...(queryOptions.enabled === undefined ? {} : { enabled: queryOptions.enabled }),
-          ...(queryOptions.staleTime === undefined ? {} : { staleTime: queryOptions.staleTime }),
-          ...(queryOptions.gcTime === undefined ? {} : { gcTime: queryOptions.gcTime }),
-          retry,
-          retryDelay: (failureCount: number, failure: unknown) =>
-            defaultRetryDelay(definitions, failureCount, failure),
+      const observer = new InfiniteQueryObserver<
+        TPage,
+        TError,
+        InfiniteData<TPage>,
+        ResultQueryKey,
+        TCursor | null
+      >(queryClient, {
+        queryKey: key,
+        queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam?: unknown }) => {
+          try {
+            const result = await procedure(
+              { list: input ?? {}, cursor: (pageParam ?? null) as TCursor | null } as PageRequest<
+                unknown,
+                TCursor
+              >,
+              { signal },
+            );
+            if (!result.ok) throw result.error;
+            return result.value as TPage;
+          } catch (failure) {
+            if (isCancelled(failure)) throw new CancelledError({ revert: true });
+            throw failure;
+          }
         },
-      );
+        initialPageParam: null,
+        // `nextCursor: null` means exhausted — query-core reads null as
+        // "no next page", so hasNext falls out of the declared shape.
+        getNextPageParam: (lastPage: TPage) => lastPage.nextCursor,
+        ...(queryOptions.enabled === undefined ? {} : { enabled: queryOptions.enabled }),
+        ...(queryOptions.staleTime === undefined ? {} : { staleTime: queryOptions.staleTime }),
+        ...(queryOptions.gcTime === undefined ? {} : { gcTime: queryOptions.gcTime }),
+        retry,
+        retryDelay: (failureCount: number, failure: unknown) =>
+          defaultRetryDelay(definitions, failureCount, failure),
+      });
 
       let cached: PaginatedState<TItem, TCursor, TError>;
 
@@ -1133,7 +1157,9 @@ export const createQueryRuntime = <TClient>(
         // fresh response) — the whole loaded window converges, not just
         // page one.
         const observed = await observer.refetch();
-        cached = projectPaginated(observed as InfiniteQueryObserverResult<InfiniteData<TPage>, TError>);
+        cached = projectPaginated(
+          observed as InfiniteQueryObserverResult<InfiniteData<TPage>, TError>,
+        );
         return cached;
       };
       const fetchNext = async (): Promise<PaginatedState<TItem, TCursor, TError>> => {
@@ -1180,10 +1206,11 @@ export const createQueryRuntime = <TClient>(
       return {
         key,
         getCurrentState: () => cached,
-        subscribe: (listener: () => void) => observer.subscribe((observed) => {
-          cached = projectPaginated(observed);
-          listener();
-        }),
+        subscribe: (listener: () => void) =>
+          observer.subscribe((observed) => {
+            cached = projectPaginated(observed);
+            listener();
+          }),
         refetch,
         fetchNext,
         destroy: () => observer.destroy(),
@@ -1274,14 +1301,20 @@ export const createQueryRuntime = <TClient>(
           // .writes(): identity invalidation for mutations whose output
           // doesn't carry the entity.
           for (const entry of declaredWrites) {
-            void cache.invalidateEntity(entry.model, (entry.map as (input: TInput) => ModelKeyInput)(input));
+            void cache.invalidateEntity(
+              entry.model,
+              (entry.map as (input: TInput) => ModelKeyInput)(input),
+            );
           }
           // .affects(): declared membership/blast-radius invalidation.
           for (const entry of declaredAffects) {
             const target = resolveAffectsTarget(entry.target);
             if (!target) continue;
             if (entry.map) {
-              void cache.invalidate(target as never, (entry.map as (input: TInput) => never)(input));
+              void cache.invalidate(
+                target as never,
+                (entry.map as (input: TInput) => never)(input),
+              );
             } else {
               void cache.invalidateAll(target as never);
             }
@@ -1290,31 +1323,35 @@ export const createQueryRuntime = <TClient>(
         },
         ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
           ? {}
-          : { onError: (failure: TError, input: TInput, context: TContext | undefined) => {
-              if (isCancelled(failure)) {
-                return mutationOptions.onCancel?.(input, context, cache);
-              }
-              // Untagged failures are programmer errors travelling by throw —
-              // they never enter the tagged callback channel.
-              if (!isTaggedError(failure)) return undefined;
-              return mutationOptions.onFailure?.(failure, input, context, cache);
-            } }),
-        ...(
-          mutationOptions.onSettled === undefined && mutationOptions.onCancel === undefined
-            ? {}
-            : { onSettled: (
-              value: TOutput | undefined,
-              failure: TError | null,
-              input: TInput,
-              context: TContext | undefined,
-            ) => failure !== null && (isCancelled(failure) || !isTaggedError(failure))
-              ? undefined
-              : mutationOptions.onSettled?.(
-                  failure === null ? ok(value as TOutput) : err(failure),
-                  input,
-                  context,
-                  cache,
-                ) }),
+          : {
+              onError: (failure: TError, input: TInput, context: TContext | undefined) => {
+                if (isCancelled(failure)) {
+                  return mutationOptions.onCancel?.(input, context, cache);
+                }
+                // Untagged failures are programmer errors travelling by throw —
+                // they never enter the tagged callback channel.
+                if (!isTaggedError(failure)) return undefined;
+                return mutationOptions.onFailure?.(failure, input, context, cache);
+              },
+            }),
+        ...(mutationOptions.onSettled === undefined && mutationOptions.onCancel === undefined
+          ? {}
+          : {
+              onSettled: (
+                value: TOutput | undefined,
+                failure: TError | null,
+                input: TInput,
+                context: TContext | undefined,
+              ) =>
+                failure !== null && (isCancelled(failure) || !isTaggedError(failure))
+                  ? undefined
+                  : mutationOptions.onSettled?.(
+                      failure === null ? ok(value as TOutput) : err(failure),
+                      input,
+                      context,
+                      cache,
+                    ),
+            }),
       });
 
       let cached: MutationState<TInput, TOutput, TError>;
@@ -1347,18 +1384,21 @@ export const createQueryRuntime = <TClient>(
           reset,
         };
         switch (observed.status) {
-          case "idle": return { ...controls, state: "idle" };
-          case "pending": return {
-            ...controls,
-            state: "pending",
-            variables: observed.variables,
-          };
-          case "success": return {
-            ...controls,
-            state: "success",
-            value: observed.data,
-            variables: observed.variables,
-          };
+          case "idle":
+            return { ...controls, state: "idle" };
+          case "pending":
+            return {
+              ...controls,
+              state: "pending",
+              variables: observed.variables,
+            };
+          case "success":
+            return {
+              ...controls,
+              state: "success",
+              value: observed.data,
+              variables: observed.variables,
+            };
           case "error": {
             if (isCancelled(observed.error)) {
               return { ...controls, state: "idle" };
@@ -1383,10 +1423,11 @@ export const createQueryRuntime = <TClient>(
 
       return {
         getCurrentState: () => cached,
-        subscribe: (listener) => observer.subscribe((observed) => {
-          cached = projectMutation(observed);
-          listener();
-        }),
+        subscribe: (listener) =>
+          observer.subscribe((observed) => {
+            cached = projectMutation(observed);
+            listener();
+          }),
         mutate,
         cancel,
         reset,
@@ -1454,17 +1495,19 @@ export const createQueryRuntime = <TClient>(
                   return;
                 }
                 const configured = subscriptionOptions.retry;
-                const shouldRetry = configured === undefined
-                  ? defaultShouldRetry(definitions, failureCount, result.error)
-                  : typeof configured === "function"
-                    ? configured(result.error, failureCount)
-                    : configured !== false && failureCount < configured;
+                const shouldRetry =
+                  configured === undefined
+                    ? defaultShouldRetry(definitions, failureCount, result.error)
+                    : typeof configured === "function"
+                      ? configured(result.error, failureCount)
+                      : configured !== false && failureCount < configured;
                 if (shouldRetry) {
                   state = { ...state, connection: "reconnecting" };
                   notify();
-                  const delay = typeof subscriptionOptions.retryDelayMs === "function"
-                    ? subscriptionOptions.retryDelayMs(failureCount + 1)
-                    : subscriptionOptions.retryDelayMs ?? 1_000;
+                  const delay =
+                    typeof subscriptionOptions.retryDelayMs === "function"
+                      ? subscriptionOptions.retryDelayMs(failureCount + 1)
+                      : (subscriptionOptions.retryDelayMs ?? 1_000);
                   retryTimer = setTimeout(
                     () => connect(false, failureCount + 1),
                     Math.max(0, delay),
@@ -1493,7 +1536,10 @@ export const createQueryRuntime = <TClient>(
               notify();
             }
           } catch (failure) {
-            if (!isCancelled(failure)) queueMicrotask(() => { throw failure; });
+            if (!isCancelled(failure))
+              queueMicrotask(() => {
+                throw failure;
+              });
           }
         })();
       };
@@ -1543,11 +1589,10 @@ export const createQueryRuntime = <TClient>(
         for (const query of queryClient.getQueryCache().getAll()) {
           if (query.state.status !== "success" || query.state.data === undefined) continue;
           const path = query.queryKey[0];
-          const procedure = typeof path === "string"
-            ? router.procedures.get(path)
-            : undefined;
+          const procedure = typeof path === "string" ? router.procedures.get(path) : undefined;
           if (!procedure || procedure._def.kind !== "query") continue;
-          const pagination = (procedure._def as { readonly pagination?: PaginationManifest }).pagination;
+          const pagination = (procedure._def as { readonly pagination?: PaginationManifest })
+            .pagination;
           if (pagination) {
             // Paginated entries hold InfiniteData — normalize page by page
             // through the page codec so every row re-brands and re-indexes.
@@ -1559,7 +1604,10 @@ export const createQueryRuntime = <TClient>(
             let decodable = pages !== undefined;
             for (const page of pages ?? []) {
               const decoded = procedure._def.output.decode(page);
-              if (!decoded.ok) { decodable = false; break; }
+              if (!decoded.ok) {
+                decodable = false;
+                break;
+              }
               decodedPages.push(decoded.value);
             }
             if (!decodable) {

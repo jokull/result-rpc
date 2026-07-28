@@ -12,8 +12,9 @@ import {
 } from "./app.js";
 import { createQueryRuntime } from "../../src/react/index.js";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
-  .IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -59,8 +60,10 @@ describe("06-sentry", () => {
     const world = boot();
     const { renderer, submit, runtime } = await mountForm(world);
     await submit("visa-1");
-    expect(world.sentry.breadcrumbs.map((crumb) => crumb.category))
-      .toEqual(["rpc.call", "rpc.success"]);
+    expect(world.sentry.breadcrumbs.map((crumb) => crumb.category)).toEqual([
+      "rpc.call",
+      "rpc.success",
+    ]);
     expect(world.sentry.messages).toEqual([]);
     expect(world.sentry.exceptions).toEqual([]);
     expect(JSON.stringify(renderer.toJSON())).toContain("charged visa-1");
@@ -73,8 +76,11 @@ describe("06-sentry", () => {
     const { renderer, submit, runtime } = await mountForm(world);
     await submit("declined");
     expect(JSON.stringify(renderer.toJSON())).toContain("Card declined (code 51)");
-    expect(world.sentry.breadcrumbs.map((crumb) => crumb.category))
-      .toEqual(["rpc.call", "rpc.server", "rpc.failure"]);
+    expect(world.sentry.breadcrumbs.map((crumb) => crumb.category)).toEqual([
+      "rpc.call",
+      "rpc.server",
+      "rpc.failure",
+    ]);
     expect(world.sentry.messages).toEqual([]); // severity undefined: counted, not captured
     await act(async () => renderer.unmount());
     runtime.clear();

@@ -4,10 +4,12 @@ import { wire } from "./wire.js";
 export const ServerBadRequest = error({
   tag: "server/bad-request",
   data: wire.object({
-    issues: wire.array(wire.object({
-      path: wire.array(wire.string),
-      message: wire.string,
-    })),
+    issues: wire.array(
+      wire.object({
+        path: wire.array(wire.string),
+        message: wire.string,
+      }),
+    ),
   }),
   httpStatus: 400,
   retry: "never",
@@ -173,7 +175,12 @@ export type ClientBoundaryError =
 /** Maps codec issues into `server/bad-request` data: paths and messages only, never values. */
 export const badRequestFromIssues = (cause: unknown): ServerBadRequest => {
   const issues = Array.isArray(cause)
-    ? (cause as readonly { readonly path?: readonly (string | number)[]; readonly message?: unknown }[])
+    ? (
+        cause as readonly {
+          readonly path?: readonly (string | number)[];
+          readonly message?: unknown;
+        }[]
+      )
         .slice(0, 20)
         .map((issue) => ({
           path: (issue.path ?? []).map(String),
