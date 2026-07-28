@@ -99,3 +99,68 @@ composition is deduplicated by reference identity, the same rule as services
 (module constants, not inline builds). A middleware whose input demands
 context the procedure cannot supply is a type error, so requirements are
 checked, not hoped for.
+
+## Setting response headers, and logging someone in
+
+`createContext` receives a `Headers` for the response alongside the request.
+Put it on your context and a handler can append to it — a session cookie on
+login, a `cache-control`, a rate-limit hint:
+
+```ts
+export interface AppContext {
+  readonly db: Db;
+  readonly headers: Headers;
+}
+
+const handler = createFetchHandler({
+  router: appRouter,
+  createContext: ({ request, headers }) => ({ db, headers }),
+});
+```
+
+A login mutation is then ordinary code. Note it returns a `Result` like
+anything else — bad credentials are a declared failure, not an exception:
+
+```ts
+const login = app
+  .procedure()
+  .input(wire.object({ email: wire.string, password: wire.string }))
+  .output(wire.object({ userId: wire.string }))
+  .errors({ BadCredentials })
+  .mutation(async ({ input, context, errors }) => {
+    const user = await context.db.verify(input.email, input.password);
+    if (!user) return err(errors.BadCredentials({}));
+
+    context.headers.append(
+      "set-cookie",
+      `session=${await mintToken(user)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800`,
+    );
+    return ok({ userId: user.id });
+  });
+```
+
+Reading cookies needs nothing new — `createContext` has the request:
+
+```ts
+createContext: ({ request, headers }) => ({
+  db,
+  headers,
+  session: parseCookie(request.headers.get("cookie"))?.session,
+});
+```
+
+Two semantics are worth knowing before you rely on this.
+
+**A batch shares one response.** Several procedures answered in one HTTP
+request also share its headers, so their `set-cookie`s combine rather than
+overwrite. That is usually what you want; it does mean two logins in one batch
+set two cookies.
+
+**A subscription can only set headers before its stream opens.** `createContext`
+runs first, so anything set there is on the response. Once the stream is on the
+wire its headers have already been sent, and a generator cannot add more.
+
+The response is otherwise the protocol's. Status is derived from the failing
+error's declared `httpStatus` rather than chosen by a handler — that is what
+lets a client tell a real result-rpc failure from an intermediary's 502 — and
+the body is always the Result envelope.

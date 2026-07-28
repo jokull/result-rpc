@@ -238,6 +238,17 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
   readonly maxRequestBytes?: number;
   readonly createContext: (options: {
     readonly request: Request;
+    /**
+     * Response headers for this request. Handlers reach it through the context
+     * they build here — appending `set-cookie` on login, a `cache-control`, a
+     * rate-limit hint. Merged into the response after the procedure settles.
+     *
+     * Two semantics worth knowing. A batched request shares one HTTP response,
+     * so headers from every procedure in the batch combine. And a subscription
+     * can only set headers before its stream opens: `createContext` runs first,
+     * but once the response is on the wire its headers are already sent.
+     */
+    readonly headers: Headers;
   }) => RouterContext<TRouter> | Promise<RouterContext<TRouter>>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
   /**
@@ -276,7 +287,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     throw new TypeError("maxRequestBytes must be a positive integer");
   }
   const contractVersion = options.contractVersion ?? contractDigest(options.router);
-  const handle = async (request: Request): Promise<Response> => {
+  const handle = async (request: Request, responseHeaders: Headers): Promise<Response> => {
     const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
       const policy =
         frameworkPolicyFor(failure) ??
@@ -320,7 +331,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
 
     let context: RouterContext<TRouter>;
     try {
-      context = await options.createContext({ request });
+      context = await options.createContext({ request, headers: responseHeaders });
     } catch (cause) {
       const incidentId = `inc_${crypto.randomUUID()}`;
       options.onInternalError?.({
@@ -428,7 +439,15 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     return wireResponse({ v: PROTOCOL_VERSION, batch: items }, 200);
   };
   return async (request) => {
-    const response = await handle(request);
+    // One Headers per request: handlers append through the context, and every
+    // response shape — unary, batched, streaming — passes through here.
+    const responseHeaders = new Headers();
+    const response = await handle(request, responseHeaders);
+    for (const [name, value] of responseHeaders) {
+      // `append`, not `set`: several procedures in one batch may each add a
+      // `set-cookie`, and those must not overwrite one another.
+      response.headers.append(name, value);
+    }
     response.headers.set(CONTRACT_HEADER, contractVersion);
     return response;
   };

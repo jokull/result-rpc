@@ -113,3 +113,122 @@ describe("fetch handler wire boundary", () => {
     expect(text).not.toContain("inc_");
   });
 });
+
+// --- response headers --------------------------------------------------------
+
+interface HeaderCtx {
+  readonly headers: Headers;
+}
+const h = rpc.context<HeaderCtx>();
+
+const login = h
+  .procedure()
+  .input(wire.object({ email: wire.string }))
+  .output(wire.object({ userId: wire.string }))
+  .mutation(({ input, context }) => {
+    context.headers.append(
+      "set-cookie",
+      `session=tok_${input.email}; HttpOnly; Path=/; SameSite=Lax`,
+    );
+    return ok({ userId: "u_1" });
+  });
+
+const remember = h
+  .procedure()
+  .input(wire.object({}))
+  .output(wire.boolean)
+  .mutation(({ context }) => {
+    context.headers.append("set-cookie", "remember=yes; Path=/");
+    context.headers.set("cache-control", "no-store");
+    return ok(true);
+  });
+
+const plain = h
+  .procedure()
+  .input(wire.object({}))
+  .output(wire.string)
+  .query(() => ok("ok"));
+
+const headerRouter = h.router({ login, remember, plain });
+
+const headerHandler = createFetchHandler({
+  router: headerRouter,
+  createContext: ({ headers }) => ({ headers }),
+});
+
+const postTo = (handler: (r: Request) => Promise<Response>, body: unknown) => {
+  const encoded = serialize(body);
+  if (!encoded.ok) throw new Error("failed to encode");
+  return handler(
+    new Request("https://example.test/rpc", {
+      method: "POST",
+      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+      body: encoded.value,
+    }),
+  );
+};
+
+describe("response headers", () => {
+  test("a login mutation sets an HttpOnly cookie", async () => {
+    const response = await postTo(headerHandler, {
+      v: 1,
+      path: "login",
+      input: { email: "ada@example.com" },
+    });
+    expect(response.status).toBe(200);
+    const cookie = response.headers.get("set-cookie");
+    expect(cookie).toContain("session=tok_ada@example.com");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Lax");
+  });
+
+  test("a batch shares one response, so its cookies combine rather than overwrite", async () => {
+    const response = await postTo(headerHandler, {
+      v: 1,
+      batch: [
+        { v: 1, id: "b0", path: "login", input: { email: "grace@example.com" } },
+        { v: 1, id: "b1", path: "remember", input: {} },
+      ],
+    });
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies).toHaveLength(2);
+    expect(cookies.some((value) => value.includes("session=tok_grace@example.com"))).toBe(true);
+    expect(cookies.some((value) => value.includes("remember=yes"))).toBe(true);
+    // Ordinary headers ride along too.
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("a procedure that sets nothing leaves the response untouched", async () => {
+    const response = await postTo(headerHandler, { v: 1, path: "plain", input: {} });
+    expect(response.headers.get("set-cookie")).toBeNull();
+    // The contract digest is still stamped.
+    expect(response.headers.get("x-result-rpc-contract")).toBeTruthy();
+  });
+});
+
+describe("response headers on a subscription", () => {
+  const s = rpc.context<HeaderCtx>();
+  const feedContract = s.procedure().input(wire.object({})).output(wire.string).subscription();
+  const feed = s.implement(feedContract).stream(async function* () {
+    yield ok("one");
+  });
+  const streamRouter = s.router({ feed });
+  const streamHandler = createFetchHandler({
+    router: streamRouter,
+    createContext: ({ headers }) => {
+      // Set before the stream opens — once the response is on the wire its
+      // headers are already sent, so this is the only window.
+      headers.append("set-cookie", "stream=open; Path=/");
+      return { headers };
+    },
+  });
+
+  test("headers set during context creation reach the streaming response", async () => {
+    const response = await postTo(streamHandler, { v: 1, path: "feed", input: {} });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("result-rpc");
+    expect(response.headers.get("set-cookie")).toContain("stream=open");
+    await response.body?.cancel();
+  });
+});
