@@ -62,12 +62,12 @@ Two client entries, bundled and grepped:
 ```ts
 // ✅ client-good.ts — imports the standalone contract
 import { appContract } from "./contract";
-createClient({ contract: appContract, transport });
+createBrowserClient({ contract: appContract, transport });
 // bundle: STRIPE_SECRET_KEY → 0 hits. db driver → 0 hits.
 
 // ☠️ client-bad.ts — imports the router
 import { appRouter } from "./server";
-createClient({ router: appRouter, transport });
+createBrowserClient({ router: appRouter, transport });
 // bundle: STRIPE_SECRET_KEY → SHIPPED. db driver → SHIPPED.
 ```
 
@@ -77,7 +77,7 @@ bundler treats as potentially side-effecting, so it keeps the whole graph. The
 secret is in the browser and nothing failed.
 
 In development, result-rpc itself will `console.warn` if you hand a `router` to
-`createClient` in a browser — but treat that as a last-resort net, not the
+`createBrowserClient` in a browser — but treat that as a last-resort net, not the
 design. The design is: never import the router into client code.
 
 ## The safe layout
@@ -113,7 +113,7 @@ export const appRouter = rpc.context<AppContext>().router({ users: { get: getUse
 ```ts
 // client.ts — imports the contract only
 import { appContract } from "./contract";
-export const client = createClient({ contract: appContract, transport });
+export const client = createBrowserClient({ contract: appContract, transport });
 ```
 
 Three cheap rules keep this honest:

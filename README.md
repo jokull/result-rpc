@@ -229,7 +229,7 @@ import {
   type RouterOutputs,
 } from "result-rpc";
 import { createFetchHandler } from "result-rpc/server";
-import { batchFetchTransport, createClient } from "result-rpc/client";
+import { batchFetchTransport, createBrowserClient } from "result-rpc/client";
 import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react";
 ```
 
@@ -422,7 +422,7 @@ bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
 
 (When client and server share a process — SSR, tests, server components — you
-can skip the split and hand `createClient` the router directly. Code-first
+can skip the split and hand `createBrowserClient` the router directly. Code-first
 procedures with inline handlers work the same way; the contract split is for
 the browser boundary, not a required style.)
 
@@ -685,10 +685,10 @@ failure that should be adopted into the procedure's declared union.
 ## Call it directly
 
 ```ts
-import { createClient, batchFetchTransport } from "result-rpc/client";
+import { createBrowserClient, batchFetchTransport } from "result-rpc/client";
 import { appContract } from "../shared/contract";
 
-export const client = createClient({
+export const client = createBrowserClient({
   contract: appContract,
   transport: batchFetchTransport({ url: "/rpc" }),
 });
@@ -1430,7 +1430,7 @@ stamp both sides with the build:
 
 ```ts
 createFetchHandler({ router, contractVersion: BUILD_SHA, ... })
-createClient({ contract, contractVersion: BUILD_SHA, ... })
+createBrowserClient({ contract, contractVersion: BUILD_SHA, ... })
 ```
 
 Detection is failure-gated, so the coarser stamp is safe: matching successful
@@ -2013,24 +2013,24 @@ control flow and is excluded from the recoverable error union. Its sibling,
 family, one `catch` at the call site, and `isCancelled`/`isClaimed` to tell
 the two events apart when the UX differs.
 
-## Server-side calls keep wire parity
+## Direct server-side calls
 
 ```ts
 import { createServerClient } from "result-rpc/server";
 import { appRouter } from "./router";
 
 const serverClient = createServerClient(appRouter, {
-  mode: "parity",
   context,
 });
 
 const result = await serverClient.doc.byId({ id: "doc_123" });
 ```
 
-Parity mode executes locally but still applies input, output, and error
-codecs. A value that would fail remotely also fails during SSR, tests, and
-server components. Parity is the only mode for now; an unchecked fast path can
-follow if profiling ever demands one.
+The server client runs procedures in-process while preserving middleware,
+input/output codecs, entity branding, and private-error sanitization. Its error
+union contains declared errors plus `server/bad-request` and `server/internal`;
+browser-only failures such as offline, timeout, and stale are unreachable and
+therefore absent.
 
 ## SSR and hydration
 
@@ -2058,12 +2058,11 @@ transient connection state are never persisted.
 ## Test procedures without a network
 
 ```ts
-import { createTestClient } from "result-rpc/testing";
+import { createParityClient } from "result-rpc/testing";
 import { appRouter } from "./router";
 
-const client = createTestClient(appRouter, {
+const client = createParityClient(appRouter, {
   context: testContext,
-  mode: "parity",
 });
 
 const result = await client.doc.byId({ id: "missing" });
@@ -2088,7 +2087,7 @@ required. The examples run their full React trees this way:
 ```ts
 const handler = createFetchHandler({ router, createContext: () => context });
 
-const client = createClient({
+const client = createBrowserClient({
   router,
   transport: fetchTransport({
     url: "https://example.test/rpc",
@@ -2117,7 +2116,7 @@ that fights the framework. Four taps, one per tier:
 
 ```ts
 // 1. Wire: every call, retry, claim — paths, tags, timing; never values.
-const client = createClient({
+const client = createBrowserClient({
   contract,
   transport,
   onEvent: (event) =>
@@ -2200,7 +2199,10 @@ app.post("/rpc", resultRpcHandler); // migrated routers move here
 
 // client: two clients during the transition
 export const trpc = createTRPCReact<LegacyRouter>();
-export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) });
+export const client = createBrowserClient({
+  contract,
+  transport: batchFetchTransport({ url: "/rpc" }),
+});
 ```
 
 The recommended first slice is **the auth layer plus one feature router** —
@@ -2221,7 +2223,7 @@ The concept mapping is mechanical:
 | `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
 | `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
 | adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
-| `createCaller`                               | `createServerClient` (parity mode)                                       |
+| `createCaller`                               | `createServerClient`                                                     |
 | `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
 
 Two things have no tRPC equivalent and are the actual work: every procedure

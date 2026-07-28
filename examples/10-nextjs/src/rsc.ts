@@ -22,7 +22,6 @@ import { createContext, router } from "./server";
  */
 export const getServerRuntime = cache(() => {
   const serverClient = createServerClient(router, {
-    mode: "parity",
     context: createContext(),
   });
   return { runtime: createQueryRuntime({ client: serverClient }), serverClient };

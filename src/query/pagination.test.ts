@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
@@ -71,7 +71,7 @@ const makeRuntime = () => {
     calls += 1;
     return handler(new Request(input, init));
   }) as typeof globalThis.fetch;
-  const client = createClient({
+  const client = createBrowserClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });

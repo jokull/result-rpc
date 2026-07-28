@@ -16,7 +16,6 @@ import { createContext, router } from "./server.js";
 /** One runtime per request (React's per-request memo), dehydrated once per boundary. */
 export const getServerRuntime = cache(() => {
   const serverClient = createServerClient(router, {
-    mode: "parity",
     context: createContext(),
   });
   return { runtime: createQueryRuntime({ client: serverClient }), serverClient };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ok, rpc, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createFetchHandler } from "./index.js";
 
@@ -27,7 +27,7 @@ describe("caller-lifetime signals reach handlers", () => {
         }),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({
         url: "https://x.test/rpc",
@@ -73,7 +73,7 @@ describe("caller-lifetime signals reach handlers", () => {
     });
     const router = app.router({ events });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({
         url: "https://x.test/rpc",

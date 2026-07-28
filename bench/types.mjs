@@ -20,7 +20,7 @@ const SIZES = [25, 50, 100];
 
 const fixture = (n) => {
   let s = `import { rpc, wire, ok, error, defineModel } from "../../src/index.js";
-import { createClient } from "../../src/client/index.js";
+import { createBrowserClient } from "../../src/client/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import type { RouterInputs, RouterOutputs } from "../../src/index.js";
 const app = rpc.context<{ db: string }>();
@@ -44,7 +44,7 @@ export const m${i} = app.procedure()
   }
   s += `\nexport const router = app.router({\n`;
   for (let i = 0; i < n; i++) s += `  g${i}: { q: q${i}, m: m${i} },\n`;
-  s += `});\nexport const client = createClient({ router, transport: fetchTransport({ url: "/rpc" }) });\n`;
+  s += `});\nexport const client = createBrowserClient({ router, transport: fetchTransport({ url: "/rpc" }) });\n`;
   s += `export type Inputs = RouterInputs<typeof router>;\nexport type Outputs = RouterOutputs<typeof router>;\n`;
   for (let i = 0; i < n; i++) {
     s += `export const r${i} = await client.g${i}.q({ id: "1", n: 1 });

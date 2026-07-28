@@ -14,7 +14,10 @@ app.post("/rpc", resultRpcHandler); // migrated routers move here
 
 // client: two clients during the transition
 export const trpc = createTRPCReact<LegacyRouter>();
-export const client = createClient({ contract, transport: batchFetchTransport({ url: "/rpc" }) });
+export const client = createBrowserClient({
+  contract,
+  transport: batchFetchTransport({ url: "/rpc" }),
+});
 ```
 
 One difference to internalize before your first slice: tRPC ships its router to
@@ -42,7 +45,7 @@ The concept mapping is mechanical:
 | `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
 | `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
 | adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
-| `createCaller`                               | `createServerClient` (parity mode)                                       |
+| `createCaller`                               | `createServerClient`                                                     |
 | `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
 
 Two things have no tRPC equivalent and are the actual work: every procedure

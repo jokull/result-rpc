@@ -15,7 +15,7 @@ that fights the framework. Four taps, one per tier:
 
 ```ts
 // 1. Wire: every call, retry, claim — paths, tags, timing; never values.
-const client = createClient({
+const client = createBrowserClient({
   contract,
   transport,
   onEvent: (event) =>

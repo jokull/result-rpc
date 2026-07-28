@@ -1,16 +1,17 @@
-export { createClient } from "./client.js";
+export { createBrowserClient } from "./client.js";
 export type {
+  BrowserBoundaryError,
+  BrowserClientErrorOf,
+  BrowserClientOf,
+  BrowserClientRecord,
+  BrowserProcedureClient,
   ClientEvent,
   ClientEventListener,
-  ClientErrorOf,
   ClientErrorRegistry,
   ClientErrors,
-  ClientOf,
-  ClientRecord,
+  CreateBrowserClientOptions,
   CreateContractClientOptions,
-  CreateClientOptions,
   CreateRouterClientOptions,
-  ProcedureClient,
   ResultSubscription,
 } from "./client.js";
 

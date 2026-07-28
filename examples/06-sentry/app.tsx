@@ -24,7 +24,7 @@ import {
   wire,
 } from "../../src/index.js";
 import { createFetchHandler } from "../../src/server/index.js";
-import { createClient, fetchTransport, type ClientEvent } from "../../src/client/index.js";
+import { createBrowserClient, fetchTransport, type ClientEvent } from "../../src/client/index.js";
 import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
 import type { SentryLike } from "./sentry.js";
 
@@ -87,7 +87,7 @@ const levelFor = (event: ClientEvent): "info" | "warning" =>
   event.type === "failure" || event.type === "claimed" ? "warning" : "info";
 
 export const makeObservedClient = (sentry: SentryLike, fetch: typeof globalThis.fetch) =>
-  createClient({
+  createBrowserClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
     // 1. wire breadcrumbs — safe to forward verbatim: no values in the stream

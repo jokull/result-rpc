@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
+import { createParityClient } from "../testing/index.js";
 import { createServerClient } from "./index.js";
 import { rpc } from "./contract.js";
 
@@ -25,10 +26,10 @@ const procedure = r
   );
 const router = r.router({ parity: { value: procedure } });
 
-describe("server client parity", () => {
+describe("parity client", () => {
   test("uses the real protocol and rich serializer locally", async () => {
     const at = new Date("2026-07-22T12:00:00.000Z");
-    const client = createServerClient(router, { mode: "parity", context: { found: true } });
+    const client = createParityClient(router, { context: { found: true } });
     const result = await client.parity.value({ at });
     expect(result).toEqual(ok({ at, sequence: 7n }));
     if (result.ok) expect(result.value.at).not.toBe(at);
@@ -36,7 +37,7 @@ describe("server client parity", () => {
 
   test("reconstructs declared errors rather than sharing object identity", async () => {
     const at = new Date("2026-07-22T12:00:00.000Z");
-    const client = createServerClient(router, { mode: "parity", context: { found: false } });
+    const client = createParityClient(router, { context: { found: false } });
     const result = await client.parity.value({ at });
     expect(result).toEqual(err(Missing({ at })));
     if (!result.ok && result.error._tag === "parity/missing") {
@@ -47,7 +48,7 @@ describe("server client parity", () => {
   });
 });
 
-// --- direct mode -------------------------------------------------------------
+// --- server client -----------------------------------------------------------
 
 const Private = error({
   tag: "direct/private",
@@ -86,12 +87,37 @@ const badOutput = d
   .output(wire.object({ n: wire.number }))
   .query(() => ok({ n: "not a number" } as never));
 
-const directRouter = d.router({ whoami, leaks, badOutput });
+const acceptNull = d
+  .procedure()
+  .input(wire.null)
+  .output(wire.null)
+  .query(({ input }) => ok(input));
 
-describe("server client direct mode", () => {
+const throwingInput = {
+  ...wire.string,
+  encode: (_value: string) => {
+    throw new Error("INPUT_SECRET");
+  },
+};
+const streamContract = d.procedure().input(throwingInput).output(wire.string).subscription();
+const brokenStream = d.implement(streamContract).stream(async function* () {
+  yield ok("unreachable");
+});
+const malformedStreamContract = d.procedure().input(wire.string).output(wire.string).subscription();
+const malformedStream = d.implement(malformedStreamContract).stream(() => ({}) as never);
+
+const directRouter = d.router({
+  whoami,
+  leaks,
+  badOutput,
+  acceptNull,
+  brokenStream,
+  malformedStream,
+});
+
+describe("server client", () => {
   test("runs the middleware chain and returns a decoded Result", async () => {
     const caller = createServerClient(directRouter, {
-      mode: "direct",
       context: { userId: "u_1" },
     });
     const result = await caller.whoami({});
@@ -104,7 +130,6 @@ describe("server client direct mode", () => {
 
   test("middleware failures are returned, not bypassed — auth still applies", async () => {
     const caller = createServerClient(directRouter, {
-      mode: "direct",
       context: { userId: null },
     });
     const result = await caller.whoami({});
@@ -115,7 +140,6 @@ describe("server client direct mode", () => {
 
   test("private errors are still sanitized — skipping the wire is not a hole", async () => {
     const caller = createServerClient(directRouter, {
-      mode: "direct",
       context: { userId: "u_1" },
     });
     const result = await caller.leaks({});
@@ -127,7 +151,6 @@ describe("server client direct mode", () => {
 
   test("a handler returning the wrong shape becomes server/internal, not a crash", async () => {
     const caller = createServerClient(directRouter, {
-      mode: "direct",
       context: { userId: "u_1" },
     });
     const result = await caller.badOutput({});
@@ -138,9 +161,43 @@ describe("server client direct mode", () => {
 
   test("procedure kind is preserved so the query runtime accepts the caller", () => {
     const caller = createServerClient(directRouter, {
-      mode: "direct",
       context: { userId: "u_1" },
     });
     expect(caller.whoami.$kind).toBe("query");
+  });
+
+  test("preserves an explicit null input instead of treating it as omitted", async () => {
+    const client = createServerClient(directRouter, { context: { userId: "u_1" } });
+    expect(await client.acceptNull(null)).toEqual(ok(null));
+  });
+
+  test("contains subscription input defects inside server/internal", async () => {
+    const internalErrors: unknown[] = [];
+    const client = createServerClient(directRouter, {
+      context: { userId: "u_1" },
+      onInternalError: (event) => internalErrors.push(event),
+    });
+    const results = [];
+    for await (const result of client.brokenStream("input")) results.push(result);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.ok).toBe(false);
+    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+    expect(internalErrors).toHaveLength(1);
+  });
+
+  test("contains malformed subscription producers inside server/internal", async () => {
+    const client = createServerClient(directRouter, { context: { userId: "u_1" } });
+    const results = [];
+    for await (const result of client.malformedStream("input")) results.push(result);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.ok).toBe(false);
+    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+  });
+
+  test("exposes only declared and server-boundary errors in its registry", () => {
+    const client = createServerClient(directRouter, { context: { userId: "u_1" } });
+    expect(client.$errors.definitions.has("parity/missing")).toBe(true);
+    expect(client.$errors.definitions.has("server/internal")).toBe(true);
+    expect(client.$errors.definitions.has("client/offline")).toBe(false);
   });
 });

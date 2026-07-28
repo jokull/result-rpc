@@ -76,10 +76,10 @@ on the fetch handler to report the private cause.
 ## Call it
 
 ```ts
-import { createClient, fetchTransport } from "result-rpc/client";
+import { createBrowserClient, fetchTransport } from "result-rpc/client";
 import { appContract } from "./contract";
 
-export const client = createClient({
+export const client = createBrowserClient({
   contract: appContract,
   transport: fetchTransport({ url: "/rpc" }),
 });

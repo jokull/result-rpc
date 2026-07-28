@@ -1,15 +1,14 @@
 ---
 title: "Testing and SSR"
-description: "Parity-mode test clients, the fetch-handler-as-fetch harness, and validated hydration."
+description: "Wire-faithful parity clients, the fetch-handler-as-fetch harness, and validated hydration."
 ---
 
 ```ts
-import { createTestClient } from "result-rpc/testing";
+import { createParityClient } from "result-rpc/testing";
 import { appRouter } from "./router";
 
-const client = createTestClient(appRouter, {
+const client = createParityClient(appRouter, {
   context: testContext,
-  mode: "parity",
 });
 
 const result = await client.doc.byId({ id: "missing" });
@@ -34,7 +33,7 @@ required. The examples run their full React trees this way:
 ```ts
 const handler = createFetchHandler({ router, createContext: () => context });
 
-const client = createClient({
+const client = createBrowserClient({
   router,
   transport: fetchTransport({
     url: "https://example.test/rpc",

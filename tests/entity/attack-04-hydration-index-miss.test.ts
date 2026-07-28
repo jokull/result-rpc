@@ -13,7 +13,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../../src/index.js";
-import { createClient } from "../../src/client/client.js";
+import { createBrowserClient } from "../../src/client/client.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { rpc } from "../../src/server/contract.js";
@@ -50,7 +50,7 @@ const boot = () => {
   const db = { user: { id: "u1", name: "J", avatarUrl: "v1.png" } };
   const handler = createFetchHandler({ router, createContext: () => ({ db }) });
   let requests = 0;
-  const client = createClient({
+  const client = createBrowserClient({
     router,
     transport: fetchTransport({
       url: "https://probe.test/rpc",

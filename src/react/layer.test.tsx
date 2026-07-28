@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, defineLayer, err, error, ok, transportErrors, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
@@ -75,7 +75,7 @@ const clientFor = (sessionUserId: string | undefined) => {
   });
   const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
     handler(new Request(input, init))) as typeof globalThis.fetch;
-  return createClient({
+  return createBrowserClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });
@@ -275,7 +275,7 @@ describe("layer factory", () => {
     });
     const cookieFetch = ((input: string | URL | Request, init?: RequestInit) =>
       cookieHandler(new Request(input, init))) as typeof globalThis.fetch;
-    const cookieClient = createClient({
+    const cookieClient = createBrowserClient({
       router: cookieRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: cookieFetch }),
     });
@@ -376,7 +376,7 @@ describe("layer factory", () => {
     });
     const cookieFetch = ((input: string | URL | Request, init?: RequestInit) =>
       cookieHandler(new Request(input, init))) as typeof globalThis.fetch;
-    const cookieClient = createClient({
+    const cookieClient = createBrowserClient({
       router: cookieRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: cookieFetch }),
     });
@@ -424,7 +424,7 @@ describe("layer factory", () => {
         .query(({ context }) => ok(`secret #${++serial} for ${context.viewer.id}`)),
     });
     const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
-    const client2 = createClient({
+    const client2 = createBrowserClient({
       router: router2,
       transport: fetchTransport({
         url: "https://example.test/rpc",

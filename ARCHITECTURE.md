@@ -99,7 +99,7 @@ import { ok, err, match, matchError, error, wire, rpc } from "result-rpc";
 
 import { createFetchHandler, createServerClient } from "result-rpc/server";
 
-import { createClient, fetchTransport, batchFetchTransport } from "result-rpc/client";
+import { createBrowserClient, fetchTransport, batchFetchTransport } from "result-rpc/client";
 
 import {
   createQueryRuntime,
@@ -110,7 +110,7 @@ import {
   useResultSubscription,
 } from "result-rpc/react";
 
-import { createTestClient } from "result-rpc/testing";
+import { createParityClient } from "result-rpc/testing";
 ```
 
 The root entry is the contract language — everything safe on both sides of the
@@ -265,7 +265,7 @@ union includes and `defectErrors` claims.
 
 One structured stream per tier, values excluded by construction:
 
-- **Client** — `createClient({ onEvent })`: `call`/`success`/`failure`/`retry`
+- **Client** — `createBrowserClient({ onEvent })`: `call`/`success`/`failure`/`retry`
   from the call pipeline (paths, tags, durations), plus `claimed` when a shell
   takes ownership of a failure (path, tag, owner, effect). Claim events emit at
   the same dedupe point as shell `onError` — once per held error per observer.
@@ -620,13 +620,20 @@ sentinel; the query runtime consumes it and transitions lifecycle state without
 publishing a failure. Calls without a cancellation signal always resolve a Result
 unless a client programming invariant is violated.
 
-### Direct and parity clients
+### Browser, server, and parity clients
 
-- `createClient(transport)` uses the real protocol.
-- `createServerClient(router, { mode: "parity" })` executes locally but still runs
-  input, output, and error codecs.
-  Tests and SSR use parity mode. An unchecked server client is deliberately omitted
-  from the first release so local calls cannot silently diverge from remote behavior.
+One internal callable algebra maps a router to procedures and adds the boundary
+error union supplied by its environment:
+
+- `createBrowserClient({ contract, transport })` crosses the real protocol and
+  adds server plus browser boundary errors.
+- `createServerClient(router, { context })` runs in-process and adds only
+  `server/bad-request` and `server/internal`.
+- `createParityClient(router, { context })` is the wire-faithful test client: it
+  connects the real fetch handler to the browser client without opening a socket.
+
+Server rendering uses the direct server client. Protocol and serialization tests
+use the parity client.
 
 ## Reactive query runtime
 

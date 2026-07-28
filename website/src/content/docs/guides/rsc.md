@@ -13,8 +13,8 @@ server-rendered row in place with no refetch.
 
 Three steps, each a value crossing one boundary:
 
-1. **Server**: a per-request runtime over an in-process [server
-   client](/guides/testing/#the-parity-client) prefetches queries.
+1. **Server**: a per-request runtime over an in-process server client prefetches
+   queries.
 2. **Boundary**: `runtime.dehydrate()` returns `{ v, serializer, payload }` — a
    plain object with a string payload, so it crosses the RSC server→client
    boundary as an ordinary prop.
@@ -28,9 +28,9 @@ import { createServerClient } from "result-rpc/server";
 import { createQueryRuntime } from "result-rpc/query"; // ← react-free entry
 import { appRouter } from "@app/server"; // server-only module
 
-export const getServerRuntime = cache(() => {
-  const client = createServerClient(appRouter, { mode: "direct", context: buildContext() });
-  return createQueryRuntime({ client });
+export const getServerRpc = cache(() => {
+  const client = createServerClient(appRouter, { context: buildContext() });
+  return { client, runtime: createQueryRuntime({ client }) };
 });
 ```
 
@@ -53,14 +53,13 @@ shares a runtime — prefetches accumulate, and you dehydrate once at the bounda
 
 ```tsx
 // app/users/[id]/page.tsx — a server component
-import { getServerRuntime } from "@app/rsc";
-import { serverClient } from "@app/rsc";
+import { getServerRpc } from "@app/rsc";
 import { ResultRpcHydrationBoundary } from "result-rpc/react";
 import { UserDetail } from "./user-detail"; // a client component
 
 export default async function Page({ params }: { params: { id: string } }) {
-  const runtime = getServerRuntime();
-  await runtime.prefetch(serverClient.users.get, { id: params.id });
+  const { client, runtime } = getServerRpc();
+  await runtime.prefetch(client.users.get, { id: params.id });
   return (
     <ResultRpcHydrationBoundary state={runtime.dehydrate()}>
       <UserDetail id={params.id} />
@@ -128,15 +127,9 @@ version across a deploy, the boundary **skips** hydration (with a dev warning)
 and the client fetches fresh, rather than throwing during render and taking down
 the tree. A stale server payload never renders as if it were current.
 
-## Calling procedures on the server: `mode: "direct"`
+## Calling procedures on the server
 
-`createServerClient` has two modes, and they exist for different jobs.
-
-`mode: "parity"` routes every call through the real wire — serializer, envelope,
-HTTP handler. That is exactly what you want in [tests](/guides/testing/),
-because it proves a value survives the trip.
-
-`mode: "direct"` runs the procedure in-process. Use it for server rendering,
+`createServerClient` runs procedures in-process. Use it for server rendering,
 server actions, and background jobs. It keeps everything that decides whether a
 call is _correct_ — the middleware chain and its context, input validation,
 output encode/decode (which also brands entities), and the sanitization of
@@ -144,10 +137,14 @@ private errors into `server/internal` — and drops only the transport: no
 serializer round trip, no HTTP envelope, no contract digest, no retry, no
 batching.
 
-The reason to care is not speed. It is the type:
+Wire-faithful tests use `createParityClient` from `result-rpc/testing` instead.
+That client crosses the serializer, protocol envelope, fetch handler, and
+browser decoder so tests prove a value survives the trip.
+
+The constructors also expose different error types:
 
 ```ts
-// mode: "parity" — the full client union, none of which a server can act on
+// createParityClient / createBrowserClient
 DocNotFound |
   Unauthorized |
   ServerInternal |
@@ -160,7 +157,7 @@ DocNotFound |
   DecodeFailure |
   Stale;
 
-// mode: "direct" — what is actually reachable in-process
+// createServerClient — what is actually reachable in-process
 DocNotFound | Unauthorized | ServerInternal | ServerBadRequest;
 ```
 

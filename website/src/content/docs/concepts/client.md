@@ -4,10 +4,10 @@ description: "Every call resolves Result with the complete union; batching, canc
 ---
 
 ```ts
-import { createClient, batchFetchTransport } from "result-rpc/client";
+import { createBrowserClient, batchFetchTransport } from "result-rpc/client";
 import { appContract } from "../shared/contract";
 
-export const client = createClient({
+export const client = createBrowserClient({
   contract: appContract,
   transport: batchFetchTransport({ url: "/rpc" }),
 });
@@ -95,21 +95,20 @@ control flow and is excluded from the recoverable error union. Its sibling,
 family, one `catch` at the call site, and `isCancelled`/`isClaimed` to tell
 the two events apart when the UX differs.
 
-## Server-side calls keep wire parity
+## Server-side calls stay in-process
 
 ```ts
 import { createServerClient } from "result-rpc/server";
 import { appRouter } from "./router";
 
 const serverClient = createServerClient(appRouter, {
-  mode: "parity",
   context,
 });
 
 const result = await serverClient.doc.byId({ id: "doc_123" });
 ```
 
-Parity mode executes locally but still applies input, output, and error
-codecs. A value that would fail remotely also fails during SSR, tests, and
-server components. Parity is the only mode for now; an unchecked fast path can
-follow if profiling ever demands one.
+The server client still runs middleware and input/output codecs, but it does
+not manufacture browser failures that cannot happen in-process. Use
+`createParityClient` from `result-rpc/testing` when a test should cross the
+serializer, protocol envelope, fetch handler, and browser decoder.

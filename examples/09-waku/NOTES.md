@@ -37,7 +37,7 @@ Waku API endpoints are plain `Request => Response` exports. Nothing to adapt.
 ### 2. RSC prefetch + hydration (the no-flash pipeline)
 
 - `src/rsc.ts` (server-only) builds ONE runtime per request:
-  `cache(() => createQueryRuntime({ client: createServerClient(router, { mode: "parity", context }) }))`.
+  `cache(() => createQueryRuntime({ client: createServerClient(router, { context }) }))`.
   Parity mode runs the real middleware/codec/envelope path in-process.
 - `src/pages/index.tsx` (`render: 'dynamic'`, async server component)
   awaits `runtime.prefetchPaginated(serverClient.spots.feed, {})` and

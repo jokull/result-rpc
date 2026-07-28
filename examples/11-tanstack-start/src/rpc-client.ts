@@ -7,10 +7,10 @@
  * Start's file-based server routes live under `/api`, so both ends say
  * `/api/rpc` instead of the library default `/rpc`.
  */
-import { createClient, fetchTransport } from "result-rpc/client";
+import { createBrowserClient, fetchTransport } from "result-rpc/client";
 import { appContract } from "./contract.js";
 
-export const client = createClient({
+export const client = createBrowserClient({
   contract: appContract,
   transport: fetchTransport({ url: "/api/rpc" }),
   contractVersion: "11-tanstack-start",

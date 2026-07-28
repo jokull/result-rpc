@@ -1,34 +1,25 @@
-import { createClient, registerClientLike, type ClientOf } from "../client/client.js";
-import { fetchTransport } from "../client/transport.js";
-import type { ServerBadRequest, ServerInternal } from "../framework-errors.js";
-import type { Result } from "../result.js";
+import {
+  createClientErrorRegistry,
+  type BaseClientOf,
+  type ClientCallArgs,
+  type ClientErrorOf,
+  type ClientRecord,
+  type ProcedureClient,
+} from "../client/base-client.js";
+import { registerClientLike } from "../client/client-metadata.js";
+import { ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import {
   executeProcedure,
   executeSubscription,
   type AnyProcedure,
-  type ErrorDefinitionMap,
-  type ErrorUnion,
   type InternalErrorEvent,
-  type Procedure,
   type Router,
   type RouterContext,
   type RouterRecord,
-  type SubscriptionProcedure,
 } from "./contract.js";
-import { createFetchHandler } from "./http.js";
 
-/**
- * The failures a server-side call can actually produce. The client boundary
- * tags are absent because they are unreachable in-process: there is no socket
- * to drop, no `navigator` to report offline, and no second build to drift from
- * — so `client/offline`, `client/network-failure`, `client/timeout`,
- * `client/http-failure`, `client/protocol-violation`, `client/decode-failure`
- * and `client/stale` cannot occur. Narrowing the union here is honesty, not
- * convenience: it is what makes an exhaustive `matchError` in a server
- * component a few arms instead of a dozen.
- */
-export type ServerCallerError<TDefinitions extends ErrorDefinitionMap> =
-  | ErrorUnion<TDefinitions>
+/** Failures reachable while invoking a procedure directly in-process. */
+export type ServerBoundaryError =
   | ReturnType<typeof ServerInternal>
   | ReturnType<typeof ServerBadRequest>;
 
@@ -37,60 +28,32 @@ export interface ServerCallOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Zero-input procedures may be called with no argument. */
-export type ServerCallArgs<TInput> =
-  Record<never, never> extends TInput
-    ? [input?: TInput, options?: ServerCallOptions]
-    : [input: TInput, options?: ServerCallOptions];
+export type ServerCallArgs<TInput> = ClientCallArgs<TInput, ServerCallOptions>;
 
-export type ServerProcedureCaller<TProcedure> =
-  TProcedure extends SubscriptionProcedure<any, infer TInput, infer TOutput, infer TDefinitions>
-    ? ((
-        input: TInput,
-        options?: ServerCallOptions,
-      ) => AsyncIterable<Result<TOutput, ServerCallerError<TDefinitions>>>) & {
-        readonly $kind: "subscription";
-      }
-    : TProcedure extends Procedure<
-          any,
-          infer TInput,
-          infer TOutput,
-          infer TDefinitions,
-          infer TKind
-        >
-      ? TKind extends "subscription"
-        ? ((
-            input: TInput,
-            options?: ServerCallOptions,
-          ) => AsyncIterable<Result<TOutput, ServerCallerError<TDefinitions>>>) & {
-            readonly $kind: "subscription";
-          }
-        : ((
-            ...args: ServerCallArgs<TInput>
-          ) => Promise<Result<TOutput, ServerCallerError<TDefinitions>>>) & {
-            readonly $kind: TKind;
-          }
-      : never;
+export type ServerProcedureClient<TProcedure> = ProcedureClient<
+  TProcedure,
+  ServerBoundaryError,
+  ServerCallOptions,
+  "iterable"
+>;
 
-export type ServerCallerRecord<TRecord> = {
-  readonly [TKey in keyof TRecord]: TRecord[TKey] extends AnyProcedure
-    ? ServerProcedureCaller<TRecord[TKey]>
-    : TRecord[TKey] extends RouterRecord
-      ? ServerCallerRecord<TRecord[TKey]>
-      : never;
-};
+export type ServerClientRecord<TRecord> = ClientRecord<
+  TRecord,
+  ServerBoundaryError,
+  ServerCallOptions,
+  "iterable"
+>;
 
-export type ServerCallerOf<TRouter> =
-  TRouter extends Router<any, infer TRecord> ? ServerCallerRecord<TRecord> : never;
+export type ServerClientErrorOf<TRouter> = ClientErrorOf<TRouter, ServerBoundaryError>;
+
+export type ServerClientOf<TRouter> = BaseClientOf<
+  TRouter,
+  ServerBoundaryError,
+  ServerCallOptions,
+  "iterable"
+>;
 
 export interface CreateServerClientOptions<TRouter extends Router<any, RouterRecord>> {
-  /**
-   * `"parity"` routes every call through the real wire — serializer, envelope,
-   * HTTP handler — so tests prove wire safety. `"direct"` calls the procedure
-   * in-process, which skips the round trip and narrows the error union to what
-   * is actually reachable on a server.
-   */
-  readonly mode: "parity" | "direct";
   readonly context: RouterContext<TRouter>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
 }
@@ -99,21 +62,17 @@ const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure 
   "_kind" in value && (value._kind === "procedure" || value._kind === "subscription-procedure");
 
 /**
- * A caller that runs procedures in-process. It keeps everything that decides
- * whether a call is correct — the middleware chain and its context, input
- * validation, output encode/decode (which also brands entities), and the
- * sanitization of private errors into `server/internal` — and drops only the
- * transport: no devalue round trip, no HTTP envelope, no contract digest, no
- * retry, no batching.
+ * Builds a direct, in-process server client. Middleware, input/output codecs,
+ * entity branding, and private-error sanitization still run; transport,
+ * envelopes, retries, batching, and browser boundary errors do not.
  *
- * Note that a mutation called this way executes normally but its cache
- * declarations are inert: `.affects()`, entity patching, and `touch` are
- * client-runtime behaviors, and there is no client cache on a server.
+ * Mutations execute normally, but cache declarations are inert because there
+ * is no browser cache to patch or invalidate.
  */
-const createDirectCaller = <TRouter extends Router<any, RouterRecord>>(
+export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
   router: TRouter,
   options: CreateServerClientOptions<TRouter>,
-): ServerCallerOf<TRouter> => {
+): ServerClientOf<TRouter> => {
   const registry = new Map<string, { readonly fn: Function; readonly procedure: AnyProcedure }>();
 
   const executionOptions = (path: string, call: ServerCallOptions | undefined) => ({
@@ -124,16 +83,16 @@ const createDirectCaller = <TRouter extends Router<any, RouterRecord>>(
   });
 
   const callable = (procedure: AnyProcedure, path: string): Function => {
-    const fn =
-      procedure._kind === "subscription-procedure"
-        ? (input: unknown, call?: ServerCallOptions) =>
-            executeSubscription(procedure, input as never, executionOptions(path, call) as never)
-        : (input?: unknown, call?: ServerCallOptions) =>
-            executeProcedure(
-              procedure as never,
-              (input ?? {}) as never,
-              executionOptions(path, call) as never,
-            );
+    const fn = (...args: [unknown?, ServerCallOptions?]) => {
+      const input = args.length === 0 ? {} : args[0];
+      return procedure._kind === "subscription-procedure"
+        ? executeSubscription(procedure, input as never, executionOptions(path, args[1]) as never)
+        : executeProcedure(
+            procedure as never,
+            input as never,
+            executionOptions(path, args[1]) as never,
+          );
+    };
     Object.defineProperty(fn, "$kind", { value: procedure._def.kind, enumerable: true });
     registry.set(path, { fn, procedure });
     return fn;
@@ -150,38 +109,14 @@ const createDirectCaller = <TRouter extends Router<any, RouterRecord>>(
     return out;
   };
 
-  const caller = build(router.record, []);
-  // Registered under the same identity maps as a wire client, so the query
-  // runtime accepts it for `prefetch` and `dehydrate` during server rendering.
-  registerClientLike(caller, router as never, registry as never);
-  return caller as ServerCallerOf<TRouter>;
+  const client = build(router.record, []);
+  Object.defineProperty(client, "$errors", {
+    value: createClientErrorRegistry<ServerClientErrorOf<TRouter>>(router, [
+      ServerBadRequest,
+      ServerInternal,
+    ]),
+    enumerable: true,
+  });
+  registerClientLike(client, router, registry);
+  return client as ServerClientOf<TRouter>;
 };
-
-export function createServerClient<TRouter extends Router<any, RouterRecord>>(
-  router: TRouter,
-  options: CreateServerClientOptions<TRouter> & { readonly mode: "parity" },
-): ClientOf<TRouter>;
-export function createServerClient<TRouter extends Router<any, RouterRecord>>(
-  router: TRouter,
-  options: CreateServerClientOptions<TRouter> & { readonly mode: "direct" },
-): ServerCallerOf<TRouter>;
-export function createServerClient<TRouter extends Router<any, RouterRecord>>(
-  router: TRouter,
-  options: CreateServerClientOptions<TRouter>,
-): ClientOf<TRouter> | ServerCallerOf<TRouter> {
-  if (options.mode === "direct") return createDirectCaller(router, options);
-  const handler = createFetchHandler({
-    router,
-    createContext: () => options.context,
-    ...(options.onInternalError === undefined ? {} : { onInternalError: options.onInternalError }),
-  });
-  const localFetch = (async (input: string | URL | Request, init?: RequestInit) =>
-    handler(new Request(input, init))) as typeof globalThis.fetch;
-  return createClient({
-    router,
-    transport: fetchTransport({
-      url: "http://result-rpc.local/rpc",
-      fetch: localFetch,
-    }),
-  });
-}

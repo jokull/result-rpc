@@ -7,10 +7,10 @@
  * in src/server.ts. Next mounts route handlers under /api/*, which is NOT
  * result-rpc's default "/rpc" — so both ends are set explicitly.
  */
-import { createClient, fetchTransport } from "result-rpc/client";
+import { createBrowserClient, fetchTransport } from "result-rpc/client";
 import { appContract } from "./contract";
 
-export const client = createClient({
+export const client = createBrowserClient({
   contract: appContract,
   transport: fetchTransport({ url: "/api/rpc" }),
   contractVersion: "10-nextjs",

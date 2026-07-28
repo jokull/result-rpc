@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import { useState } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { err, fieldIssues, ok, pickErrors, rpc, wire } from "../../src/index.js";
-import { createClient, fetchTransport } from "../../src/client/index.js";
+import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
 import {
   ResultRpcProvider,
   useResultClient,
@@ -464,7 +464,7 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
         .mutation(),
     },
   });
-  const looseClient = createClient({
+  const looseClient = createBrowserClient({
     contract: looseContract,
     transport: fetchTransport({ url: "https://tracker.test/rpc", fetch: countingFetch }),
     contractVersion: "07-tracker",

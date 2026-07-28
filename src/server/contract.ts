@@ -7,7 +7,7 @@ import type {
 import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import { entityIdFor, type AnyModel, type ModelKeyInput } from "../model.js";
 import { err, ok, type Result } from "../result.js";
-import { wire } from "../wire.js";
+import { encodeProcedureInput, wire } from "../wire.js";
 import type { WireCodec, WireValue } from "../wire.js";
 
 /** Error definitions admitted to an RPC contract. Private errors are server-only. */
@@ -963,7 +963,7 @@ export const executeProcedure = async <
 > => {
   let decodedInput: ReturnType<typeof procedure._def.input.decode>;
   try {
-    const encodedInput = procedure._def.input.encode(input);
+    const encodedInput = encodeProcedureInput(procedure._def.input, input);
     if (!encodedInput.ok) return badInputFailure(encodedInput.issues);
     decodedInput = procedure._def.input.decode(encodedInput.value);
     if (!decodedInput.ok) return badInputFailure(decodedInput.issues);
@@ -1062,14 +1062,20 @@ export async function* executeSubscription<
     | ReturnType<typeof ServerBadRequest>
   >
 > {
-  const encodedInput = procedure._def.input.encode(input);
-  if (!encodedInput.ok) {
-    yield badInputFailure(encodedInput.issues);
-    return;
-  }
-  const decodedInput = procedure._def.input.decode(encodedInput.value);
-  if (!decodedInput.ok) {
-    yield badInputFailure(decodedInput.issues);
+  let decodedInput: ReturnType<typeof procedure._def.input.decode>;
+  try {
+    const encodedInput = encodeProcedureInput(procedure._def.input, input);
+    if (!encodedInput.ok) {
+      yield badInputFailure(encodedInput.issues);
+      return;
+    }
+    decodedInput = procedure._def.input.decode(encodedInput.value);
+    if (!decodedInput.ok) {
+      yield badInputFailure(decodedInput.issues);
+      return;
+    }
+  } catch (cause) {
+    yield internalFailure("input", cause, options);
     return;
   }
 
@@ -1123,7 +1129,13 @@ export async function* executeSubscription<
   // signal can close it DIRECTLY. When the consumer walks away while the
   // producer is parked at a yield with no next() outstanding, nothing else
   // would ever resume it — this listener is what runs its `finally`.
-  const inner = iterable[Symbol.asyncIterator]();
+  let inner: AsyncIterator<Result<TOutput, ErrorUnion<TDefinitions>>>;
+  try {
+    inner = iterable[Symbol.asyncIterator]();
+  } catch (cause) {
+    yield internalFailure("handler", cause, options);
+    return;
+  }
   const closeInner = () => {
     void Promise.resolve(inner.return?.(undefined as never)).catch(() => undefined);
   };

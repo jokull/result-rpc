@@ -45,6 +45,19 @@ export interface WireCodec<Input, Encoded extends WireValue = WireValue> {
   decode(value: unknown): DecodeResult<Input>;
 }
 
+/**
+ * Preserve an explicit `undefined` when a codec accepts it. When it does not,
+ * treat `undefined` as the conventional options placeholder for a zero-input
+ * procedure and try the default empty-object input.
+ */
+export const encodeProcedureInput = <TInput, TEncoded extends WireValue>(
+  codec: WireCodec<TInput, TEncoded>,
+  input: TInput,
+): DecodeResult<TEncoded> => {
+  const encoded = codec.encode(input);
+  return !encoded.ok && input === undefined ? codec.encode({} as TInput) : encoded;
+};
+
 export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, WireValue> ? TInput : never;
 
 export type EncodedOf<TCodec> =

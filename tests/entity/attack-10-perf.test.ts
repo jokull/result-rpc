@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../../src/index.js";
-import { createClient } from "../../src/client/client.js";
+import { createBrowserClient } from "../../src/client/client.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { rpc } from "../../src/server/contract.js";
@@ -53,7 +53,7 @@ describe("attack-10 perf", () => {
         .query(() => ok([]));
       const router = app.router({ list, solo });
       const handler = createFetchHandler({ router, createContext: () => ({}) });
-      const client = createClient({
+      const client = createBrowserClient({
         router,
         transport: fetchTransport({
           url: "https://probe.test/rpc",

@@ -43,7 +43,7 @@ bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
 
 (When client and server share a process — SSR, tests, server components — you
-can skip the split and hand `createClient` the router directly. Code-first
+can skip the split and hand `createBrowserClient` the router directly. Code-first
 procedures with inline handlers work the same way; the contract split is for
 the browser boundary, not a required style.)
 

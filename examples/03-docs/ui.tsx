@@ -20,7 +20,7 @@
  */
 import { Component, type ReactNode } from "react";
 import { defectErrors, errorCatalog } from "../../src/index.js";
-import { createClient, fetchTransport } from "../../src/client/index.js";
+import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
 import {
   boundaryShells,
   layerShell,
@@ -33,7 +33,7 @@ import { docRouter } from "./server.js";
 // -- client -----------------------------------------------------------------------
 
 export const makeDocClient = (fetch: typeof globalThis.fetch) =>
-  createClient({
+  createBrowserClient({
     router: docRouter,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
   });

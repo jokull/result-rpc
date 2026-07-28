@@ -13,7 +13,8 @@ import {
   matchError,
   isTaggedError,
 } from "../src/index.js";
-import { createClient, type ClientErrors } from "../src/client/index.js";
+import { createBrowserClient, type ClientErrors } from "../src/client/index.js";
+import { createServerClient } from "../src/server/index.js";
 import { defineModel } from "../src/model.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
@@ -194,11 +195,11 @@ const contract = r.contract({
     subscription: subscriptionContract,
   },
 });
-const client = createClient({
+const client = createBrowserClient({
   contract,
   transport: { request: async () => ({ ok: false, reason: "network" }) },
 });
-void router;
+const serverClient = createServerClient(router, { context: { authenticated: true } });
 
 type CallResult = Awaited<ReturnType<typeof client.example.procedure>>;
 type CallError = CallResult extends Result<unknown, infer E> ? E : never;
@@ -214,6 +215,18 @@ export type _ClientCarriesTheWholePublicErrorUnion = Assert<
 >;
 export type _EveryClientErrorIsPublic = Assert<
   Equal<ClientErrors<typeof client>["visibility"], "public">
+>;
+type ServerCallResult = Awaited<ReturnType<typeof serverClient.example.procedure>>;
+type ServerCallError = ServerCallResult extends Result<unknown, infer E> ? E : never;
+type ExpectedServerError =
+  | ReturnType<typeof Missing>
+  | ReturnType<typeof ServerInternal>
+  | ServerBadRequest;
+export type _ServerClientHasOnlyReachableErrors = Assert<
+  Equal<ServerCallError, ExpectedServerError>
+>;
+export type _ServerRegistryCarriesTheNarrowUnion = Assert<
+  Equal<ClientErrors<typeof serverClient>, ExpectedServerError>
 >;
 
 declare const unknownFailure: unknown;
@@ -632,7 +645,7 @@ export type _ImplementedMutationStaysAMutation = Assert<Equal<ImplementedMutatio
 // The payoff: a client built from the implemented router exposes `$kind:
 // "query"`, so the RSC prefetch path accepts it.
 const kindRouter = rpc.context<{}>().router({ read: kindImplemented });
-const kindClient = createClient({
+const kindClient = createBrowserClient({
   router: kindRouter,
   transport: { request: async () => ({ ok: false, reason: "network" }) },
 });

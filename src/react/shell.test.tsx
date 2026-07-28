@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Component, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, err, error, ok, transportErrors, wire } from "../index.js";
-import { createClient, type ClientEvent } from "../client/client.js";
+import { createBrowserClient, type ClientEvent } from "../client/client.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
@@ -57,7 +57,7 @@ const offlineTransport: ClientTransport = {
   request: async () => ({ ok: false, reason: "offline" }),
 };
 
-const clientFor = (transport: ClientTransport) => createClient({ router, transport });
+const clientFor = (transport: ClientTransport) => createBrowserClient({ router, transport });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -384,7 +384,7 @@ describe("ambient claiming", () => {
 describe("claim breadcrumbs", () => {
   test("a claim emits into the client event stream with owner and effect", async () => {
     const events: ClientEvent[] = [];
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: httpTransport,
       onEvent: (event) => events.push(event),
@@ -451,7 +451,7 @@ describe("resume lifecycle", () => {
       );
     const router2 = r2.router({ guarded });
     const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
-    const client2 = createClient({
+    const client2 = createBrowserClient({
       router: router2,
       transport: fetchTransport({
         url: "https://example.test/rpc",

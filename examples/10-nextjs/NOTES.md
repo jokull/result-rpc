@@ -80,7 +80,7 @@ Waku's `_api/rpc.ts` lands on `/rpc` exactly.)
 ```ts
 // src/rsc.ts
 export const getServerRuntime = cache(() => {
-  const serverClient = createServerClient(router, { mode: "parity", context: createContext() });
+  const serverClient = createServerClient(router, { context: createContext() });
   return { runtime: createQueryRuntime({ client: serverClient }), serverClient };
 });
 ```

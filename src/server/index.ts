@@ -10,9 +10,10 @@ export type {
   CreateServerClientOptions,
   ServerCallArgs,
   ServerCallOptions,
-  ServerCallerError,
-  ServerCallerOf,
-  ServerCallerRecord,
-  ServerProcedureCaller,
+  ServerBoundaryError,
+  ServerClientErrorOf,
+  ServerClientOf,
+  ServerClientRecord,
+  ServerProcedureClient,
 } from "./server-client.js";
 export type { ExecutionOptions, InternalErrorEvent } from "./contract.js";

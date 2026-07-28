@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { cancelled, fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
@@ -68,7 +68,12 @@ const graph = r
   .input(wire.serializable<GraphInput>())
   .output(wire.string)
   .query(({ input }) => ok(`${input.sequence}:${input.labels.get("region")}`));
-const router = r.router({ value: { byId, rename, events, graph } });
+const nullable = r
+  .procedure()
+  .input(wire.null)
+  .output(wire.null)
+  .query(({ input }) => ok(input));
+const router = r.router({ value: { byId, rename, events, graph, nullable } });
 const handler = createFetchHandler({
   router,
   createContext: () => ({ values: new Map([["one", "first"]]) }),
@@ -98,10 +103,21 @@ const waitFor = <T, E extends AnyTaggedError>(
   });
 
 describe("reactive query runtime", () => {
+  test("keys and fetches an explicit null input without replacing it", async () => {
+    const client = createBrowserClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+    });
+    const runtime = createQueryRuntime({ client });
+    expect(await runtime.prefetch(client.value.nullable, null)).toEqual(ok(null));
+    expect(runtime.cache.get(client.value.nullable, null)).toBeNull();
+    runtime.clear();
+  });
+
   test("rejects procedures from a different client instance", () => {
     const transport = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
-    const client = createClient({ router, transport });
-    const otherClient = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
+    const otherClient = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     expect(() => runtime.observe(otherClient.value.byId, { id: "one" })).toThrow(
       "different result-rpc client",
@@ -110,7 +126,7 @@ describe("reactive query runtime", () => {
   });
 
   test("projects successful query data into one Result state", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -124,7 +140,7 @@ describe("reactive query runtime", () => {
   });
 
   test("projects declared failures without treating Result.Err as cache data", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -138,7 +154,7 @@ describe("reactive query runtime", () => {
   });
 
   test("keys rich and cyclic inputs through the wire serializer", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -166,7 +182,7 @@ describe("reactive query runtime", () => {
         return local.request(...args);
       },
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const observer = runtime.observe(client.value.byId, { id: "one" });
     const state = await waitFor(observer, (current) => current.state === "success");
@@ -184,7 +200,7 @@ describe("reactive query runtime", () => {
       request: (...args) =>
         fail ? Promise.resolve({ ok: false, reason: "network" }) : local.request(...args),
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const observer = runtime.observe(client.value.byId, { id: "one" }, { retry: false });
     await waitFor(observer, (current) => current.state === "success");
@@ -200,7 +216,7 @@ describe("reactive query runtime", () => {
   });
 
   test("projects mutations through the same Result channel", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -222,7 +238,7 @@ describe("reactive query runtime", () => {
   });
 
   test("rolls back optimistic cache updates before publishing failure", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -260,7 +276,7 @@ describe("reactive query runtime", () => {
           options?.signal?.addEventListener("abort", () => reject(cancelled), { once: true });
         }),
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     let failureCalled = false;
     let settledCalled = false;
@@ -290,7 +306,7 @@ describe("reactive query runtime", () => {
   });
 
   test("dehydrates only successful cache data through the versioned serializer", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -323,7 +339,7 @@ describe("reactive query runtime", () => {
   });
 
   test("rejects hydrated success data that fails the procedure output codec", () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -342,7 +358,7 @@ describe("reactive query runtime", () => {
   });
 
   test("projects subscription events and terminal errors into one Result", async () => {
-    const client = createClient({
+    const client = createBrowserClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -377,7 +393,7 @@ describe("reactive query runtime", () => {
           : local.stream!(...args);
       },
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const subscription = runtime.subscription(
       client.value.events,
@@ -408,7 +424,7 @@ describe("reactive query runtime", () => {
       request: async () => ({ ok: false, reason: "offline" }),
       stream: async () => ({ ok: false, reason: "offline" }),
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const subscription = runtime.subscription(client.value.events, { fail: false });
     const paused = await new Promise<ReturnType<typeof subscription.getCurrentState>>((resolve) => {
@@ -459,7 +475,7 @@ describe("declared invalidation", () => {
       router: affectsRouter,
       createContext: () => ({ state }),
     });
-    const client = createClient({
+    const client = createBrowserClient({
       router: affectsRouter,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -590,7 +606,7 @@ describe("entity identities", () => {
       createContext: () => ({ db }),
     });
     let requests = 0;
-    const client = createClient({
+    const client = createBrowserClient({
       router: entityRouter,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -678,7 +694,7 @@ describe("entity identities", () => {
     const touchRouter = app.router({ list, remove });
     const db = { docs: new Map([["d1", { id: "d1", title: "A", archived: false }]]) };
     const touchHandler = createFetchHandler({ router: touchRouter, createContext: () => ({ db }) });
-    const client = createClient({
+    const client = createBrowserClient({
       router: touchRouter,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -777,7 +793,7 @@ describe("offline anti-thrash", () => {
         return local.request(...args);
       },
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     try {
       globalThis.dispatchEvent(new Event("offline"));
@@ -809,7 +825,7 @@ describe("offline anti-thrash", () => {
         return { ok: false, reason: "offline" };
       },
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     try {
       globalThis.dispatchEvent(new Event("offline"));
@@ -837,7 +853,7 @@ describe("mutation retry safety", () => {
         return local.request(...args);
       },
     };
-    const client = createClient({ router, transport });
+    const client = createBrowserClient({ router, transport });
     const runtime = createQueryRuntime({ client });
     const mutation = runtime.mutation(client.value.rename);
     const result = await mutation.getCurrentState().mutate({ value: "available" });
@@ -873,7 +889,7 @@ describe("mutation retry safety", () => {
       router: busyRouter,
       createContext: () => ({ state }),
     });
-    const client = createClient({
+    const client = createBrowserClient({
       router: busyRouter,
       transport: fetchTransport({
         url: "https://example.test/rpc",

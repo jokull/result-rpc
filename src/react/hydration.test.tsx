@@ -3,10 +3,11 @@ import { act, create } from "react-test-renderer";
 import { createElement } from "react";
 import { ok, wire } from "../index.js";
 import { defineModel } from "../model.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createServerClient } from "../server/server-client.js";
 import { createFetchHandler } from "../server/index.js";
+import { createParityClient } from "../testing/index.js";
 import { rpc } from "../server/contract.js";
 import { createQueryRuntime, type QueryRuntime } from "../query/runtime.js";
 import {
@@ -55,7 +56,7 @@ const makeWorld = () => {
     return handler(new Request(input, init));
   }) as typeof globalThis.fetch;
 
-  const client = createClient({
+  const client = createBrowserClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });
@@ -77,7 +78,7 @@ const serverDehydrate = async (
   store: Map<string, string>,
   prefetch: (runtime: QueryRuntime, serverClient: any) => Promise<void>,
 ) => {
-  const serverClient = createServerClient(router, { mode: "parity", context: { store } });
+  const serverClient = createParityClient(router, { context: { store } });
   const runtime = createQueryRuntime({ client: serverClient });
   await prefetch(runtime, serverClient);
   const state = runtime.dehydrate();
@@ -244,9 +245,8 @@ describe("RSC hydration boundary", () => {
 describe("direct server caller", () => {
   test("prefetches and dehydrates for RSC without touching the wire", async () => {
     const world = makeWorld();
-    // mode: "direct" — no serializer, no HTTP envelope, no contract digest.
+    // Direct — no serializer, no HTTP envelope, no contract digest.
     const caller = createServerClient(world.router, {
-      mode: "direct",
       context: { store: world.store },
     });
     const runtime = createQueryRuntime({ client: caller });

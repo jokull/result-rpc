@@ -7,14 +7,14 @@
  * should fail to compile.
  */
 import { errorCatalog, matchError } from "../../src/index.js";
-import { createClient, batchFetchTransport } from "../../src/client/index.js";
+import { createBrowserClient, batchFetchTransport } from "../../src/client/index.js";
 import { boundaryShells, ResultRpcProvider } from "../../src/react/index.js";
 import { todoContract, todoErrors } from "./contract.js";
 
 // -- client wiring --------------------------------------------------------------
 
 export const makeTodoClient = (fetch?: typeof globalThis.fetch) =>
-  createClient({
+  createBrowserClient({
     contract: todoContract,
     transport: batchFetchTransport({
       url: "https://example.test/rpc",

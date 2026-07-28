@@ -1,9 +1,4 @@
-import {
-  isTaggedError,
-  type AnyPublicErrorDefinition,
-  type AnyPublicTaggedError,
-  type AnyTaggedError,
-} from "../error.js";
+import type { AnyPublicTaggedError, AnyTaggedError } from "../error.js";
 import {
   ClientDecodeFailure,
   ServerBadRequest,
@@ -29,19 +24,35 @@ import {
 } from "../protocol.js";
 import { err, ok, type Result } from "../result.js";
 import { DEFAULT_MAX_WIRE_BYTES, deserialize } from "../serializer.js";
+import { encodeProcedureInput } from "../wire.js";
 import type {
-  AnyProcedure,
-  AnyProcedureContract,
   ContractRouterRecord,
   ErrorDefinitionMap,
-  ErrorUnion,
-  Procedure,
-  ProcedureContract,
-  SubscriptionProcedure,
   Router,
   RouterContract,
   RouterRecord,
 } from "../server/contract.js";
+import {
+  createClientErrorRegistry,
+  type BaseClientOf,
+  type ClientErrorOf,
+  type ClientErrorRegistry,
+  type ClientErrors,
+  type ClientProcedure,
+  type ClientRecord,
+  type ClientRouter,
+  type ProcedureClient,
+  type ResultSubscription,
+} from "./base-client.js";
+import {
+  getClientIdentity,
+  getClientRouter,
+  getProcedureClientMetadata,
+  recordTouchedEntities,
+  registerClientIdentity,
+  registerProcedureClient,
+  type ProcedureClientMetadata,
+} from "./client-metadata.js";
 import {
   cancelled,
   isCancelled,
@@ -51,132 +62,36 @@ import {
   type TransportResponse,
 } from "./transport.js";
 
-/** Zero-input procedures may be called with no argument. */
-export type ClientInputArgs<TInput> =
-  Record<never, never> extends TInput
-    ? [input?: TInput, options?: TransportRequestOptions]
-    : [input: TInput, options?: TransportRequestOptions];
-
-export type ProcedureClient<TProcedure> =
-  TProcedure extends SubscriptionProcedure<any, infer TInput, infer TOutput, infer TDefinitions>
-    ? SubscriptionClient<TInput, TOutput, TDefinitions>
-    : TProcedure extends Procedure<
-          any,
-          infer TInput,
-          infer TOutput,
-          infer TDefinitions,
-          infer TKind
-        >
-      ? TKind extends "subscription"
-        ? SubscriptionClient<TInput, TOutput, TDefinitions>
-        : ((
-            ...args: ClientInputArgs<TInput>
-          ) => Promise<
-            Result<
-              TOutput,
-              | ErrorUnion<TDefinitions>
-              | ReturnType<typeof ServerInternal>
-              | ReturnType<typeof ServerBadRequest>
-              | ClientBoundaryError
-            >
-          >) & { readonly $kind: TKind }
-      : TProcedure extends ProcedureContract<
-            any,
-            infer TInput,
-            infer TOutput,
-            infer TDefinitions,
-            infer TKind
-          >
-        ? TKind extends "subscription"
-          ? SubscriptionClient<TInput, TOutput, TDefinitions>
-          : ((
-              ...args: ClientInputArgs<TInput>
-            ) => Promise<
-              Result<
-                TOutput,
-                | ErrorUnion<TDefinitions>
-                | ReturnType<typeof ServerInternal>
-                | ReturnType<typeof ServerBadRequest>
-                | ClientBoundaryError
-              >
-            >) & { readonly $kind: TKind }
-        : never;
-
-type ClientProcedure = AnyProcedure | AnyProcedureContract;
-type ClientRouterRecord = RouterRecord | ContractRouterRecord;
-type ClientRouter = Router<any, RouterRecord> | RouterContract<any, ContractRouterRecord>;
-
-export type ClientRecord<TRecord> = {
-  readonly [TKey in keyof TRecord]: TRecord[TKey] extends ClientProcedure
-    ? ProcedureClient<TRecord[TKey]>
-    : TRecord[TKey] extends ClientRouterRecord
-      ? ClientRecord<TRecord[TKey]>
-      : never;
-};
-
-type ClientRecordError<TRecord> = {
-  readonly [TKey in keyof TRecord]: TRecord[TKey] extends ClientProcedure
-    ? TRecord[TKey] extends {
-        readonly _def: { readonly definitions: infer TDefinitions extends ErrorDefinitionMap };
-      }
-      ? ErrorUnion<TDefinitions>
-      : never
-    : TRecord[TKey] extends ClientRouterRecord
-      ? ClientRecordError<TRecord[TKey]>
-      : never;
-}[keyof TRecord];
-
-type ClientRouterRecordOf<TRouter> =
-  TRouter extends Router<any, infer TRecord>
-    ? TRecord
-    : TRouter extends RouterContract<any, infer TRecord>
-      ? TRecord
-      : never;
-
-/** Every failure this client may observe, flattened into one public tagged union. */
-export type ClientErrorOf<TRouter> = Extract<
-  | ClientRecordError<ClientRouterRecordOf<TRouter>>
+export type BrowserBoundaryError =
   | ReturnType<typeof ServerInternal>
   | ReturnType<typeof ServerBadRequest>
-  | ClientBoundaryError,
-  AnyPublicTaggedError
+  | ClientBoundaryError;
+
+export type BrowserProcedureClient<TProcedure> = ProcedureClient<
+  TProcedure,
+  BrowserBoundaryError,
+  TransportRequestOptions,
+  "managed"
 >;
 
-/** Runtime definitions plus an app-wide type guard for a client's public error union. */
-export interface ClientErrorRegistry<E extends AnyPublicTaggedError> {
-  readonly definitions: ReadonlyMap<string, AnyPublicErrorDefinition>;
-  is(value: unknown): value is E;
-}
+export type BrowserClientRecord<TRecord> = ClientRecord<
+  TRecord,
+  BrowserBoundaryError,
+  TransportRequestOptions,
+  "managed"
+>;
 
-export interface ResultSubscription<T, E extends AnyTaggedError> extends AsyncIterable<
-  Result<T, E>
-> {
-  close(): void;
-}
+/** Every failure a browser client may observe, flattened into one public tagged union. */
+export type BrowserClientErrorOf<TRouter> = ClientErrorOf<TRouter, BrowserBoundaryError>;
 
-type SubscriptionClient<TInput, TOutput, TDefinitions extends ErrorDefinitionMap> = ((
-  input: TInput,
-  options?: TransportRequestOptions,
-) => ResultSubscription<
-  TOutput,
-  | ErrorUnion<TDefinitions>
-  | ReturnType<typeof ServerInternal>
-  | ReturnType<typeof ServerBadRequest>
-  | ClientBoundaryError
->) & { readonly $kind: "subscription" };
+export type BrowserClientOf<TRouter> = BaseClientOf<
+  TRouter,
+  BrowserBoundaryError,
+  TransportRequestOptions,
+  "managed"
+>;
 
-export type ClientOf<TRouter> = (TRouter extends Router<any, infer TRecord>
-  ? ClientRecord<TRecord>
-  : TRouter extends RouterContract<any, infer TRecord>
-    ? ClientRecord<TRecord>
-    : never) & { readonly $errors: ClientErrorRegistry<ClientErrorOf<TRouter>> };
-
-/** Extracts the flattened, public error union carried by a client instance. */
-export type ClientErrors<TClient> = TClient extends {
-  readonly $errors: ClientErrorRegistry<infer E>;
-}
-  ? E
-  : never;
+export type { ClientErrorRegistry, ClientErrors, ResultSubscription };
 
 /**
  * The wire-level breadcrumb stream. Every operation the client performs emits
@@ -238,56 +153,21 @@ export interface CreateRouterClientOptions<TRouter extends Router<any, RouterRec
   readonly contractVersion?: string;
 }
 
-export type CreateClientOptions<TRouter extends ClientRouter> =
+export type CreateBrowserClientOptions<TRouter extends ClientRouter> =
   TRouter extends RouterContract<any, ContractRouterRecord>
     ? CreateContractClientOptions<TRouter>
     : TRouter extends Router<any, RouterRecord>
       ? CreateRouterClientOptions<TRouter>
       : never;
 
-export interface ProcedureClientMetadata {
-  readonly path: string;
-  readonly procedure: ClientProcedure;
-  readonly clientIdentity: object;
-}
-
-const procedureClientMetadata = new WeakMap<Function, ProcedureClientMetadata>();
-const clientIdentities = new WeakMap<object, object>();
 const clientEventListeners = new WeakMap<object, ClientEventListener>();
-const clientRouters = new WeakMap<object, ClientRouter>();
-
-/** Internal: the router/contract a client was built from, by client identity. */
-/**
- * Internal: registers a caller that is not built by `createClient` — today the
- * direct server caller — under the same identity maps, so the query runtime
- * accepts it for prefetch and hydration. Only identities are recorded here; no
- * server code reaches this module.
- */
-export const registerClientLike = (
-  caller: object,
-  router: ClientRouter,
-  procedures: ReadonlyMap<string, { readonly fn: Function; readonly procedure: ClientProcedure }>,
-): void => {
-  const clientIdentity = Object.freeze({});
-  clientIdentities.set(caller, clientIdentity);
-  clientRouters.set(clientIdentity, router);
-  for (const [path, entry] of procedures) {
-    clientIdentities.set(entry.fn, clientIdentity);
-    procedureClientMetadata.set(entry.fn, { path, procedure: entry.procedure, clientIdentity });
-  }
-};
-
-export const getClientRouter = (clientIdentity: object): ClientRouter | undefined =>
-  clientRouters.get(clientIdentity);
 
 /** Internal: the event listener registered for a client, by client identity. */
 export const getClientEventListener = (clientIdentity: object): ClientEventListener | undefined =>
   clientEventListeners.get(clientIdentity);
 
-export const getProcedureClientMetadata = (value: Function): ProcedureClientMetadata | undefined =>
-  procedureClientMetadata.get(value);
-
-export const getClientIdentity = (value: object): object | undefined => clientIdentities.get(value);
+export { getClientIdentity, getClientRouter, getProcedureClientMetadata };
+export type { ProcedureClientMetadata };
 
 const clientFailure = (
   outcome: Exclude<Awaited<ReturnType<ClientTransport["request"]>>, { ok: true }>,
@@ -385,7 +265,7 @@ const callProcedureOnce = async (
   skew: SkewMonitor,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
-  const encodedInput = procedure._def.input.encode(input ?? {});
+  const encodedInput = encodeProcedureInput(procedure._def.input, input);
   if (!encodedInput.ok) {
     const details = encodedInput.issues
       .map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`)
@@ -435,17 +315,10 @@ const decodeTransportResponse = (
   const result = decodeEnvelope(procedure, envelope, response.status);
   if (envelope.touched !== undefined) {
     const keys = envelope.touched.filter((key): key is string => typeof key === "string");
-    if (keys.length > 0) touchedByResult.set(result, keys);
+    if (keys.length > 0) recordTouchedEntities(result, keys);
   }
   return result;
 };
-
-/** Server-declared entity writes, keyed by the exact Result the call resolved. */
-const touchedByResult = new WeakMap<object, readonly string[]>();
-
-/** Internal: `model:id` keys the server declared touching for this result. */
-export const getTouchedEntities = (result: object): readonly string[] | undefined =>
-  touchedByResult.get(result);
 
 const retryDelayFor = (
   procedure: ClientProcedure,
@@ -564,7 +437,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
   async function* stream(): AsyncGenerator<Result<T, E>> {
-    const encodedInput = procedure._def.input.encode(input);
+    const encodedInput = encodeProcedureInput(procedure._def.input, input);
     if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
     if (!transport.stream) {
       yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
@@ -701,13 +574,14 @@ const createProxy = (
         errorRegistry,
       );
     },
-    apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {
+    apply: (_target, _thisArg, argumentsList: [unknown?, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);
+      const input = argumentsList.length === 0 ? {} : argumentsList[0];
       if (procedure._def.kind === "subscription") {
         return subscribeProcedure(
           procedure,
           procedurePath,
-          argumentsList[0],
+          input,
           transport,
           onEvent,
           argumentsList[1],
@@ -716,7 +590,7 @@ const createProxy = (
       return callProcedure(
         procedure,
         procedurePath,
-        argumentsList[0],
+        input,
         transport,
         onEvent,
         skew,
@@ -724,9 +598,9 @@ const createProxy = (
       );
     },
   });
-  clientIdentities.set(proxy, clientIdentity);
+  registerClientIdentity(proxy, clientIdentity);
   if (procedure) {
-    procedureClientMetadata.set(proxy, { path: procedurePath, procedure, clientIdentity });
+    registerProcedureClient(proxy, { path: procedurePath, procedure, clientIdentity });
   }
   cache.set(procedurePath, proxy);
   return proxy;
@@ -736,7 +610,7 @@ const createProxy = (
  * A router (unlike a contract) holds the implemented procedures — handlers,
  * middleware, their imports. If one reaches a browser bundle, all of that
  * ships with it: server code, database drivers, secrets. Handing `router` to
- * `createClient` in a browser is that exact footgun, so warn once in dev.
+ * `createBrowserClient` is that exact footgun, so warn once in dev.
  * Bundlers do NOT save you — a top-level `.handler()`/`.router()` call is not
  * tree-shaken. Build the client from a `contract()` defined in a module that
  * never imports server code. See /concepts/client-boundary.
@@ -767,7 +641,7 @@ const warnRouterInBrowser = () => {
   clientBoundaryWarningState.warned = true;
   // eslint-disable-next-line no-console
   console.warn(
-    "[result-rpc] createClient received a server `router` in a browser. The " +
+    "[result-rpc] createBrowserClient received a server `router`. The " +
       "router carries handlers, middleware, and their imports (db drivers, " +
       "secrets) — all of which are now in your client bundle. Pass a " +
       "`contract` defined in a server-code-free module instead. " +
@@ -775,40 +649,25 @@ const warnRouterInBrowser = () => {
   );
 };
 
-export function createClient<TRouter extends RouterContract<any, ContractRouterRecord>>(
-  options: CreateContractClientOptions<TRouter>,
-): ClientOf<TRouter>;
-export function createClient<TRouter extends Router<any, RouterRecord>>(
-  options: CreateRouterClientOptions<TRouter>,
-): ClientOf<TRouter>;
-export function createClient(
+const createBrowserClientImplementation = (
   options:
     | CreateContractClientOptions<RouterContract<any, ContractRouterRecord>>
     | CreateRouterClientOptions<Router<any, RouterRecord>>,
-): ClientOf<ClientRouter> {
+  warnAboutRouter: boolean,
+): BrowserClientOf<ClientRouter> => {
   const router = "contract" in options ? options.contract : options.router;
-  if ("router" in options) warnRouterInBrowser();
+  if ("router" in options && warnAboutRouter) warnRouterInBrowser();
   const clientIdentity = Object.freeze({});
-  clientRouters.set(clientIdentity, router);
+  registerClientIdentity(clientIdentity, clientIdentity, router);
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
   const skew = createSkewMonitor(
     options.contractVersion ?? contractDigest(router),
     options.onEvent,
   );
-  const definitions = new Map<string, AnyPublicErrorDefinition>();
-  for (const definition of [
-    ...router.errors.values(),
-    ...Object.values(frameworkErrorDefinitions),
-  ]) {
-    definitions.set(definition.tag, definition);
-  }
-  const errorRegistry: ClientErrorRegistry<AnyPublicTaggedError> = Object.freeze({
-    definitions,
-    is: (value: unknown): value is AnyPublicTaggedError =>
-      isTaggedError(value) &&
-      value.visibility === "public" &&
-      definitions.get(value._tag)?.is(value) === true,
-  });
+  const errorRegistry = createClientErrorRegistry<AnyPublicTaggedError>(
+    router,
+    Object.values(frameworkErrorDefinitions),
+  );
   return createProxy(
     router,
     options.transport,
@@ -818,5 +677,28 @@ export function createClient(
     new Map(),
     clientIdentity,
     errorRegistry,
-  ) as ClientOf<ClientRouter>;
+  ) as BrowserClientOf<ClientRouter>;
+};
+
+/** @internal Used only by the parity harness, which cannot enter a browser bundle. */
+export const createParityBrowserClient = <TRouter extends Router<any, RouterRecord>>(
+  options: CreateRouterClientOptions<TRouter>,
+): BrowserClientOf<TRouter> =>
+  createBrowserClientImplementation(
+    options as CreateRouterClientOptions<Router<any, RouterRecord>>,
+    false,
+  ) as BrowserClientOf<TRouter>;
+
+export function createBrowserClient<TRouter extends RouterContract<any, ContractRouterRecord>>(
+  options: CreateContractClientOptions<TRouter>,
+): BrowserClientOf<TRouter>;
+export function createBrowserClient<TRouter extends Router<any, RouterRecord>>(
+  options: CreateRouterClientOptions<TRouter>,
+): BrowserClientOf<TRouter>;
+export function createBrowserClient(
+  options:
+    | CreateContractClientOptions<RouterContract<any, ContractRouterRecord>>
+    | CreateRouterClientOptions<Router<any, RouterRecord>>,
+): BrowserClientOf<ClientRouter> {
+  return createBrowserClientImplementation(options, true);
 }

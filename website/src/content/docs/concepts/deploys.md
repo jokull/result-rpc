@@ -43,7 +43,7 @@ stamp both sides with the build:
 
 ```ts
 createFetchHandler({ router, contractVersion: BUILD_SHA, ... })
-createClient({ contract, contractVersion: BUILD_SHA, ... })
+createBrowserClient({ contract, contractVersion: BUILD_SHA, ... })
 ```
 
 Detection is failure-gated, so the coarser stamp is safe: matching successful

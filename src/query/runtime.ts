@@ -37,6 +37,7 @@ const wireOnlineManager = () => {
 };
 import { frameworkErrorDefinitions } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
+import { encodeProcedureInput } from "../wire.js";
 import {
   DEFAULT_MAX_WIRE_BYTES,
   deserialize,
@@ -48,7 +49,7 @@ import {
   getClientRouter,
   getProcedureClientMetadata,
   getTouchedEntities,
-} from "../client/client.js";
+} from "../client/client-metadata.js";
 import type {
   AffectsEntry,
   Page,
@@ -655,7 +656,7 @@ export const createQueryRuntime = <TClient>(
     // targeting therefore reach all pages with the list-shaped input the
     // caller already has.
     if (paginationOf(metadata)) {
-      const encoded = metadata.procedure._def.input.encode({ list: input ?? {}, cursor: null });
+      const encoded = metadata.procedure._def.input.encode({ list: input, cursor: null });
       if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
       const listPart = (encoded.value as { readonly list?: unknown }).list;
       const serialized = serialize(listPart, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
@@ -663,7 +664,7 @@ export const createQueryRuntime = <TClient>(
         throw new TypeError(`Query input for ${metadata.path} is not serializable`);
       return [metadata.path, serialized.value] as const;
     }
-    const encoded = metadata.procedure._def.input.encode(input ?? {});
+    const encoded = encodeProcedureInput(metadata.procedure._def.input, input);
     if (!encoded.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
     const serialized = serialize(encoded.value, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
     if (!serialized.ok) throw new TypeError(`Query input for ${metadata.path} is not serializable`);
@@ -946,7 +947,7 @@ export const createQueryRuntime = <TClient>(
         );
       }
 
-      const encodedInput = metadata.procedure._def.input.encode(input ?? {});
+      const encodedInput = encodeProcedureInput(metadata.procedure._def.input, input);
       if (!encodedInput.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
 
       const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
@@ -1124,7 +1125,7 @@ export const createQueryRuntime = <TClient>(
         queryFn: async ({ signal, pageParam }: { signal: AbortSignal; pageParam?: unknown }) => {
           try {
             const result = await procedure(
-              { list: input ?? {}, cursor: (pageParam ?? null) as TCursor | null } as PageRequest<
+              { list: input, cursor: (pageParam ?? null) as TCursor | null } as PageRequest<
                 unknown,
                 TCursor
               >,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Suspense, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire } from "../index.js";
-import { createClient } from "../client/client.js";
+import { createBrowserClient } from "../client/client.js";
 import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
 import {
@@ -51,7 +51,7 @@ const router = r.router({ demo: { value, rename, events } });
 const handler = createFetchHandler({ router, createContext: () => ({}) });
 const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
   handler(new Request(input, init))) as typeof globalThis.fetch;
-const client = createClient({
+const client = createBrowserClient({
   router,
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });

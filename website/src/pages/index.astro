@@ -132,7 +132,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
           <pre><code><span class="c">// ✅ build the client from the CONTRACT —</span>
 <span class="c">//    a runtime of codecs, and nothing else</span>
 <span class="k">import</span> &#123; appContract &#125; <span class="k">from</span> <span class="s">"./contract"</span>
-<span class="k">export const</span> client = createClient(&#123;
+<span class="k">export const</span> client = createBrowserClient(&#123;
   contract: appContract, transport,
 &#125;)
 

@@ -27,7 +27,6 @@ import { createContext, router } from "./rpc-server.js";
 
 const buildRuntime = () => {
   const serverClient = createServerClient(router, {
-    mode: "parity",
     context: createContext(),
   });
   return { runtime: createQueryRuntime({ client: serverClient }), serverClient };

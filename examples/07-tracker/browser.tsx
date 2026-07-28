@@ -5,12 +5,12 @@
  * transport uses the page's own fetch against a relative /rpc.
  */
 import { createRoot } from "react-dom/client";
-import { createClient, fetchTransport } from "../../src/client/index.js";
+import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
 import { appContract } from "./contract.js";
 import { App } from "./app.js";
 import type { AppClient } from "./client.js";
 
-const client = createClient({
+const client = createBrowserClient({
   contract: appContract,
   transport: fetchTransport({ url: "/rpc" }),
   contractVersion: "07-tracker",
