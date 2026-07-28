@@ -257,6 +257,26 @@ const clientEventListeners = new WeakMap<object, ClientEventListener>();
 const clientRouters = new WeakMap<object, ClientRouter>();
 
 /** Internal: the router/contract a client was built from, by client identity. */
+/**
+ * Internal: registers a caller that is not built by `createClient` — today the
+ * direct server caller — under the same identity maps, so the query runtime
+ * accepts it for prefetch and hydration. Only identities are recorded here; no
+ * server code reaches this module.
+ */
+export const registerClientLike = (
+  caller: object,
+  router: ClientRouter,
+  procedures: ReadonlyMap<string, { readonly fn: Function; readonly procedure: ClientProcedure }>,
+): void => {
+  const clientIdentity = Object.freeze({});
+  clientIdentities.set(caller, clientIdentity);
+  clientRouters.set(clientIdentity, router);
+  for (const [path, entry] of procedures) {
+    clientIdentities.set(entry.fn, clientIdentity);
+    procedureClientMetadata.set(entry.fn, { path, procedure: entry.procedure, clientIdentity });
+  }
+};
+
 export const getClientRouter = (clientIdentity: object): ClientRouter | undefined =>
   clientRouters.get(clientIdentity);
 

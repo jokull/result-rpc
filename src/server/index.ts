@@ -6,5 +6,13 @@
 export { createFetchHandler } from "./http.js";
 export type { ErrorResponseEvent, FetchHandlerOptions } from "./http.js";
 export { createServerClient } from "./server-client.js";
-export type { CreateServerClientOptions } from "./server-client.js";
+export type {
+  CreateServerClientOptions,
+  ServerCallArgs,
+  ServerCallOptions,
+  ServerCallerError,
+  ServerCallerOf,
+  ServerCallerRecord,
+  ServerProcedureCaller,
+} from "./server-client.js";
 export type { ExecutionOptions, InternalErrorEvent } from "./contract.js";

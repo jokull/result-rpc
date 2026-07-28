@@ -240,3 +240,43 @@ describe("RSC hydration boundary", () => {
     act(() => renderer!.unmount());
   });
 });
+
+describe("direct server caller", () => {
+  test("prefetches and dehydrates for RSC without touching the wire", async () => {
+    const world = makeWorld();
+    // mode: "direct" — no serializer, no HTTP envelope, no contract digest.
+    const caller = createServerClient(world.router, {
+      mode: "direct",
+      context: { store: world.store },
+    });
+    const runtime = createQueryRuntime({ client: caller });
+    const prefetched = await runtime.prefetch(caller.getUser, { id: "u_1" });
+    expect(prefetched.ok).toBe(true);
+    const state = runtime.dehydrate();
+    runtime.clear();
+
+    world.resetCount();
+    const seen: string[] = [];
+    function Detail() {
+      const q = useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      seen.push(q.state);
+      return createElement("span", null, q.state);
+    }
+
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        createElement(
+          ResultRpcProvider,
+          { client: world.client },
+          createElement(ResultRpcHydrationBoundary, { state }, createElement(Detail)),
+        ),
+      );
+    });
+
+    // Server-rendered on first paint, and the browser made no request.
+    expect(seen[0]).toBe("success");
+    expect(world.requestCount()).toBe(0);
+    act(() => renderer!.unmount());
+  });
+});

@@ -29,7 +29,7 @@ import { createQueryRuntime } from "result-rpc/query"; // ← react-free entry
 import { appRouter } from "@app/server"; // server-only module
 
 export const getServerRuntime = cache(() => {
-  const client = createServerClient(appRouter, { mode: "parity", context: buildContext() });
+  const client = createServerClient(appRouter, { mode: "direct", context: buildContext() });
   return createQueryRuntime({ client });
 });
 ```
@@ -127,6 +127,71 @@ If the server and client bundles briefly disagree on the serializer or contract
 version across a deploy, the boundary **skips** hydration (with a dev warning)
 and the client fetches fresh, rather than throwing during render and taking down
 the tree. A stale server payload never renders as if it were current.
+
+## Calling procedures on the server: `mode: "direct"`
+
+`createServerClient` has two modes, and they exist for different jobs.
+
+`mode: "parity"` routes every call through the real wire — serializer, envelope,
+HTTP handler. That is exactly what you want in [tests](/guides/testing/),
+because it proves a value survives the trip.
+
+`mode: "direct"` runs the procedure in-process. Use it for server rendering,
+server actions, and background jobs. It keeps everything that decides whether a
+call is *correct* — the middleware chain and its context, input validation,
+output encode/decode (which also brands entities), and the sanitization of
+private errors into `server/internal` — and drops only the transport: no
+serializer round trip, no HTTP envelope, no contract digest, no retry, no
+batching.
+
+The reason to care is not speed. It is the type:
+
+```ts
+// mode: "parity" — the full client union, none of which a server can act on
+DocNotFound | Unauthorized | ServerInternal | ServerBadRequest
+  | Offline | NetworkFailure | Timeout | HttpFailure
+  | ProtocolViolation | DecodeFailure | Stale
+
+// mode: "direct" — what is actually reachable in-process
+DocNotFound | Unauthorized | ServerInternal | ServerBadRequest
+```
+
+The client-boundary tags are gone because they are unreachable, not because
+they were hidden: there is no socket to drop, no `navigator` to report offline,
+and no second build to drift from. That narrowing is what makes an exhaustive
+`matchError` in a server component three arms instead of a dozen.
+
+## Shells do not exist on the server
+
+`result-rpc/react` is a client entry, and claiming is React context. A server
+component can render `<ResultRpcHydrationBoundary>` as a client reference, but
+it cannot *use* a shell — and what shells do (pause and resume on reconnect,
+redirect to login, hold and drain) only means something in a live browser.
+
+So a server component sees the complete union and handles it itself. You have
+three honest options:
+
+1. **Ignore the failure.** Legitimate, and usually right. A failed prefetch is
+   not dehydrated (see below), so the client mounts that query cold, fetches
+   once, and the shells own the failure *there* — live, and retryable.
+2. **Handle the outcomes that belong to the response.** Some failures deserve a
+   server answer: `notFound()` on `doc/not-found`, `redirect("/login")` on
+   session expiry, a 500 page on `server/internal`. These are framework
+   primitives, and they beat a client shell — right status code, no flash, no
+   wasted round trip.
+3. **Do not try to reproduce shells.** Pause/resume, offline banners, and
+   session-expiry-with-return-to need a client.
+
+The rule of thumb: **server components own the failures that change the HTTP
+response; shells own the failures that change the UI.**
+
+:::caution[Mutations from server actions lose the cache]
+A mutation called through a direct caller executes normally and returns its
+`Result`, but its cache declarations are inert — `.affects()`, entity patching,
+and `touch` are client-runtime behaviors, and there is no client cache on a
+server. The write lands; the browser's cache learns nothing about it. Refresh
+the route, or perform the mutation from the client where the machinery lives.
+:::
 
 ## Only successes hydrate
 

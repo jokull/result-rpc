@@ -46,3 +46,101 @@ describe("server client parity", () => {
     }
   });
 });
+
+// --- direct mode -------------------------------------------------------------
+
+const Private = error({
+  tag: "direct/private",
+  data: wire.object({ secret: wire.string }),
+  retry: "never",
+  visibility: "private",
+});
+
+const d = rpc.context<{ readonly userId: string | null }>();
+
+const requireUser = d
+  .middleware<{ readonly userId: string }>()
+  .errors({ Missing })
+  .use(({ context, errors, next }) =>
+    context.userId === null
+      ? err(errors.Missing({ at: new Date(0) }))
+      : next({ context: { ...context, userId: context.userId } }),
+  );
+
+const whoami = d
+  .procedure()
+  .use(requireUser)
+  .output(wire.object({ userId: wire.string, at: wire.date }))
+  .errors({ Missing })
+  .query(({ context }) => ok({ userId: context.userId, at: new Date("2026-01-01T00:00:00.000Z") }));
+
+// Private errors cannot be declared in `.errors()` — the type system now
+// enforces that. The leak this guards is a handler returning one anyway.
+const leaks = d
+  .procedure()
+  .output(wire.string)
+  .query(() => err(Private({ secret: "DIRECT_SECRET_do_not_ship" })) as never);
+
+const badOutput = d
+  .procedure()
+  .output(wire.object({ n: wire.number }))
+  .query(() => ok({ n: "not a number" } as never));
+
+const directRouter = d.router({ whoami, leaks, badOutput });
+
+describe("server client direct mode", () => {
+  test("runs the middleware chain and returns a decoded Result", async () => {
+    const caller = createServerClient(directRouter, {
+      mode: "direct",
+      context: { userId: "u_1" },
+    });
+    const result = await caller.whoami({});
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.value.userId).toBe("u_1");
+    // The output codec still ran, so rich values arrive as real instances.
+    expect(result.value.at).toBeInstanceOf(Date);
+  });
+
+  test("middleware failures are returned, not bypassed — auth still applies", async () => {
+    const caller = createServerClient(directRouter, {
+      mode: "direct",
+      context: { userId: null },
+    });
+    const result = await caller.whoami({});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error._tag).toBe("parity/missing");
+  });
+
+  test("private errors are still sanitized — skipping the wire is not a hole", async () => {
+    const caller = createServerClient(directRouter, {
+      mode: "direct",
+      context: { userId: "u_1" },
+    });
+    const result = await caller.leaks({});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error._tag).toBe("server/internal");
+    expect(JSON.stringify(result)).not.toContain("DIRECT_SECRET_do_not_ship");
+  });
+
+  test("a handler returning the wrong shape becomes server/internal, not a crash", async () => {
+    const caller = createServerClient(directRouter, {
+      mode: "direct",
+      context: { userId: "u_1" },
+    });
+    const result = await caller.badOutput({});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.error._tag).toBe("server/internal");
+  });
+
+  test("procedure kind is preserved so the query runtime accepts the caller", () => {
+    const caller = createServerClient(directRouter, {
+      mode: "direct",
+      context: { userId: "u_1" },
+    });
+    expect(caller.whoami.$kind).toBe("query");
+  });
+});
