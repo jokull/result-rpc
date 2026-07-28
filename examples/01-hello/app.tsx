@@ -11,7 +11,7 @@ import { ResultRpcProvider, useResultQuery } from "../../src/react/index.js";
 
 // -- shared -------------------------------------------------------------------
 
-const GreetingNotFound = error({
+export const GreetingNotFound = error({
   tag: "greeting/not-found",
   data: wire.object({ name: wire.string }),
   httpStatus: 404,

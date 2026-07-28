@@ -240,8 +240,8 @@ With `effect: "pause"` (the default):
   `undefined`.
 
 With `effect: "escalate"`, the tagged value is thrown to the nearest React
-error boundary — as the structural `TaggedError`, not wrapped in an `Error`,
-so the fallback can still `matchError` on it. Escalate is the bridge back to
+error boundary as the reified `TaggedError` instance, so ordinary `Error`
+tooling and `matchError` both work on it. Escalate is the bridge back to
 the machinery React already has.
 
 `onError` fires once per newly claimed error per observer. One logical event —

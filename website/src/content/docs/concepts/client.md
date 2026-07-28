@@ -29,7 +29,9 @@ operations*, not a net under code the compiler already rejects.
 
 The direct client is the honest base: it always resolves the complete union.
 Narrowing is a property of where a call is *rendered*, and the direct client
-is not rendered anywhere, so it never subtracts anything.
+is not rendered anywhere, so it never subtracts anything. Every failure in the
+union is already a reified `TaggedError`: definition `.is()` guards,
+`instanceof Error`, `toJSON`, and direct `yield*` all work after transport.
 
 ```ts
 Result<

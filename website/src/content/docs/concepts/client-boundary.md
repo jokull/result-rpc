@@ -185,12 +185,19 @@ client by design — that is correct and not a leak:
 
 - **Field names and shapes** in your codecs (the client must decode them).
 - **Error tags and their data shapes** for declared, `visibility: "public"`
-  errors. Private (`visibility: "private"`) errors never belong in a
-  procedure's `.errors()`; they are server-side composition currency and are
-  sanitized to `server/internal` at the wire.
+  errors. The compiler rejects private (`visibility: "private"`) definitions
+  from procedure, middleware, and layer error maps. They are server-side
+  composition currency; the runtime also sanitizes an unsafe cast or
+  JavaScript bypass to `server/internal` at the wire.
 - **`.affects()`/`.writes()` maps** — these run *on the client* (cache
   invalidation), so they are meant to ship. Keep them pure input→input
   transforms; never close a secret into one.
 
 If a fact would be dangerous in the browser, it does not belong in the contract —
 it belongs behind a handler.
+
+`visibility: "private"` controls the error algebra; it is not a bundler
+directive. Keep private definitions and the libraries they adapt in a
+server-only module. Importing a mixed server error module from the contract can
+still pull that module's runtime dependency graph into the browser even though
+TypeScript correctly excludes its private errors from `.errors(...)`.

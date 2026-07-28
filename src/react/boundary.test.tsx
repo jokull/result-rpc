@@ -71,7 +71,7 @@ describe("boundaryShells", () => {
 
     function Probe() {
       const state = StaleShell.useQuery(
-        (client as { thing: never }).thing,
+        (client as unknown as { thing: never }).thing,
         { id: "a" } as never,
       );
       return <p>state:{(state as { state: string }).state}</p>;
@@ -107,7 +107,10 @@ describe("boundaryShells", () => {
 
     let held: { latest?: { _tag: string } } = {};
     function Probe() {
-      void StaleShell.useQuery((client as { thing: never }).thing, { id: "a" } as never);
+      void StaleShell.useQuery(
+        (client as unknown as { thing: never }).thing,
+        { id: "a" } as never,
+      );
       held = StaleShell.useHeld() as typeof held;
       return null;
     }

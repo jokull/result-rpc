@@ -39,6 +39,8 @@ describe("server client parity", () => {
     const result = await client.parity.value({ at });
     expect(result).toEqual(err(Missing({ at })));
     if (!result.ok && result.error._tag === "parity/missing") {
+      expect(result.error).toBeInstanceOf(Error);
+      expect(Missing.is(result.error)).toBe(true);
       expect(result.error.data.at).not.toBe(at);
     }
   });

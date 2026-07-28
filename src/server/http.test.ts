@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
 import { createFetchHandler } from "./http.js";
-import { rpc } from "./contract.js";
+import { rpc, type ErrorDefinitionMap } from "./contract.js";
 import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
 import { serialize } from "../serializer.js";
 
@@ -10,9 +10,12 @@ const POISON = "TOP-SECRET-connection-string-9f83a";
 const PrivateFailure = error({
   tag: "vault/private",
   data: wire.object({ detail: wire.string }),
-  httpStatus: 500,
   retry: "never",
   visibility: "private",
+});
+
+const PublicWithoutStatus = error({
+  tag: "value/no-http-status",
 });
 
 const r = rpc.context<{}>();
@@ -30,8 +33,9 @@ const leakyPrivate = r
   .procedure()
   .input(wire.object({}))
   .output(wire.object({ ok: wire.boolean }))
-  .errors({ PrivateFailure })
-  .query(({ errors }) => err(errors.PrivateFailure({ detail: POISON })));
+  // Deliberately bypass the public contract type to test the runtime backstop.
+  .errors({ PrivateFailure } as unknown as ErrorDefinitionMap)
+  .query(() => err(PrivateFailure({ detail: POISON })) as never);
 
 const fine = r
   .procedure()
@@ -39,7 +43,13 @@ const fine = r
   .output(wire.object({ name: wire.string }))
   .query(({ input }) => ok({ name: input.name }));
 
-const router = r.router({ boom, leakyPrivate, fine });
+const noHttpStatus = r
+  .procedure()
+  .output(wire.string)
+  .errors({ PublicWithoutStatus })
+  .query(() => err(PublicWithoutStatus()));
+
+const router = r.router({ boom, leakyPrivate, fine, noHttpStatus });
 
 const post = (path: string, input: unknown) => {
   const encoded = serialize({ v: 1, path, input });
@@ -81,6 +91,13 @@ describe("fetch handler wire boundary", () => {
     const text = await response.text();
     expect(text).toContain("ada");
     expect(response.status).toBe(200);
+  });
+
+  test("a public error without an HTTP projection uses a neutral 200 envelope", async () => {
+    const response = await handler(post("noHttpStatus", {}));
+    const text = await response.text();
+    expect(response.status).toBe(200);
+    expect(text).toContain("value/no-http-status");
   });
 
   test("every response carries the contract digest header", async () => {

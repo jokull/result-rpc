@@ -138,6 +138,27 @@ once, so the failure is live and its [shell](/concepts/shells/) owns it. Plan
 for a not-found detail page to render its skeleton briefly and cost one client
 call.
 
+## Pass values through component props, not Results
+
+The hydration boundary above is a result-rpc boundary: it owns a versioned codec
+and knows how to reconstruct supported runtime values. An ordinary RSC prop or
+Next server-action/RPC payload does not. Do not pass a `Result` or `TaggedError`
+through one and expect its iterator, definition identity, or `Error` prototype to
+survive.
+
+Unwrap at the server/client component boundary:
+
+```tsx
+const result = await serverClient.users.get({ id })
+
+if (!result.ok) return <MissingUser id={id} />
+return <UserDetail initialUser={result.value} />
+```
+
+When the browser needs the full Result API, let the result-rpc client make the
+call or use `runtime.dehydrate()` for successful query data. The library promises
+faithful runtime behavior across its own wire, not arbitrary serialization.
+
 ## Per-framework mounting
 
 The pattern is identical everywhere; only the mount point and the prefetch site

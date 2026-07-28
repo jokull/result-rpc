@@ -1,4 +1,9 @@
-import type { AnyTaggedError } from "../error.js";
+import {
+  isTaggedError,
+  type AnyPublicErrorDefinition,
+  type AnyPublicTaggedError,
+  type AnyTaggedError,
+} from "../error.js";
 import {
   ClientDecodeFailure,
   ServerBadRequest,
@@ -8,6 +13,7 @@ import {
   ClientProtocolViolation,
   ClientStale,
   ClientTimeout,
+  frameworkErrorDefinitions,
   STALE_RECLASSIFIABLE_TAGS,
   ServerInternal,
   type ClientBoundaryError,
@@ -87,6 +93,37 @@ export type ClientRecord<TRecord> = {
       : never;
 };
 
+type ClientRecordError<TRecord> = {
+  readonly [TKey in keyof TRecord]: TRecord[TKey] extends ClientProcedure
+    ? TRecord[TKey] extends { readonly _def: { readonly definitions: infer TDefinitions extends ErrorDefinitionMap } }
+      ? ErrorUnion<TDefinitions>
+      : never
+    : TRecord[TKey] extends ClientRouterRecord
+      ? ClientRecordError<TRecord[TKey]>
+      : never;
+}[keyof TRecord];
+
+type ClientRouterRecordOf<TRouter> = TRouter extends Router<any, infer TRecord>
+  ? TRecord
+  : TRouter extends RouterContract<any, infer TRecord>
+    ? TRecord
+    : never;
+
+/** Every failure this client may observe, flattened into one public tagged union. */
+export type ClientErrorOf<TRouter> = Extract<
+  | ClientRecordError<ClientRouterRecordOf<TRouter>>
+  | ReturnType<typeof ServerInternal>
+  | ReturnType<typeof ServerBadRequest>
+  | ClientBoundaryError,
+  AnyPublicTaggedError
+>;
+
+/** Runtime definitions plus an app-wide type guard for a client's public error union. */
+export interface ClientErrorRegistry<E extends AnyPublicTaggedError> {
+  readonly definitions: ReadonlyMap<string, AnyPublicErrorDefinition>;
+  is(value: unknown): value is E;
+}
+
 export interface ResultSubscription<T, E extends AnyTaggedError>
   extends AsyncIterable<Result<T, E>> {
   close(): void;
@@ -100,11 +137,18 @@ type SubscriptionClient<TInput, TOutput, TDefinitions extends ErrorDefinitionMap
   ErrorUnion<TDefinitions> | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest> | ClientBoundaryError
 >) & { readonly $kind: "subscription" };
 
-export type ClientOf<TRouter> = TRouter extends Router<any, infer TRecord>
-  ? ClientRecord<TRecord>
-  : TRouter extends RouterContract<any, infer TRecord>
+export type ClientOf<TRouter> = (
+  TRouter extends Router<any, infer TRecord>
     ? ClientRecord<TRecord>
-    : never;
+    : TRouter extends RouterContract<any, infer TRecord>
+      ? ClientRecord<TRecord>
+      : never
+) & { readonly $errors: ClientErrorRegistry<ClientErrorOf<TRouter>> };
+
+/** Extracts the flattened, public error union carried by a client instance. */
+export type ClientErrors<TClient> = TClient extends {
+  readonly $errors: ClientErrorRegistry<infer E>;
+} ? E : never;
 
 /**
  * The wire-level breadcrumb stream. Every operation the client performs emits
@@ -220,7 +264,7 @@ const decodeEnvelope = (
     return decoded.ok ? ok(decoded.value) : err(ClientDecodeFailure({ target: "success" }));
   }
   for (const framework of [ServerInternal, ServerBadRequest] as const) {
-    if (!framework.is(envelope.error)) continue;
+    if (framework.tag !== envelope.error._tag) continue;
     if (status !== framework.policy.httpStatus && status !== 200) {
       return err(ClientProtocolViolation({ reason: "envelope" }));
     }
@@ -556,6 +600,7 @@ const createProxy = (
   path: readonly string[],
   cache: Map<string, unknown>,
   clientIdentity: object,
+  errorRegistry: ClientErrorRegistry<AnyPublicTaggedError>,
 ): unknown => {
   const procedurePath = path.join(".");
   const cached = cache.get(procedurePath);
@@ -564,6 +609,7 @@ const createProxy = (
   const proxy = new Proxy(() => undefined, {
     get: (_target, property) => {
       if (property === "$kind" && procedure) return procedure._def.kind;
+      if (property === "$errors" && path.length === 0) return errorRegistry;
       if (typeof property !== "string") return undefined;
       const candidate = [...path, property];
       const candidatePath = candidate.join(".");
@@ -574,7 +620,16 @@ const createProxy = (
       const leadsSomewhere = router.procedures.has(candidatePath)
         || [...router.procedures.keys()].some((key) => key.startsWith(`${candidatePath}.`));
       if (!leadsSomewhere) return undefined;
-      return createProxy(router, transport, onEvent, skew, candidate, cache, clientIdentity);
+      return createProxy(
+        router,
+        transport,
+        onEvent,
+        skew,
+        candidate,
+        cache,
+        clientIdentity,
+        errorRegistry,
+      );
     },
     apply: (_target, _thisArg, argumentsList: [unknown, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);
@@ -661,6 +716,20 @@ export function createClient(
     options.contractVersion ?? contractDigest(router),
     options.onEvent,
   );
+  const definitions = new Map<string, AnyPublicErrorDefinition>();
+  for (const definition of [
+    ...router.errors.values(),
+    ...Object.values(frameworkErrorDefinitions),
+  ]) {
+    definitions.set(definition.tag, definition);
+  }
+  const errorRegistry: ClientErrorRegistry<AnyPublicTaggedError> = Object.freeze({
+    definitions,
+    is: (value: unknown): value is AnyPublicTaggedError =>
+      isTaggedError(value)
+      && value.visibility === "public"
+      && definitions.get(value._tag)?.is(value) === true,
+  });
   return createProxy(
     router,
     options.transport,
@@ -669,5 +738,6 @@ export function createClient(
     [],
     new Map(),
     clientIdentity,
+    errorRegistry,
   ) as ClientOf<ClientRouter>;
 }

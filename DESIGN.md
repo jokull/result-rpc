@@ -2,7 +2,7 @@
 
 Working premise: one library owns the Result algebra, procedure implementation,
 wire protocol, generated client, reactive query cache, and UI query API. Recoverable
-failures are tagged wire values. There is no public trailing `| Error` and no
+failures are declared tagged instances with a canonical wire form. There is no public trailing `| Error` and no
 `Result` hidden inside successful query data while transport errors live elsewhere.
 
 ## Research snapshots
@@ -79,8 +79,9 @@ observer coordination before the error model is proven.
 
 better-result's `TaggedError` accepts `Record<string, unknown>`, subclasses
 `Error`, copies arbitrary properties, and emits causes and stacks from `toJSON`.
-Its static guards use `instanceof`, so they fail after JSON transport and across
-realms. See `/Users/jokull/Forks/better-result/src/error.ts:13-129`.
+Its static guards correctly recognize local instances, but its shallow Result
+deserializer does not reconstruct the nested TaggedError after transport. See
+`/Users/jokull/Forks/better-result/src/error.ts:13-129`.
 
 oRPC validates declared error data, but an invalid or undeclared `ORPCError` can
 still cross the wire as a non-inferable error. Its `defined` and `inferable`
@@ -91,8 +92,9 @@ wire-supplied `inferable` value. See:
 - `/Users/jokull/Forks/orpc/packages/client/src/error-utils.ts:6-49`
 - `/Users/jokull/Forks/orpc/packages/contract/src/error-utils.ts:15-76`
 
-A declaration in result-rpc is both a TypeScript contract and authorization to
-cross the boundary. Unknown tags and invalid payloads are never forwarded.
+A declaration in result-rpc is both a TypeScript contract, authorization to cross
+the boundary, and the runtime constructor used to reify the validated wire value.
+Unknown tags and invalid payloads are never forwarded.
 
 ### 3. `serialize()` must mean actual encoding, not outer wrapping
 
@@ -122,16 +124,19 @@ the boundary and means all of:
 3. enforce serializer compatibility and encoded resource limits;
 4. decode and validate again before exposing the typed client value.
 
-### 4. Error classes are useful locally and harmful canonically
+### 4. Runtime identity is nominal; wire identity is structural
 
-Both better-result and oRPC make errors `Error` subclasses. oRPC even needs a
-global constructor registry and custom `Symbol.hasInstance` to survive duplicate
-Next.js dependency graphs (`packages/client/src/error.ts:110-135`). That is strong
-evidence that prototype identity should not define a remote value.
+Prototype identity cannot define the bytes of a remote value, but that does not
+mean application code should permanently receive a DTO. result-rpc separates the
+two representations: a definition creates a nominal `TaggedError` instance in
+memory, encodes it to immutable `{ _tag, data }`, then the receiving contract
+validates and constructs a fresh instance from that exact definition.
 
-The canonical error should be an immutable structural DTO. Stack, cause, request,
-and database details belong in server observability. The public internal error
-contains only safe fields such as an opaque incident ID.
+This provides faithful API on both sides without pretending object identity,
+stack, or cause crossed the network. Stack, cause, request, and database details
+belong in server observability. The public internal error contains only safe fields
+such as an opaque incident ID; the client instance has only locally constructed
+`Error` metadata plus declared data.
 
 ### 5. A Result in query data creates the exact two-tier failure model
 
@@ -198,7 +203,7 @@ tRPC maps all 500-504 errors to the same JSON-RPC numeric code, making reverse
 classification and retry policy lossy. oRPC derives status from its error code,
 but will still transmit undeclared codes and invalid error data.
 
-Each declared tag should own policy metadata at the definition site:
+Each declared tag may own transport policy metadata at the definition site:
 
 ```ts
 {
@@ -210,6 +215,9 @@ Each declared tag should own policy metadata at the definition site:
 ```
 
 The tag remains the semantic identity. HTTP status is a transport projection.
+A public error may omit `httpStatus`; the HTTP adapter then returns a neutral
+200 RPC envelope whose body still contains the typed failure. Private errors
+cannot declare an HTTP status because they must be folded before transport.
 A declared application `service/unavailable` is distinct from an intermediary
 returning an HTML 503, even if both use the same HTTP status.
 
@@ -267,8 +275,8 @@ a TypeScript type or schema alone cannot claim wire safety.
 
 ### Error definitions
 
-An error definition is a callable factory plus a runtime wire codec and policy.
-The value it creates is a frozen plain object:
+An error definition is a callable factory, a private runtime subclass, a wire
+codec, and policy. The value it creates is a frozen `TaggedError` instance:
 
 ```ts
 const DocNotFound = error({
@@ -280,7 +288,9 @@ const DocNotFound = error({
 })
 
 const failure = DocNotFound({ docId: "doc_123" })
-// Readonly<{ _tag: "doc/not-found"; data: { docId: string } }>
+failure instanceof Error       // true
+DocNotFound.is(failure)         // true
+failure.toJSON()                // { _tag: "doc/not-found", data: { docId: "doc_123" } }
 ```
 
 Properties:
@@ -289,8 +299,11 @@ Properties:
 - `data` is always present; no-payload errors use `{}`.
 - `message`, if needed by the UI, is explicitly part of the declared data schema.
 - definitions reject duplicate tags during router composition;
-- `.is(value)` is structural decoding, never `instanceof`;
-- no cause, stack, methods, iterator, or `toJSON` exists on the value.
+- `.is(value)` recognizes an instance produced by that exact definition;
+- `.decode(value)` validates the structural wire form and reifies the instance;
+- server cause and stack never cross the wire;
+- `toJSON` exposes the canonical wire form and `Symbol.iterator` makes the error
+  directly yieldable inside `gen`.
 
 ### Result representation and composition
 
@@ -310,9 +323,9 @@ mapError: Result<A, E1> -> (E1 -> E2) -> Result<A, E2>
 matchError: exhaustive over E["_tag"]
 ```
 
-Generator syntax may yield a `Result` wrapper, but errors themselves remain plain
-wire values. Direct `yield* error` is deliberately unsupported because it requires
-putting `Symbol.iterator` on the error DTO.
+Generator syntax may yield either a `Result` wrapper or a reified TaggedError.
+Direct `yield* error` is supported on both sides of a result-rpc boundary because
+the definition-controlled decoder restores `Symbol.iterator`.
 
 There is no public `Result.serialize`. The RPC codec encodes and decodes envelopes;
 tests assert the actual byte/JSON round doc.
@@ -409,7 +422,7 @@ This is where the client boundary expands the server-declared union. There is no
 `TRPCClientError`, `ThrowableError`, or ambient `Error` escape hatch.
 
 An optional throwing facade can unwrap this for integration with libraries that
-use rejection as control flow, but it throws the same structural tagged value and
+use rejection as control flow, but it throws the same reified tagged value and
 does not change the type algebra.
 
 ### Reactive query runtime

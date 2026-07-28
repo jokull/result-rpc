@@ -102,7 +102,11 @@ const streamProcedureResponse = (
             v: PROTOCOL_VERSION,
             seq: sequence++,
             done: false as const,
-            response: { v: PROTOCOL_VERSION, ok: false as const, error: next.value.error },
+            response: {
+              v: PROTOCOL_VERSION,
+              ok: false as const,
+              error: next.value.error.toJSON(),
+            },
           };
         }
         const encoded = serialize(frame, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
@@ -116,7 +120,11 @@ const streamProcedureResponse = (
           v: PROTOCOL_VERSION,
           seq: sequence++,
           done: false,
-          response: { v: PROTOCOL_VERSION, ok: false, error: ServerInternal({ incidentId }) },
+          response: {
+            v: PROTOCOL_VERSION,
+            ok: false,
+            error: ServerInternal({ incidentId }).toJSON(),
+          },
         });
         if (encoded.ok) controller.enqueue(encoder.encode(`${encoded.value}\n`));
         controller.close();
@@ -159,7 +167,7 @@ const wireResponse = (
     const fallback = serialize({
       v: PROTOCOL_VERSION,
       ok: false,
-      error: ServerInternal({ incidentId }),
+      error: ServerInternal({ incidentId }).toJSON(),
     } satisfies FailureEnvelope);
     if (!fallback.ok) throw new TypeError("Unable to encode the static internal failure");
     return new Response(fallback.value, {
@@ -176,15 +184,16 @@ const wireResponse = (
 const failureResponse = (
   failure: AnyTaggedError,
   status: number,
-): Response => wireResponse({ v: PROTOCOL_VERSION, ok: false, error: failure }, status);
+): Response => wireResponse({ v: PROTOCOL_VERSION, ok: false, error: failure.toJSON() }, status);
 
 const statusForError = (procedure: AnyProcedure, failure: AnyTaggedError): number => {
-  if (ServerInternal.is(failure)) return ServerInternal.policy.httpStatus;
+  if (ServerInternal.is(failure)) return ServerInternal.policy.httpStatus ?? 500;
   const definitions = procedure._def.definitions as ErrorDefinitionMap;
   const definition = Object.values(definitions).find(
     (candidate) => candidate.tag === failure._tag,
   );
-  return definition?.policy.httpStatus ?? 500;
+  if (!definition) return 500;
+  return definition.policy.httpStatus ?? 200;
 };
 
 const frameworkPolicyFor = (failure: AnyTaggedError): ErrorPolicy | undefined =>
@@ -213,7 +222,7 @@ const encodeProcedureResult = (
     const status = statusForError(procedure, result.error);
     notify?.(result.error, status);
     return wireResponse(
-      { v: PROTOCOL_VERSION, ok: false, error: result.error, ...touchedField },
+      { v: PROTOCOL_VERSION, ok: false, error: result.error.toJSON(), ...touchedField },
       status,
     );
   }
@@ -237,7 +246,8 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
   /**
    * Observability tap for every declared error that crosses the wire —
    * domain errors, bad requests, and sanitized internals alike. Receives the
-   * error value plus its policy (severity, retry, status), so one hook feeds
+   * error value plus its policy and the HTTP adapter's actual response status,
+   * so one hook feeds
    * metrics and logging without re-deriving anything. Defects additionally
    * fire `onInternalError` with the full cause.
    */

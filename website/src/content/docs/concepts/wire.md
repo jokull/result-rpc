@@ -3,8 +3,8 @@ title: "The wire"
 description: "Dates, BigInts, Maps, and cycles cross intact \u2014 a pinned, versioned serializer with byte limits. Binaries stay out of band."
 ---
 
-Error definitions describe the encoded value, not an optimistic in-memory
-type:
+Error definitions describe both representations: the validated encoded value
+and the `TaggedError` instance reconstructed from it:
 
 ```ts
 export const SaveConflict = error({
@@ -27,6 +27,12 @@ and tagged error data transparently preserve:
 - Temporal values when `Temporal` is available in both runtimes
 - cycles and repeated object identity
 
+The error prototype is not serialized as bytes or guessed from a constructor
+name. The procedure contract first authorizes `_tag`, decodes `data`, and then
+uses that exact definition to create a fresh instance. Thus
+`SaveConflict.is(result.error)` and `result.error instanceof Error` work after
+the RPC call without claiming that the server and client shared object identity.
+
 ```ts
 const RichDoc = wire.object({
   savedAt: wire.date,
@@ -43,8 +49,10 @@ support at the boundary:
 const Graph = wire.serializable<DocGraph>()
 ```
 
-Functions, symbols, unsupported class instances, and arbitrary `Error` causes
-are rejected. Tagged error constructors perform a real serializer preflight,
+Functions, symbols, unsupported application class instances, and arbitrary
+`Error` causes are rejected. `TaggedError` is the deliberate exception because
+its definition downgrades it before serialization and reifies it after validation.
+Tagged error constructors perform a real serializer preflight,
 so a custom wire codec cannot smuggle an unsupported runtime value into an
 error.
 

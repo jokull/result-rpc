@@ -25,7 +25,7 @@ import {
   signInReactions,
   ViewerShell,
 } from "./app.tsx";
-import { authErrors, issueErrors } from "./errors.js";
+import { authErrors, directoryErrors, issueErrors } from "./errors.js";
 import { Issue } from "./models.js";
 
 // -- world ----------------------------------------------------------------------
@@ -169,13 +169,13 @@ test("direct client round-trips success, domain failure, and a Date inside error
   );
 
   expect(await client.issues.byId({ id: "nope" })).toEqual(
-    err({ _tag: "issue/not-found", data: { issueId: "nope" } }),
+    err(issueErrors.notFound({ issueId: "nope" })),
   );
 
   // Assigning a closed issue fails with a real Date on the other side of the wire.
   const closed = await client.issues.assign({ issueId: "issue-2", assigneeId: "user-bob" });
   expect(closed).toEqual(
-    err({ _tag: "issue/closed", data: { issueId: "issue-2", closedAt: CLOSED_AT } }),
+    err(issueErrors.closed({ issueId: "issue-2", closedAt: CLOSED_AT })),
   );
   if (!closed.ok && closed.error._tag === "issue/closed") {
     expect(closed.error.data.closedAt).toBeInstanceOf(Date);
@@ -191,12 +191,12 @@ test("users.list collapses upstream unreachable/malformed to directory/unavailab
     },
   });
   expect(await unreachable.client.users.list({})).toEqual(
-    err({ _tag: "directory/unavailable", data: {} }),
+    err(directoryErrors.unavailable()),
   );
 
   const malformed = createWorld({ fetchDirectory: async () => ({ nonsense: true }) });
   expect(await malformed.client.users.list({})).toEqual(
-    err({ _tag: "directory/unavailable", data: {} }),
+    err(directoryErrors.unavailable()),
   );
 
   const healthy = createWorld();

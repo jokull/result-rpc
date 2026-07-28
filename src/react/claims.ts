@@ -35,7 +35,7 @@ export interface AmbientClaim {
 
 /**
  * Consults the mounted claim scope for a failure. Escalating owners throw the
- * structural tagged value (after hooks, so hook order is stable); pausing
+ * reified tagged error instance (after hooks, so hook order is stable); pausing
  * owners hold the error — reported for aggregate views — and the caller
  * projects a non-terminal state.
  */

@@ -1,10 +1,10 @@
 import type { AnyTaggedError } from "./error.js";
 
 /**
- * Results are plain frozen objects — structural, wire-honest, spreadable.
- * They additionally carry a non-enumerable `Symbol.iterator` so `yield*`
- * works directly inside `gen` (the serializer only walks enumerable string
- * keys, so the wire shape is untouched). The composition surface below ports
+ * Results are frozen result-rpc runtime values. Their enumerable shape stays
+ * small and transparent, while a non-enumerable `Symbol.iterator` makes
+ * `yield*` work directly inside `gen`. RPC decoding reconstructs this runtime
+ * behavior; naive serialization does not. The composition surface below ports
  * the core DX of better-result and neverthrow — with two deliberate
  * divergences: the error channel requires tagged errors (`_tag` + wire-safe
  * `data`), and there is no serialization helper because serialization is the
@@ -161,8 +161,8 @@ export const getOrElse = <T, T2, E extends AnyTaggedError>(
 
 /**
  * Adopt a throwing function into the Result world. The catch handler must
- * produce a tagged error — that is the price of admission: an upstream's
- * `Error` subclass never travels past this boundary as itself.
+ * produce a declared TaggedError — an arbitrary upstream Error never enters
+ * the recoverable failure channel as itself.
  */
 export const tryCatch = <T, E extends AnyTaggedError>(
   fn: () => T,

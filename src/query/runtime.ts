@@ -12,7 +12,7 @@ import {
   type QueryObserverResult,
   type MutationObserverResult,
 } from "@tanstack/query-core";
-import type { AnyTaggedError, AnyErrorDefinition } from "../error.js";
+import { isTaggedError, type AnyTaggedError, type AnyErrorDefinition } from "../error.js";
 import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
 
 /**
@@ -370,13 +370,6 @@ export interface ResultSubscriptionObserver<T, E extends AnyTaggedError> {
   reconnect(): void;
   close(): void;
 }
-
-const isTaggedError = (value: unknown): value is AnyTaggedError =>
-  value !== null
-  && typeof value === "object"
-  && "_tag" in value
-  && typeof value._tag === "string"
-  && "data" in value;
 
 const definitionFor = (
   definitions: ErrorDefinitionMap,

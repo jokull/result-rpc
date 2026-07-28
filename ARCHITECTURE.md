@@ -25,13 +25,15 @@ the result-rpc public boundary.
 
 These are requirements, not aspirations:
 
-1. Every recoverable failure exposed to application code is a tagged structural
-   value from a closed operation-specific union.
-2. Every tagged error round-trips through the versioned result-rpc serializer before
-   it is created, transmitted, cached, persisted, or exposed.
-3. Error classes, application-defined prototypes, stacks, causes, arbitrary thrown
-   values, and ambient `Error` types never appear in the public recoverable failure
-   algebra. Explicit serializer-supported built-ins such as `Date` remain intact.
+1. Every recoverable failure exposed to application code is a reified result-rpc
+   `TaggedError` instance from a closed operation-specific union.
+2. Every tagged error is downgraded to its canonical structural form at the wire,
+   validated against its declared definition, and reified before it is exposed by
+   the receiving runtime.
+3. Application-defined prototypes, transmitted stacks or causes, arbitrary thrown
+   values, and ambient `Error` types never enter the public recoverable failure
+   algebra. The library-owned `TaggedError` prototype and serializer-supported
+   built-ins such as `Date` are reconstructed locally.
 4. A procedure's declared error registry is the authority for what may cross the
    server boundary.
 5. Unknown server exceptions and undeclared or invalid errors are logged and
@@ -186,22 +188,35 @@ wire compatibility.
 ### Runtime value
 
 ```ts
-interface TaggedError<
+abstract class TaggedError<
   Tag extends string = string,
   Data extends WireValue = WireValue,
-> {
+> extends Error {
+  private readonly nominalBrand: void
+  readonly _tag: Tag
+  readonly data: Data
+  toJSON(): EncodedTaggedError<Tag, Data>
+  [Symbol.iterator](): Generator<Err<this>, never, unknown>
+}
+
+interface EncodedTaggedError<Tag extends string, Data extends WireValue> {
   readonly _tag: Tag
   readonly data: Data
 }
 ```
 
-The tagged error container and ordinary structural data are deeply frozen in
-development and treated as immutable in production. Serializer-supported built-ins
-are defensively copied by their codecs; JavaScript cannot freeze mutable internal
-slots such as `Date#setTime`, so readonly usage remains part of the contract. The
-error itself has no methods, symbols, prototype requirements, `message`, `name`,
-`stack`, or `cause`. A human-readable message may be a deliberately declared field
-inside `data`; localization normally happens by `_tag` in the UI.
+The runtime value is a frozen, nominal `Error` subclass. Its public behavior is
+faithfully reconstructed on either side of a result-rpc boundary: definition
+guards, `Error` interoperability, typed data, `toJSON`, and direct `yield*` inside
+`gen`. The client receives a new instance, never the server object's identity.
+
+The wire carries only `EncodedTaggedError`: a prototype-free `_tag` plus declared
+`data`. Server stacks and causes never cross. A client-side stack belongs to the
+new local instance and must not be represented as the server stack. Ordinary data
+is deeply frozen; serializer-supported built-ins are defensively copied by their
+codecs. JavaScript cannot freeze mutable internal slots such as `Date#setTime`, so
+readonly usage remains part of the contract. Localization normally happens by
+`_tag`; a human-readable message may be deliberately declared in `data`.
 
 ### Definition
 
@@ -210,25 +225,27 @@ interface ErrorDefinition<
   Tag extends string,
   Input,
   Data extends WireValue,
+  Visibility extends "public" | "private",
 > {
   readonly tag: Tag
   readonly codec: WireCodec<Input, Data>
-  readonly policy: ErrorPolicy
+  readonly policy: ErrorPolicy<Visibility>
 
-  (input: Input): TaggedError<Tag, Data>
-  is(value: unknown): value is TaggedError<Tag, Data>
+  (input: Input): TaggedError<Tag, Data, Visibility>
+  is(value: unknown): value is TaggedError<Tag, Data, Visibility>
+  decode(value: unknown): DecodeResult<TaggedError<Tag, Data, Visibility>>
 }
 
-interface ErrorPolicy {
-  readonly httpStatus: number
+interface ErrorPolicy<Visibility extends "public" | "private"> {
+  readonly httpStatus?: Visibility extends "public" ? number : never
   readonly retry: "never" | "transient" | "after"
-  readonly visibility: "public" | "private"
+  readonly visibility: Visibility
   readonly severity: "debug" | "info" | "warning" | "error"
 }
 ```
 
-Definitions are nominal objects even though produced error values are structural.
-Router composition compares definition identity and tag:
+Each definition owns a private `TaggedError` subclass. Router composition compares
+definition identity and tag:
 
 - reusing the same definition is allowed;
 - two different definitions with the same tag are a startup error;
@@ -236,8 +253,10 @@ Router composition compares definition identity and tag:
 - framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
   namespaces.
 
-The `.is` method validates structure, exact tag, and data codec. It never uses
-`instanceof`.
+The `.is` method checks for an instance of that exact definition. `.decode` is the
+trust boundary: it validates an encoded tag and data codec, then constructs the
+matching instance. A shape-compatible object is neither accepted by `err()` at
+compile time nor accepted from a handler at runtime.
 
 ### Registry
 
@@ -307,8 +326,9 @@ type Result<T, E extends TaggedError> =
   | Readonly<{ ok: false; error: E }>
 ```
 
-The representation is a plain discriminated value. It has no prototype and no
-misleading `.serialize()` method.
+The enumerable representation is a small discriminated value with a
+non-enumerable iterator for `gen`. RPC decoding reconstructs that behavior. There
+is no misleading shallow `.serialize()` method.
 
 ### Composition
 
@@ -330,9 +350,9 @@ mapError<A, E1, E2>(
 
 `matchError` is exhaustive over `_tag`.
 
-Generator composition may be provided through yieldable Result wrappers. A tagged
-error itself is never yieldable because adding `Symbol.iterator` would make it a
-non-wire value.
+Generator composition accepts both yieldable Result values and TaggedError
+instances. Neither runtime object is serialized naively: the RPC protocol writes
+its canonical structural envelope and reconstructs the iterator on decode.
 
 ## Service layer
 
@@ -476,8 +496,8 @@ interface FailureEvent {
 }
 ```
 
-The logger implementation is responsible for redaction and retention. The public
-error DTO never contains this event.
+The logger implementation is responsible for redaction and retention. Neither the
+public TaggedError nor its encoded wire form contains this event.
 
 ## Protocol layer
 
@@ -532,7 +552,7 @@ For a failure response, the client:
 2. verifies the protocol version;
 3. looks up `_tag` in the procedure plus framework registry;
 4. decodes `data` using that exact definition;
-5. constructs the structural error only after successful decoding.
+5. constructs the declared `TaggedError` instance only after successful decoding.
 
 No transmitted `defined`, `inferable`, or type-name flag is trusted. Unknown tags
 become `client/protocol-violation`; bad data for a known tag becomes
@@ -723,8 +743,9 @@ result-rpc owns a versioned cache codec. Hydration validates:
 - successful data codec;
 - serializer payload bounds.
 
-Errors remain structural values, so no class revival is required. The initial
-release dehydrates successful query data only.
+The initial release dehydrates successful query data only, so failures do not enter
+the cache persistence format. Any future failed-query persistence must use the same
+definition-controlled downgrade and reification path as RPC decoding.
 
 Failed queries, cancellation, and transient connection state are never persisted.
 
@@ -936,7 +957,7 @@ Projection rules for a claimed error:
 | Effect | Query | Mutation | Subscription |
 | --- | --- | --- | --- |
 | `pause` | `fetch: "paused"`; stale success is retained, otherwise `pending` | state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
-| `escalate` | structural tagged value thrown during render | same | same |
+| `escalate` | reified `TaggedError` thrown during render | same | same |
 
 Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
 fallback can `matchError` on it. The library does not introduce a second public
@@ -1012,9 +1033,12 @@ Deployment adapters additionally own origin/CSRF policy and platform-specific
 handler or streaming-idle timeouts. Domain codecs own tighter string, array, map,
 and nesting constraints where those limits are meaningful to the procedure.
 
-Error visibility metadata can restrict which tags are legal on public transports.
-A private error returned by a public procedure is treated as an undeclared failure
-and converted to `server/internal`.
+Error visibility is a literal type carried by definitions and instances. Omitted
+visibility resolves to `"public"`; definitions explicitly marked `"private"` are
+rejected from procedure, middleware, and layer error maps at compile time. The
+client's flattened error union therefore contains only public members. Runtime
+validation repeats the boundary: a private error forced through JavaScript or an
+unsafe cast is treated as undeclared and converted to `server/internal`.
 
 ## Testing architecture
 
@@ -1095,7 +1119,7 @@ key in both halves of the intersection.
 
 ## Initial implementation sequence
 
-1. Wire grammar, limits, codec primitives, and structural tagged-error definitions.
+1. Wire grammar, limits, codec primitives, and reifying tagged-error definitions.
 2. Plain Result algebra, exhaustive matching, and compile-time union tests.
 3. Procedure/middleware/router contracts and collision-safe error registries.
 4. In-process parity execution with server defect sanitization.
@@ -1120,8 +1144,8 @@ bypass the same codecs used by unary remote calls.
 - inference of wire permission from values returned by a handler;
 - OpenAPI generation before the protocol and error registry stabilize;
 - multiple simultaneous retry layers;
-- class revival or `instanceof` compatibility across the wire.
+- revival of arbitrary application classes or trust in wire-supplied constructor names.
 - runtime-specific wrappers around the Web Standard server adapter.
 
-These can be revisited only if they preserve the closed, structural, wire-validated
-failure algebra.
+These can be revisited only if they preserve the closed, nominal-at-runtime and
+structural-on-the-wire failure algebra.

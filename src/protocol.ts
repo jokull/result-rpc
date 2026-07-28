@@ -1,4 +1,4 @@
-import type { AnyTaggedError } from "./error.js";
+import type { EncodedTaggedError } from "./error.js";
 import type { WireValue } from "./wire.js";
 
 export const PROTOCOL_VERSION = 1 as const;
@@ -48,7 +48,7 @@ export interface SuccessEnvelope {
 export interface FailureEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
   readonly ok: false;
-  readonly error: AnyTaggedError;
+  readonly error: EncodedTaggedError;
   /** Entity keys (`model:id`) the handler declared touching — identities only, never values. */
   readonly touched?: readonly string[];
 }

@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { andThen, defineErrors, deserialize, err, error, matchError, ok, serialize, wire } from "./index.js";
+import {
+  TaggedError,
+  andThen,
+  defineErrors,
+  deserialize,
+  err,
+  error,
+  isTaggedError,
+  matchError,
+  ok,
+  serialize,
+  wire,
+} from "./index.js";
 import { rpc } from "./server/contract.js";
 import type { WireCodec, WireValue } from "./wire.js";
 
@@ -110,13 +122,23 @@ describe("wire codecs", () => {
 });
 
 describe("tagged errors", () => {
-  test("creates frozen structural wire values", () => {
+  test("creates frozen instances with a structural wire representation", () => {
     const value = NotFound({ id: "trip_1" });
-    expect(value).toEqual({ _tag: "test/not-found", data: { id: "trip_1" } });
+    expect(value.toJSON()).toEqual({ _tag: "test/not-found", data: { id: "trip_1" } });
     expect(Object.isFrozen(value)).toBe(true);
     expect(Object.isFrozen(value.data)).toBe(true);
-    expect(value).not.toBeInstanceOf(Error);
-    expect(NotFound.is(JSON.parse(JSON.stringify(value)))).toBe(true);
+    expect(value).toBeInstanceOf(Error);
+    expect(value).toBeInstanceOf(TaggedError);
+    expect(TaggedError.is(value)).toBe(true);
+    expect(isTaggedError(value)).toBe(true);
+    expect(NotFound.is(value)).toBe(true);
+    expect(value.visibility).toBe("public");
+
+    const serialized = JSON.parse(JSON.stringify(value));
+    expect(NotFound.is(serialized)).toBe(false);
+    const decoded = NotFound.decode(serialized);
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok) expect(NotFound.is(decoded.value)).toBe(true);
   });
 
   test("rejects invalid runtime input", () => {
@@ -223,11 +245,11 @@ describe("error registry", () => {
       notFound: { data: wire.object({ docId: wire.string }), httpStatus: 404 },
       titleTaken: { httpStatus: 409 },
     });
-    expect(docErrors.notFound({ docId: "t1" })).toEqual({
+    expect(docErrors.notFound({ docId: "t1" }).toJSON()).toEqual({
       _tag: "trip2/not-found",
       data: { docId: "t1" },
     });
-    expect(docErrors.titleTaken()).toEqual({ _tag: "trip2/title-taken", data: {} });
+    expect(docErrors.titleTaken().toJSON()).toEqual({ _tag: "trip2/title-taken", data: {} });
     expect(docErrors.notFound.policy.retry).toBe("never");
     expect(() => defineErrors("client", { x: { httpStatus: 400 } }))
       .toThrow(/reserved framework namespace/);

@@ -39,7 +39,7 @@ export const contractDigest = (routerOrContract: Digestible): string => {
       const manifest = procedure._def;
       const errors = Object.values(manifest.definitions)
         .map((definition) =>
-          `${definition.tag}#${definition.policy.httpStatus}/${definition.policy.retry}/${definition.policy.visibility}`)
+          `${definition.tag}#${definition.policy.httpStatus ?? "-"}/${definition.policy.retry}/${definition.policy.visibility}`)
         .sort()
         .join(",");
       const paginated = manifest.pagination === undefined ? "" : "|paginated";

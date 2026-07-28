@@ -73,6 +73,14 @@ describe("result composition", () => {
     expect(outcome).toEqual(err(ParseFailure({ reason: "manual" })));
   });
 
+  test("yield* TaggedError fails a gen body directly", () => {
+    const failure = NotFound({ id: "missing" });
+    const outcome = gen(function* () {
+      return yield* failure;
+    });
+    expect(outcome).toEqual(err(failure));
+  });
+
   test("gen composes awaited Results through an async generator", async () => {
     const fetchDoc = async (id: string) => find(id);
     const outcome = await gen(async function* () {

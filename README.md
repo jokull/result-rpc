@@ -15,7 +15,7 @@
 ---
 
 result-rpc is an RPC layer for React in the tRPC tradition — contract in
-TypeScript, procedures on the server, hooks in components — with one structural
+TypeScript, procedures on the server, hooks in components — with one foundational
 change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
@@ -34,9 +34,10 @@ API surface and hooks that look like the ones you already write.
 
 If you tried the halfway version — neverthrow or better-result on the server,
 procedures returning `Result` as data — you know where it stops: tagged errors
-are not wire-safe, so the discipline dies at the serializer, and on the client
+are only shallowly serialized, so their runtime API dies at the serializer, and on the client
 `query.error` becomes a different thing from `query.data.error`. This library
-starts there: the Result crosses the wire intact.
+starts there: it validates the plain wire form, then reconstructs both the Result
+and its real `TaggedError` instance on the client.
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" })
@@ -253,10 +254,10 @@ export const docErrors = defineErrors("doc", {
   locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
 })
 
-docErrors.notFound({ docId })  // { _tag: "doc/not-found", data: { docId } }
+docErrors.notFound({ docId })  // TaggedError<"doc/not-found", { docId: string }>
 ```
 
-The returned map is the shape everything else accepts: procedure `.errors()`,
+Public definitions use the same map shape everywhere: procedure `.errors()`,
 middleware `.errors()`, and shell `claims:` all take a map of definitions, so
 one exported map is declared once and reused on both sides of the wire.
 `pickErrors(docErrors, "locked")` selects the subset a procedure actually
@@ -266,25 +267,44 @@ Four namespaces are reserved for the framework's own errors: `client/`,
 `server/`, `protocol/`, and `control/`; `error()` rejects tags that use them.
 
 `retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an
-empty object codec — a domain error is a tag and an HTTP status until it needs
-more. Data-free definitions are called with no arguments: `Unauthorized()`.
-`httpStatus` accepts the common vocabulary by name — `"not-found"`,
-`"conflict"`, `"too-many-requests"` — or any 4xx/5xx number.
+empty object codec. Data-free definitions are called with no arguments:
+`Unauthorized()`. `httpStatus` is an optional HTTP-adapter projection; when
+omitted, the HTTP adapter carries the application failure in a neutral 200 RPC
+envelope. When supplied, it accepts the common vocabulary by name —
+`"not-found"`, `"conflict"`, `"too-many-requests"` — or any 4xx/5xx number.
 
 Calling a definition creates the complete error value:
 
 ```ts
 const failure = DocNotFound({ docId: "doc_123" })
 
-// Readonly<{
-//   _tag: "doc/not-found"
-//   data: { docId: string }
-// }>
+failure instanceof Error       // true
+DocNotFound.is(failure)         // true — exact definition identity
+failure._tag                    // "doc/not-found"
+failure.data.docId              // "doc_123"
+failure.visibility              // "public"
+failure.toJSON()                // canonical prototype-free wire form
 ```
 
-The tag is the identity. HTTP status and retry behavior are projections of
+The definition is the runtime identity; the namespaced tag is its portable wire
+identity. HTTP status and retry behavior are projections of
 that identity for the relevant runtime. There is no `.serialize()` — values
 cross a boundary only through their definition's actual encoder and decoder.
+
+Visibility is part of both the definition and its instance type. Omitted means
+`"public"`. An explicit `visibility: "private"` definition remains useful as
+server-only `Result` composition currency—for example a database constraint
+error—but the compiler rejects it in procedure, middleware, and layer
+`.errors(...)` maps. Fold it into a public domain error before the RPC boundary.
+The server repeats this check at runtime so JavaScript or an unsafe cast still
+cannot leak private data.
+Private definitions cannot declare `httpStatus` at all: the public error they
+are folded into owns any HTTP projection.
+
+Visibility is an RPC-algebra boundary, not a bundler instruction. Keep private
+definitions and their database/vendor adapters in server-only modules; importing
+such a module from the contract can still pull its runtime dependency graph into
+the browser even though its errors cannot enter `.errors(...)`.
 
 ### The router is the error registry
 
@@ -298,6 +318,25 @@ registry is inspectable:
 ```ts
 appRouter.errors  // ReadonlyMap<string, ErrorDefinition> — every declared tag
 ```
+
+The client carries the corresponding flattened public union, including the
+framework boundary errors every call can observe:
+
+```ts
+import type { ClientErrors } from "result-rpc/client"
+
+type AppError = ClientErrors<typeof client>
+// a `_tag`-discriminated union; every member has visibility: "public"
+
+if (client.$errors.is(unknownFailure)) {
+  unknownFailure satisfies AppError
+}
+
+client.$errors.definitions // runtime registry for tooling and inspection
+```
+
+Private definitions cannot enter this union: visibility is filtered at the
+contract type boundary, not by trusting server data received over the wire.
 
 ### Result is total — partial availability is a value
 
@@ -678,9 +717,10 @@ The Result algebra of better-result and neverthrow is built in — `gen`,
 `tryCatch`/`tryPromise`, `all`, `map`/`andThen`/`mapError`/`orElse`, the
 match and tap families — with one stricter rule: the error channel only
 admits tagged errors. That rule is what makes the contract stronger than the
-standalone libraries can offer, because every error here is presumed to
-eventually cross a wire, and `_tag` + wire-safe `data` is the shape that
-survives the trip.
+standalone libraries can offer. A plain `{ _tag, data }` object cannot enter
+`Result<T, E>`: `E` must be a real result-rpc `TaggedError`. At an RPC boundary,
+the instance is encoded to `{ _tag, data }`, checked against the procedure's
+declared definitions, and reified into the matching instance on the other side.
 
 `yield*` works directly on any Result — unwrap the value or short-circuit on
 the first failure, with the error union accumulating automatically:
@@ -689,11 +729,29 @@ the first failure, with the error union accumulating automatically:
 import { gen, tryPromise } from "result-rpc"
 
 const outcome = await gen(async function* () {
-  const doc = yield* await findDoc(id)       // Result<Doc, DocNotFound>
+  const doc = yield* await client.doc.byId({ id }) // crossed the wire; still yieldable
   const parsed = yield* parseBody(doc)       // Result<Body, ParseFailure>
   return render(doc, parsed)
 })
 // Result<Rendered, DocNotFound | ParseFailure>
+
+if (!outcome.ok && DocNotFound.is(outcome.error)) {
+  outcome.error instanceof Error             // true
+  const propagated = gen(function* () {
+    return yield* outcome.error               // TaggedErrors are yieldable too
+  })
+}
+```
+
+This fidelity belongs to the result-rpc wire. A naive JSON round trip, a Next
+server action/RPC transform, or passing a Result through a framework component
+prop serializer strips the runtime behavior. Unwrap a Result before handing its
+success value to such a boundary, or keep the call inside result-rpc:
+
+```tsx
+const result = await client.doc.byId({ id })
+if (!result.ok) return <Failure error={result.error._tag} />
+return <DocView doc={result.value} /> // pass the value, not Result itself
 ```
 
 `tryPromise` is the border checkpoint for throwing upstreams — the catch
@@ -704,7 +762,7 @@ errors collapsed to one declared domain tag, all the way to the query hook —
 is in the [Result composition docs](https://result-rpc.com/concepts/results/).
 
 Credit where due: this surface deliberately ports the core DX of
-[better-result](https://github.com/kitlangton/better-result) and
+[better-result](https://github.com/dmmulroy/better-result) and
 [neverthrow](https://github.com/supermacro/neverthrow). What it deliberately
 does not port: their serialization helpers (wire safety is this library's own
 first-class concern, handled by codecs), `ResultAsync` wrapper classes (a
@@ -1057,9 +1115,9 @@ With `effect: "pause"` (the default):
 - **Subscription** — `connection` becomes `"paused"` and `result` stays
   `undefined`.
 
-With `effect: "escalate"`, the tagged value is thrown to the nearest React
-error boundary — as the structural `TaggedError`, not wrapped in an `Error`,
-so the fallback can still `matchError` on it. Escalate is the bridge back to
+With `effect: "escalate"`, the actual `TaggedError` instance is thrown to the nearest React
+error boundary, so standard error tooling and `matchError` both work on it.
+Escalate is the bridge back to
 the machinery React already has.
 
 `onError` fires once per newly claimed error per observer. One logical event —

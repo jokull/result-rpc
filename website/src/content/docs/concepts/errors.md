@@ -36,7 +36,7 @@ export const docErrors = defineErrors("doc", {
   locked: { data: wire.object({ lockedBy: wire.string }), httpStatus: 409 },
 })
 
-docErrors.notFound({ docId })  // { _tag: "doc/not-found", data: { docId } }
+docErrors.notFound({ docId })  // TaggedError<"doc/not-found", { docId: string }>
 ```
 
 The key→tag rule is mechanical: camelCase keys become kebab-case tag
@@ -44,7 +44,7 @@ segments under the namespace — `notFound` → `doc/not-found`, `titleTaken` �
 `doc/title-taken`. Shells claim by tag and tests assert tags, so knowing the
 derivation beats guessing it at a distance.
 
-The returned map is the shape everything else accepts: procedure `.errors()`,
+Public definitions use the same map shape everywhere: procedure `.errors()`,
 middleware `.errors()`, and shell `claims:` all take a map of definitions, so
 one exported map is declared once and reused on both sides of the wire.
 `pickErrors(docErrors, "locked")` selects the subset a procedure actually
@@ -54,25 +54,106 @@ Four namespaces are reserved for the framework's own errors: `client/`,
 `server/`, `protocol/`, and `control/`; `error()` rejects tags that use them.
 
 `retry` defaults to `"never"`, `visibility` to `"public"`, and `data` to an
-empty object codec — a domain error is a tag and an HTTP status until it needs
-more. Data-free definitions are called with no arguments: `Unauthorized()`.
-`httpStatus` accepts the common vocabulary by name — `"not-found"`,
-`"conflict"`, `"too-many-requests"` — or any 4xx/5xx number.
+empty object codec. Data-free definitions are called with no arguments:
+`Unauthorized()`. `httpStatus` is an optional HTTP-adapter projection; when
+omitted, the HTTP adapter carries the application failure in a neutral 200 RPC
+envelope. When supplied, it accepts the common vocabulary by name —
+`"not-found"`, `"conflict"`, `"too-many-requests"` — or any 4xx/5xx number.
 
 Calling a definition creates the complete error value:
 
 ```ts
 const failure = DocNotFound({ docId: "doc_123" })
 
-// Readonly<{
-//   _tag: "doc/not-found"
-//   data: { docId: string }
-// }>
+failure instanceof Error       // true
+DocNotFound.is(failure)         // true
+failure.name                    // "doc/not-found"
+failure.data.docId              // "doc_123"
+failure.visibility              // "public"
+failure.toJSON()                // { _tag: "doc/not-found", data: { docId: "doc_123" } }
 ```
 
-The tag is the identity. HTTP status and retry behavior are projections of
-that identity for the relevant runtime. There is no `.serialize()` — values
-cross a boundary only through their definition's actual encoder and decoder.
+The definition is the runtime identity and the namespaced tag is its portable
+wire identity. A shape-compatible object is intentionally insufficient:
+
+```ts
+err({ _tag: "doc/not-found", data: { docId: "doc_123" } })
+//  ^ type error — not a reified TaggedError
+```
+
+Each definition creates its own `TaggedError` subclass. On the server,
+`DocNotFound.is(value)` verifies that exact definition's instance. Across the
+wire, result-rpc downgrades the instance to its canonical `{ _tag, data }`
+form, validates the tag against the procedure registry, decodes `data`, and
+constructs a fresh instance from the same definition on the client:
+
+```ts
+const result = await client.doc.byId({ id: "missing" })
+
+if (!result.ok && DocNotFound.is(result.error)) {
+  result.error instanceof Error // true, after the wire
+  result.error.data.docId        // string
+}
+```
+
+The client instance is faithful, not literally the server object: server
+stack and cause are never transmitted. HTTP status and retry behavior remain
+projections of the definition's identity. There is no public shallow
+`Result.serialize()` — values cross the RPC boundary only through the
+definition's actual encoder and decoder.
+
+## Public and private errors
+
+Visibility is part of the definition and the resulting instance type. Omitted
+means `"public"`. Use `visibility: "private"` for server-only failures that are
+valuable while composing `Result`s but unsafe or meaningless as client API:
+
+```ts
+const UniqueConstraint = error({
+  tag: "db/unique-constraint",
+  data: wire.object({ constraint: wire.string }),
+  visibility: "private",
+})
+
+r.procedure().errors({ UniqueConstraint })
+//                    ^ type error: private errors cannot enter an RPC contract
+```
+
+Fold that failure into a public domain error before returning from the handler.
+Private definitions cannot declare `httpStatus`; the public error owns that
+projection if it needs one.
+The type boundary covers procedures, middleware, and layers. Runtime
+sanitization remains as defense in depth for JavaScript and unsafe casts.
+Visibility is not a tree-shaking annotation: define private adapters in a
+server-only module so their database or vendor imports never enter the client
+bundle graph.
+
+## The client-wide public union
+
+Every client carries a flattened, `_tag`-discriminated union of all public
+domain and framework errors in its contract:
+
+```ts
+import type { ClientErrors } from "result-rpc/client"
+
+type AppError = ClientErrors<typeof client>
+
+if (client.$errors.is(unknownFailure)) {
+  unknownFailure satisfies AppError
+  unknownFailure.visibility // "public"
+}
+
+client.$errors.definitions // runtime registry of the same public definitions
+```
+
+This is derived from the contract. Private definitions are absent by type, and
+the client never trusts a visibility claim sent by the server.
+
+This guarantee belongs to the result-rpc wire. `JSON.parse(JSON.stringify(error))`
+produces the canonical plain representation, not another instance;
+`DocNotFound.is(...)` correctly returns `false` until `DocNotFound.decode(...)`
+upgrades it again. The same warning applies to framework RPC systems and
+component-prop serializers that know nothing about the result-rpc contract.
 
 ## Result is total — partial availability is a value
 

@@ -4,7 +4,7 @@ description: "Typed RPC for React. One Result and one wire-safe error union per 
 ---
 
 result-rpc is an RPC layer for React in the tRPC tradition — contract in
-TypeScript, procedures on the server, hooks in components — with one structural
+TypeScript, procedures on the server, hooks in components — with one foundational
 change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
@@ -23,9 +23,10 @@ API surface and hooks that look like the ones you already write.
 
 If you tried the halfway version — neverthrow or better-result on the server,
 procedures returning `Result` as data — you know where it stops: tagged errors
-are not wire-safe, so the discipline dies at the serializer, and on the client
+are only shallowly serialized, so their runtime API dies at the serializer, and on the client
 `query.error` becomes a different thing from `query.data.error`. This library
-starts there: the Result crosses the wire intact.
+starts there: it validates the plain wire form, then reconstructs both the Result
+and its real `TaggedError` instance on the client.
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" })

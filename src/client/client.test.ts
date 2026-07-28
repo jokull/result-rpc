@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { err, error, ok, serialize, wire } from "../index.js";
+import { err, error, gen, isTaggedError, ok, serialize, wire } from "../index.js";
+import { ClientHttpFailure, ClientTimeout } from "../framework-errors.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { createClient, __resetClientBoundaryWarning, type ClientEvent } from "./client.js";
@@ -106,6 +107,20 @@ const client = createClient({
 });
 
 describe("unary client and server", () => {
+  test("exposes the app-wide public error registry", () => {
+    const missing = NotFound({ id: "missing" });
+    const privateFailure = error({
+      tag: "db/private",
+      data: wire.object({ detail: wire.string }),
+      visibility: "private",
+    })({ detail: "constraint detail" });
+
+    expect(missing.visibility).toBe("public");
+    expect(client.$errors.definitions.get(NotFound.tag)).toBe(NotFound);
+    expect(client.$errors.is(missing)).toBe(true);
+    expect(client.$errors.is(privateFailure)).toBe(false);
+  });
+
   test("uses a browser-safe contract without retaining server handlers", async () => {
     const contractProcedure = r
       .procedure()
@@ -231,7 +246,32 @@ describe("unary client and server", () => {
   test("round trips and reconstructs a declared tagged error", async () => {
     const result = await client.value.byId({ id: "missing" });
     expect(result).toEqual(err(NotFound({ id: "missing" })));
-    if (!result.ok) expect(NotFound.is(result.error)).toBe(true);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(Error);
+      expect(isTaggedError(result.error)).toBe(true);
+      expect(NotFound.is(result.error)).toBe(true);
+      expect(result.error.name).toBe("value/not-found");
+      expect(result.error.toJSON()).toEqual({
+        _tag: "value/not-found",
+        data: { id: "missing" },
+      });
+    }
+  });
+
+  test("a Result and its TaggedError remain composable after crossing the wire", async () => {
+    const outcome = await gen(async function* () {
+      const value = yield* await client.value.byId({ id: "missing" });
+      return value.value;
+    });
+
+    expect(outcome).toEqual(err(NotFound({ id: "missing" })));
+    if (!outcome.ok) {
+      expect(NotFound.is(outcome.error)).toBe(true);
+      const propagated = gen(function* () {
+        return yield* outcome.error;
+      });
+      expect(propagated).toEqual(outcome);
+    }
   });
 
   test("transparently round trips rich success and error values", async () => {
@@ -287,7 +327,7 @@ describe("unary client and server", () => {
       },
     });
     const result = await intermediary.value.byId({ id: "one" });
-    expect(result).toEqual(err({ _tag: "client/http-failure", data: { status: 502 } }));
+    expect(result).toEqual(err(ClientHttpFailure({ status: 502 })));
   });
 
   test("rejects unknown tags, malformed known errors, and protocol versions", async () => {
@@ -333,7 +373,7 @@ describe("unary client and server", () => {
     };
     const timed = createClient({ router, transport });
     const result = await timed.value.byId({ id: "one" });
-    expect(result).toEqual(err({ _tag: "client/timeout", data: { timeoutMs: 50 } }));
+    expect(result).toEqual(err(ClientTimeout({ timeoutMs: 50 })));
   });
 
   test("classifies a library-owned fetch timeout", async () => {
@@ -351,7 +391,7 @@ describe("unary client and server", () => {
       }),
     });
     const result = await timed.value.byId({ id: "one" });
-    expect(result).toEqual(err({ _tag: "client/timeout", data: { timeoutMs: 1 } }));
+    expect(result).toEqual(err(ClientTimeout({ timeoutMs: 1 })));
   });
 
   test("direct calls can opt into the tagged retry policy", async () => {

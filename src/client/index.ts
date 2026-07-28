@@ -2,6 +2,9 @@ export { createClient } from "./client.js";
 export type {
   ClientEvent,
   ClientEventListener,
+  ClientErrorOf,
+  ClientErrorRegistry,
+  ClientErrors,
   ClientOf,
   ClientRecord,
   CreateContractClientOptions,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { deserialize, err, error, ok, serialize, wire } from "../index.js";
 import { createFetchHandler } from "./index.js";
-import { executeProcedure, rpc } from "./contract.js";
+import { executeProcedure, rpc, type ErrorDefinitionMap } from "./contract.js";
 import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
 
 interface TestContext {
@@ -28,7 +28,6 @@ const NotFound = error({
 const PrivateFailure = error({
   tag: "value/private-failure",
   data: wire.object({ secret: wire.string }),
-  httpStatus: 500,
   retry: "never",
   visibility: "private",
 });
@@ -146,7 +145,7 @@ describe("procedure execution", () => {
     if (!result.ok) expect(result.error._tag).toBe("server/internal");
   });
 
-  test("normalizes declared errors before they reach the wire", async () => {
+  test("rejects shape-compatible objects that are not declared error instances", async () => {
     const forged = r
       .procedure()
       .input(wire.object({}))
@@ -163,7 +162,8 @@ describe("procedure execution", () => {
     const result = await executeProcedure(forged, {}, {
       context: { authenticated: true, values: new Map() },
     });
-    expect(result).toEqual(err(NotFound({ id: "missing" })));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error._tag).toBe("server/internal");
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 
@@ -172,8 +172,9 @@ describe("procedure execution", () => {
       .procedure()
       .input(wire.object({}))
       .output(wire.string)
-      .errors({ PrivateFailure })
-      .query(({ errors }) => err(errors.PrivateFailure({ secret: "database detail" })));
+      // Deliberately bypass the public contract type to test the runtime backstop.
+      .errors({ PrivateFailure } as unknown as ErrorDefinitionMap)
+      .query(() => err(PrivateFailure({ secret: "database detail" })) as never);
     const result = await executeProcedure(privateProcedure, {}, {
       context: { authenticated: true, values: new Map() },
     });
@@ -274,7 +275,7 @@ describe("procedure bases", () => {
     expect(await run("whoami", "u_1", {})).toEqual(ok("u_1"));
     expect(await run("shout", "u_1", { word: "hey" })).toEqual(ok("u_1: hey!"));
     expect(await run("shout", undefined, { word: "hey" }))
-      .toEqual(err({ _tag: "base/denied", data: {} }));
+      .toEqual(err(Denied()));
   });
 
   test("onError observes declared errors with their policy", async () => {

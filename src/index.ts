@@ -20,9 +20,20 @@ export {
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
 
-export { defineErrors, error, errorCatalog, httpStatusNames, pickErrors } from "./error.js";
+export {
+  TaggedError,
+  defineErrors,
+  error,
+  errorCatalog,
+  httpStatusNames,
+  isTaggedError,
+  pickErrors,
+} from "./error.js";
 export type {
+  AnyPublicErrorDefinition,
+  AnyPublicTaggedError,
   AnyTaggedError,
+  EncodedTaggedError,
   ErrorSpec,
   HttpStatusName,
   NamespacedErrors,
@@ -33,7 +44,6 @@ export type {
   ErrorSeverity,
   ErrorVisibility,
   RetryPolicy,
-  TaggedError,
 } from "./error.js";
 
 export { defineService, resolveServices } from "./service.js";

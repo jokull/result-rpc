@@ -12,6 +12,7 @@ import { seedDb, TODAY } from "./world.js";
 import { makeHandler, type AppContext } from "./server.js";
 import { ResultRpcProvider } from "../../src/react/index.js";
 import { App, BoundaryProvider, Dashboard, ReviewsPanel, StaleShell } from "./app.tsx";
+import { hotelErrors, tourErrors } from "./errors.js";
 
 // -- world ----------------------------------------------------------------------
 
@@ -278,7 +279,7 @@ test("direct client round-trips the deep tree with column subsets at every level
     }),
   );
   expect(await client.tours.byId({ id: "t-nope", locale: "en" })).toEqual(
-    err({ _tag: "tours/not-found", data: { tourId: "t-nope", locale: "en" } }),
+    err(tourErrors.notFound({ tourId: "t-nope", locale: "en" })),
   );
 });
 
@@ -605,7 +606,7 @@ test("reviews.add refetches the ACTIVE page and the stats aggregate — exactly 
   // And the FK constraint covers the other client-supplied reference the
   // same way: a dangling hotel id collapses to the declared not-found.
   expect(await client.reviews.add({ hotelId: "h-nope", rating: 5, body: "ghost" })).toEqual(
-    err({ _tag: "hotel/not-found", data: { hotelId: "h-nope" } }),
+    err(hotelErrors.notFound({ hotelId: "h-nope" })),
   );
 });
 

@@ -1,5 +1,6 @@
 import type {
   AnyErrorDefinition,
+  AnyPublicErrorDefinition,
   AnyTaggedError,
   ErrorOf,
 } from "../error.js";
@@ -9,7 +10,8 @@ import { err, ok, type Result } from "../result.js";
 import { wire } from "../wire.js";
 import type { WireCodec, WireValue } from "../wire.js";
 
-export type ErrorDefinitionMap = Readonly<Record<string, AnyErrorDefinition>>;
+/** Error definitions admitted to an RPC contract. Private errors are server-only. */
+export type ErrorDefinitionMap = Readonly<Record<string, AnyPublicErrorDefinition>>;
 export type ErrorUnion<TDefinitions extends ErrorDefinitionMap> = ErrorOf<
   TDefinitions[keyof TDefinitions]
 >;
@@ -736,7 +738,7 @@ export interface RouterContract<TRootContext, TRecord extends ContractRouterReco
   readonly record: TRecord;
   readonly procedures: ReadonlyMap<string, AnyProcedureContract>;
   /** The application error registry: every declared tag, exactly one definition each. */
-  readonly errors: ReadonlyMap<string, AnyErrorDefinition>;
+  readonly errors: ReadonlyMap<string, AnyPublicErrorDefinition>;
   readonly _rootContext?: TRootContext;
 }
 
@@ -745,7 +747,7 @@ export interface Router<TRootContext, TRecord extends RouterRecord> {
   readonly record: TRecord;
   readonly procedures: ReadonlyMap<string, AnyProcedure>;
   /** The application error registry: every declared tag, exactly one definition each. */
-  readonly errors: ReadonlyMap<string, AnyErrorDefinition>;
+  readonly errors: ReadonlyMap<string, AnyPublicErrorDefinition>;
   readonly _rootContext?: TRootContext;
 }
 
@@ -758,8 +760,8 @@ export interface Router<TRootContext, TRecord extends RouterRecord> {
  */
 const collectErrorRegistry = (
   procedures: ReadonlyMap<string, { readonly _def: { readonly definitions: ErrorDefinitionMap } }>,
-): ReadonlyMap<string, AnyErrorDefinition> => {
-  const byTag = new Map<string, AnyErrorDefinition>();
+): ReadonlyMap<string, AnyPublicErrorDefinition> => {
+  const byTag = new Map<string, AnyPublicErrorDefinition>();
   const firstSeen = new Map<string, string>();
   for (const [path, procedure] of procedures) {
     for (const definition of Object.values(procedure._def.definitions)) {
@@ -778,6 +780,15 @@ const collectErrorRegistry = (
   return byTag;
 };
 
+const RESERVED_ROUTER_KEYS = new Set([
+  "_kind",
+  "record",
+  "procedures",
+  "errors",
+  "$errors",
+  "_rootContext",
+]);
+
 const createRouter = <TRootContext, const TRecord extends RouterRecord>(
   record: TRecord,
 ): Router<TRootContext, TRecord> => {
@@ -793,11 +804,14 @@ const createRouter = <TRootContext, const TRecord extends RouterRecord>(
     }
   };
   visit(record, []);
+  for (const key of Object.keys(record)) {
+    if (RESERVED_ROUTER_KEYS.has(key)) {
+      throw new TypeError(`Router key ${key} collides with a reserved property`);
+    }
+  }
   const errors = collectErrorRegistry(procedures);
   return Object.freeze({ _kind: "router" as const, record, procedures, errors });
 };
-
-const RESERVED_CONTRACT_KEYS = new Set(["_kind", "record", "procedures", "errors", "_rootContext"]);
 
 const createRouterContract = <
   TRootContext,
@@ -817,7 +831,7 @@ const createRouterContract = <
   };
   visit(record, []);
   for (const key of Object.keys(record)) {
-    if (RESERVED_CONTRACT_KEYS.has(key)) {
+    if (RESERVED_ROUTER_KEYS.has(key)) {
       throw new TypeError(`Contract key ${key} collides with a reserved property`);
     }
   }
@@ -992,22 +1006,21 @@ export const executeProcedure = async <
     || typeof result.error._tag !== "string"
   ) return internalFailure("error", result.error, options);
   if (ServerInternal.is(result.error)) {
-    const decodedInternal = ServerInternal.decode(result.error);
-    return decodedInternal.ok
-      ? err(decodedInternal.value)
-      : internalFailure("error", result.error, options);
+    return err(result.error);
   }
   let normalizedError: AnyTaggedError;
   try {
     const definition = Object.values(procedure._def.definitions).find(
       (candidate) => candidate.tag === result.error._tag,
     );
-    if (!definition || definition.policy.visibility !== "public") {
+    if (
+      !definition
+      || definition.policy.visibility !== "public"
+      || !definition.is(result.error)
+    ) {
       return internalFailure("error", result.error, options);
     }
-    const decoded = definition.decode(result.error);
-    if (!decoded.ok) return internalFailure("error", result.error, options);
-    normalizedError = decoded.value;
+    normalizedError = result.error;
   } catch (cause) {
     return internalFailure("error", cause, options);
   }
@@ -1055,20 +1068,14 @@ export async function* executeSubscription<
   const prepared = await prepareContext(0, options.context);
   if (!prepared.ok) {
     if (ServerInternal.is(prepared.error)) {
-      const decoded = ServerInternal.decode(prepared.error);
-      yield decoded.ok
-        ? err(decoded.value)
-        : internalFailure("error", prepared.error, options);
+      yield err(prepared.error);
     }
     else {
       const definition = Object.values(procedure._def.definitions).find(
         (candidate) => candidate.tag === prepared.error._tag,
       );
-      const decoded = definition?.policy.visibility === "public"
-        ? definition.decode(prepared.error)
-        : undefined;
-      yield decoded?.ok
-        ? err(decoded.value as ErrorUnion<TDefinitions>)
+      yield definition?.policy.visibility === "public" && definition.is(prepared.error)
+        ? err(prepared.error as ErrorUnion<TDefinitions>)
         : internalFailure("error", prepared.error, options);
     }
     return;
@@ -1122,13 +1129,10 @@ export async function* executeSubscription<
       const definition = Object.values(procedure._def.definitions).find(
         (candidate) => candidate.tag === result.error._tag,
       );
-      const decoded = definition?.policy.visibility === "public"
-        ? definition.decode(result.error)
-        : undefined;
-      if (!decoded?.ok) {
+      if (definition?.policy.visibility !== "public" || !definition.is(result.error)) {
         yield internalFailure("error", result.error, options);
       } else {
-        yield err(decoded.value as ErrorUnion<TDefinitions>);
+        yield err(result.error as ErrorUnion<TDefinitions>);
       }
       return;
     }

@@ -7,9 +7,10 @@ description: Build type-safe RPC between a server and a React app with result-rp
 
 result-rpc is the RPC layer for a React app that outgrew tRPC's happy path:
 production teams hitting offline, 5xx, session expiry, and observability. Every
-procedure returns one **`Result<T, E>`** on the wire against a **declared,
-closed tagged-error union**; failures are values you narrow, not exceptions you
-catch. React **shells** own failures by position, an entity cache patches by
+procedure returns one **`Result<T, E>`** against a **declared, closed tagged-error
+union**. The result-rpc wire reconstructs the Result behavior and real
+`TaggedError` instances on the client; failures are values you narrow, not
+exceptions you catch. React **shells** own failures by position, an entity cache patches by
 identity, and models can be **derived from Drizzle** so the wire contract can't
 drift from the database.
 
@@ -71,7 +72,12 @@ Fetch the `.md` version (append `.md`) of the page you need:
 
 - **Errors are declared and closed.** Each procedure lists its error union with
   `.errors({...})`; handlers `return err(...)`, they don't throw. Private
-  (`visibility: "private"`) errors never appear in a procedure's `.errors()`.
+  (`visibility: "private"`) errors are server-only composition currency and
+  are rejected from procedure, middleware, and layer `.errors()` maps.
+- **Errors are instances, wire forms are structural.** Use a declared definition
+  such as `err(authErrors.unauthorized())`, never fabricate `{ _tag, data }`.
+  Only the result-rpc wire reifies Results and TaggedErrors; unwrap before passing
+  them through JSON, framework RPC, or component-prop serialization.
 - **The contract is the error registry.** One tag → one definition across the
   app; shells claim by tag.
 - **Contracts are handler-free.** See the client-boundary rule above.

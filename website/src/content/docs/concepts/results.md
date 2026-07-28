@@ -5,13 +5,13 @@ description: "better-result and neverthrow are built in — with tagged errors r
 
 If you use neverthrow or better-result today, this page is the migration
 note: the algebra you know is built in, and you can delete the dependency.
-One rule is stricter — the error channel only admits tagged errors (`_tag` +
-wire-safe `data`). That restriction is the point. The standalone libraries
+One rule is stricter — the error channel only admits reified result-rpc
+`TaggedError` instances whose `data` is wire-safe. That restriction is the point. The standalone libraries
 let any value ride the error channel because they never have to move it;
 here every error is presumed to eventually cross a wire, land in a
 procedure's declared union, and be matched exhaustively in a component. The
-tagged shape is what survives that whole trip, so it is required from the
-first `err()`.
+declared definition supplies both the nominal runtime type and the plain wire
+shape, so a merely shape-compatible object is rejected by `err()`.
 
 ## The surface
 
@@ -25,7 +25,7 @@ first `err()`.
 | Combine | `all` (tuple or record, first failure wins) |
 | Compose | `gen` (generator style, `yield*`) |
 
-All standalone functions, all tree-shakeable, no wrapper classes. A
+All Result operations are standalone and tree-shakeable. A
 `Promise<Result>` stays a plain promise you `await` — there is no
 `ResultAsync` to learn.
 
@@ -56,9 +56,55 @@ const outcome = await gen(async function* () {
 })
 ```
 
-Two idioms worth knowing: `return yield* err(SomeError({ ... }))` fails a
-block explicitly from the middle, and `finally` blocks run even when an
-`Err` short-circuits — cleanup composes normally.
+Three idioms worth knowing: `return yield* err(SomeError({ ... }))` fails a
+block explicitly; a `TaggedError` is itself yieldable, so
+`return yield* SomeError({ ... })` is the shorter equivalent; and `finally`
+blocks run even when an `Err` short-circuits — cleanup composes normally.
+
+## The wire keeps the API, not the object identity
+
+This is where result-rpc goes beyond Better Result's shallow serialization.
+The client reconstructs the Result behavior and the exact declared
+`TaggedError` type before returning:
+
+```ts
+import { gen } from "result-rpc"
+import { client } from "./rpc-client"
+import { docErrors } from "./errors"
+
+const outcome = await gen(async function* () {
+  // The response crossed HTTP. It is still a result-rpc Result, so yield*
+  // unwraps success or propagates its reconstructed TaggedError.
+  const doc = yield* await client.doc.byId({ id: "doc_missing" })
+  const body = yield* parseBody(doc.body)
+  return { doc, body }
+})
+
+if (!outcome.ok && docErrors.notFound.is(outcome.error)) {
+  outcome.error instanceof Error // true
+  outcome.error.data.docId        // "doc_missing"
+
+  const propagated = gen(function* () {
+    return yield* outcome.error   // the reconstructed error is yieldable too
+  })
+}
+```
+
+The instance is newly constructed on the client; pretending it is the same
+JavaScript object would be meaningless. What survives is the faithful public
+API: definition guards, `Error` interoperability, typed data, `toJSON`, and
+generator composition.
+
+That fidelity is not portable through arbitrary serializers. JSON, Next
+server actions/RPC, and component-prop serialization do not have the
+procedure's error registry, so they cannot reconstruct the runtime types.
+Unwrap before crossing one of those boundaries:
+
+```tsx
+const result = await client.doc.byId({ id })
+if (!result.ok) return <NotFound docId={result.error.data.docId} />
+return <DocView doc={result.value} /> // pass T, not Result<T, E>
+```
 
 ## The worked example: an upstream service, composed to the screen
 
@@ -187,7 +233,7 @@ the same union both times.
 ## Credit and deliberate omissions
 
 This surface ports the core DX of
-[better-result](https://github.com/kitlangton/better-result) and
+[better-result](https://github.com/dmmulroy/better-result) and
 [neverthrow](https://github.com/supermacro/neverthrow), and happily credits
 both. Three things are deliberately not ported:
 

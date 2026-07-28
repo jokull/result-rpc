@@ -141,28 +141,23 @@ export const modelFromDrizzle = <
 export const dbErrors = defineErrors("db", {
   uniqueViolation: {
     data: wire.object({ constraint: wire.string }),
-    httpStatus: 500,
     visibility: "private",
   },
   foreignKeyViolation: {
     data: wire.object({ constraint: wire.string }),
-    httpStatus: 500,
     visibility: "private",
   },
   notNullViolation: {
     data: wire.object({ constraint: wire.string }),
-    httpStatus: 500,
     visibility: "private",
   },
   checkViolation: {
     data: wire.object({ constraint: wire.string }),
-    httpStatus: 500,
     visibility: "private",
   },
   queryFailure: {
     // Deliberately empty on the wire side: query text and params are
     // sensitive. The thrown cause stays available to server observability.
-    httpStatus: 500,
     visibility: "private",
   },
 });

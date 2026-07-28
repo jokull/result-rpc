@@ -3,6 +3,7 @@ import {
   type ClientBoundaryError,
   type ServerBadRequest,
   type Result,
+  TaggedError,
   ServerInternal,
   err,
   error,
@@ -10,8 +11,9 @@ import {
   wire,
   type WireCodec,
   matchError,
+  isTaggedError,
 } from "../src/index.js";
-import { createClient } from "../src/client/index.js";
+import { createClient, type ClientErrors } from "../src/client/index.js";
 import { defineModel } from "../src/model.js";
 import { createQueryRuntime, type QueryState } from "../src/react/index.js";
 import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
@@ -41,11 +43,78 @@ const Conflict = error({
   visibility: "public",
 });
 
+const DefaultPublic = error({
+  tag: "type/default-public",
+  data: wire.object({}),
+});
+
+const PrivateFailure = error({
+  tag: "type/private-failure",
+  data: wire.object({ detail: wire.string }),
+  visibility: "private",
+});
+
+const visibilityErrors = defineErrors("visibility", {
+  publicByDefault: {},
+  privateDetail: {
+    data: wire.object({ detail: wire.string }),
+    visibility: "private",
+  },
+});
+
+export type _OmittedVisibilityIsPublic = Assert<Equal<
+  typeof DefaultPublic.policy.visibility,
+  "public"
+>>;
+export type _ExplicitPrivateVisibilityIsPreserved = Assert<Equal<
+  typeof PrivateFailure.policy.visibility,
+  "private"
+>>;
+export type _PublicHttpStatusIsOptional = Assert<Equal<
+  typeof DefaultPublic.policy.httpStatus,
+  number | undefined
+>>;
+export type _PrivateHttpStatusDoesNotExist = Assert<Equal<
+  typeof PrivateFailure.policy.httpStatus,
+  undefined
+>>;
+export type _NamespacedDefaultVisibilityIsPublic = Assert<Equal<
+  typeof visibilityErrors.publicByDefault.policy.visibility,
+  "public"
+>>;
+export type _NamespacedPrivateVisibilityIsPreserved = Assert<Equal<
+  typeof visibilityErrors.privateDetail.policy.visibility,
+  "private"
+>>;
+
+// @ts-expect-error Private errors have no HTTP projection.
+error({ tag: "type/private-with-status", visibility: "private", httpStatus: 500 });
+// @ts-expect-error Namespaced private errors have no HTTP projection either.
+defineErrors("invalid-private", { failure: { visibility: "private", httpStatus: 500 } });
+
+// @ts-expect-error A shape-compatible object is not a reified TaggedError.
+err({ _tag: "type/missing", data: { id: "x" } });
+
+export type _DeclaredErrorsAreErrorInstances = Assert<
+  ReturnType<typeof Missing> extends Error ? true : false
+>;
+TaggedError.is(Missing({ id: "x" }));
+isTaggedError(Missing({ id: "x" }));
+
 interface Context {
   readonly authenticated: boolean;
 }
 
 const r = rpc.context<Context>();
+
+r.procedure().errors({ DefaultPublic });
+// @ts-expect-error Private errors are server-only composition currency, not RPC contract errors.
+r.procedure().errors({ PrivateFailure });
+// @ts-expect-error Middleware errors can cross the wire and must therefore be public.
+r.middleware().errors({ PrivateFailure });
+// @ts-expect-error A map containing a private definition cannot become an RPC error map.
+r.procedure().errors(visibilityErrors);
+
 const procedure = r
   .procedure()
   .input(wire.object({ id: wire.string }))
@@ -140,6 +209,20 @@ type ExpectedError =
   | ClientBoundaryError;
 
 export type _ClientErrorIsClosed = Assert<Equal<CallError, ExpectedError>>;
+export type _ClientCarriesTheWholePublicErrorUnion = Assert<Equal<
+  ClientErrors<typeof client>,
+  ExpectedError
+>>;
+export type _EveryClientErrorIsPublic = Assert<Equal<
+  ClientErrors<typeof client>["visibility"],
+  "public"
+>>;
+
+declare const unknownFailure: unknown;
+if (client.$errors.is(unknownFailure)) {
+  const appFailure: ExpectedError = unknownFailure;
+  void appFailure;
+}
 
 // @ts-expect-error Input is inferred from the procedure codec.
 void client.example.procedure({ id: 123 });
@@ -233,6 +316,14 @@ const SessionLayer = defineLayer({
   key: "viewer",
   provides: ViewerCodec,
   errors: { Conflict },
+})
+
+defineLayer({
+  name: "private-layer",
+  key: "privateValue",
+  provides: wire.string,
+  // @ts-expect-error Layer failures cross the RPC boundary and must be public.
+  errors: { PrivateFailure },
 })
 
 const sessionMiddleware = SessionLayer.middleware(r, ({ context, errors }) =>
