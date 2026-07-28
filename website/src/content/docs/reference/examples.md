@@ -19,7 +19,7 @@ bun run examples/07-tracker/serve.ts   # 07 also runs in a real browser
 
 | Rung                                     | Start here if you want…                | Headline proof                                                      |
 | ---------------------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| [01-hello](#01-hello)                    | the smallest possible app              | one error, one exhaustive switch                                    |
+| [01-hello](#01-hello)                    | the smallest browser-safe app          | one returned error, one unified failure channel                     |
 | [02-todo](#02-todo)                      | mutations + optimistic basics          | rollback on failure, catalog over a narrowed union                  |
 | [03-docs](#03-docs)                      | the whole system, minimally            | avatar patch: 1 request, 0 refetches                                |
 | [04-router](#04-router)                  | TanStack Router integration            | routes are shells; loaders prefetch layers                          |
@@ -34,10 +34,11 @@ bun run examples/07-tracker/serve.ts   # 07 also runs in a real browser
 ## 01-hello
 
 One procedure, one domain error, no shells — the
-[quickstart](/start/quickstart/), verbatim. The handler _returns_ its
-failure (`err(...)`) against a declared union, and the component switches
-over one channel that includes the transport. Read this first if you're
-arriving from tRPC.
+[quickstart](/start/quickstart/), split into contract, server, client, and UI
+modules. The handler _returns_ its failure (`err(...)`) against a declared
+union, the browser imports the contract rather than the router, and the
+component switches over one channel that includes the transport. Read this
+first if you're arriving from tRPC.
 
 ## 02-todo
 

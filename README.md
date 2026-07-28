@@ -17,6 +17,13 @@
 result-rpc is typed RPC for React with one closed, wire-safe failure union per
 operation.
 
+**Expected failures are part of the contract. Unexpected exceptions are not.**
+Procedures return anticipated failures as tagged values in their declared
+`Result`. Unexpected server exceptions are reported through `onInternalError`
+with their private cause and exposed to clients only as a sanitized
+`server/internal` failure. Declared failures produce structured Result events;
+exceptions remain incident signals.
+
 Errors accumulate along the call path and discharge along the component tree.
 Procedures and middleware contribute application failures on the server. The
 server boundary sanitizes defects. The client adds transport, offline,
@@ -74,10 +81,10 @@ The pieces, in the order this document builds them:
    shared by both sides; rich values survive the wire.
 2. **Middleware and services** — request context that grows as middleware adds
    guarantees; process-lifetime resources resolved once as a dependency graph.
-3. **A client** whose every call resolves `Result<T, ExactUnion>` — never a
-   thrown transport error on the side. (One deliberate carve-out: input the
-   procedure's own codec rejects throws at the call site — a programmer
-   error, not a wire outcome.)
+3. **A direct client** whose every call resolves `Result<T, ExactUnion>` —
+   never a thrown transport error on the side. Input rejected by the
+   procedure's own codec remains a programmer error; cancellation and
+   shell-owned mutation control remain separate non-failure signals.
 4. **A Result-native query cache** — caching, retries, optimistic updates,
    SSR, all speaking Result.
 5. **Shells** — error boundaries for values: providers that own classes of
@@ -106,14 +113,14 @@ query.data;
 // Result<Doc, DocNotFound | Unauthorized> | undefined
 
 query.error;
-// TRPCClientError | null  — code buried in error.data?.code, cause stripped
+// TRPCClientError | null — a separate, framework-wide error shape
 ```
 
-Domain failures are _successful query data_. Network failures use the query
-error channel. Retries, error boundaries, offline behavior, and exhaustive
-matching now operate on different halves of the same operation — and the half
-in `query.error` is stringly typed, because error classes do not survive the
-wire.
+Domain failures are _successful query data_. Network and thrown server
+failures use the query error channel. Retries, error boundaries, offline
+behavior, and exhaustive matching now operate on different halves of the same
+operation. A formatter can enrich the framework-wide error shape, but it does
+not give each procedure its own closed `E` union.
 
 Common workarounds address only part of the split:
 
@@ -228,10 +235,10 @@ import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "resu
 
 ## Define errors once
 
-The footgun this replaces: `new TRPCError({ code: "NOT_FOUND", cause })` —
-a string code from a fixed vocabulary, a `cause` that dies at the wire, and a
-client that switch-matches on `error.data?.code` with no exhaustiveness and no
-payload types.
+Throwing `TRPCError({ code: "NOT_FOUND" })` for an anticipated outcome routes
+that branch through a shared exception channel rather than making it part of
+the procedure's exact return type. A custom formatter can enrich the channel,
+but the caller still does not receive a closed, procedure-specific `E` union.
 
 Here an error is a definition: a namespaced tag, a wire codec for its data,
 and its policy (HTTP status, retry, visibility) — declared once, shared by
@@ -655,7 +662,8 @@ Malformed input is the client's fault, not an incident: it becomes a public
 `server/bad-request` (400) carrying path-and-message issues — never values —
 while `onInternalError` stays reserved for genuine defects.
 
-Unknown exceptions are logged with an incident ID. The client receives only:
+Unknown exceptions receive an incident ID and are passed to `onInternalError`
+when configured. The client receives only:
 
 ```ts
 {
@@ -666,6 +674,13 @@ Unknown exceptions are logged with an incident ID. The client receives only:
 
 Exception messages, stacks, causes, queries, and response bodies are not
 reflected over the wire.
+
+This is the exception boundary in one rule: expected failures are returned;
+unexpected exceptions are observed. Declared failures flow through structured
+Result events for product metrics, retries, and UI ownership. Exceptions stay
+high-signal incidents with their private causes available only to server
+observability. Use `tryPromise` when a throwing dependency has an anticipated
+failure that should be adopted into the procedure's declared union.
 
 ## Call it directly
 

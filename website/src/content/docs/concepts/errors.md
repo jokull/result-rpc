@@ -3,10 +3,10 @@ title: "Errors"
 description: "Namespaced tagged errors with wire codecs and policy \u2014 declared once, shared by both sides, registered by the router."
 ---
 
-The footgun this replaces: `new TRPCError({ code: "NOT_FOUND", cause })` —
-a string code from a fixed vocabulary, a `cause` that dies at the wire, and a
-client that switch-matches on `error.data?.code` with no exhaustiveness and no
-payload types.
+Throwing `TRPCError({ code: "NOT_FOUND" })` for an anticipated outcome routes
+that branch through a shared exception channel rather than making it part of
+the procedure's exact return type. A custom formatter can enrich the channel,
+but the caller still does not receive a closed, procedure-specific `E` union.
 
 Here an error is a definition: a namespaced tag, a wire codec for its data,
 and its policy (HTTP status, retry, visibility) — declared once, shared by
@@ -101,6 +101,39 @@ stack and cause are never transmitted. HTTP status and retry behavior remain
 projections of the definition's identity. There is no public shallow
 `Result.serialize()` — values cross the RPC boundary only through the
 definition's actual encoder and decoder.
+
+## Expected failures and unexpected exceptions
+
+Expected failures are part of the contract. Unexpected exceptions are not.
+If a caller can anticipate an outcome and make a useful decision from it,
+return the declared tagged value through explicit control flow:
+
+```ts
+if (!doc) return err(errors.DocNotFound({ docId }));
+```
+
+Throwing that same outcome is not an alternate encoding. An exception escapes
+the handler's declared `Result`, so the server boundary treats it as
+unexpected: the private cause is sent to `onInternalError`, correlated with an
+incident ID, and projected to the client as a sanitized `server/internal`.
+
+```ts
+throw new Error("database connection disappeared");
+// server observability: original cause + incident ID
+// client Result: ServerInternal({ incidentId })
+```
+
+This keeps the two paths useful. Declared failures produce structured Result
+events suitable for product metrics, retries, and UI ownership. Unexpected
+exceptions remain high-signal incidents with their causes available only on
+the server. Throwing is still used for programmer errors, cancellation,
+deliberate boundary escalation, and failures that were not adopted into a
+declared domain error.
+
+Use `tryPromise` at a throwing dependency boundary when the failure is an
+anticipated part of the operation. Its catch mapper must construct a tagged
+error, making the decision to expose, fold, or keep a provider failure private
+visible in code.
 
 ## Public and private errors
 

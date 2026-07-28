@@ -76,8 +76,9 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
         <div class="pillar-copy">
           <p class="eyebrow">01 · Accumulation and discharge</p>
           <h3>Failure ownership follows the component tree.</h3>
-          <p>Procedures and middleware add application failures. The server boundary adds sanitized server failures. The client runtime adds transport, offline, protocol, decode, and stale-client failures. Together they form the operation's closed union.</p>
-          <p>A shell claims tags at a position in the React tree. Hooks derived from that shell subtract the claimed tags, so a component handles only its remaining failures. Unclaimed failures remain in the union and must be handled.</p>
+          <p><strong>Expected failures are part of the contract. Unexpected exceptions are not.</strong> Procedures return anticipated failures as tagged values. Unexpected server exceptions are reported through server-only observability with their private cause and exposed to the client only as a sanitized <code>server/internal</code> failure.</p>
+          <p>Procedure and middleware failures accumulate with server and client boundary failures to form the operation's closed union.</p>
+          <p>A shell claims tags at a position in the React tree. Shells form an explicit parent chain, so a derived shell carries every claim made above it. Its hooks subtract those tags, leaving the component with only its remaining failures; unclaimed failures stay in the union and must be handled.</p>
           <a class="pillar-link" href="/concepts/shells/">How shells claim failures <span>→</span></a>
         </div>
         <figure class="pillar-code">
@@ -242,8 +243,9 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Why <em>Result</em>? Why not just throw?</span></summary>
           <div class="faq-body">
-            <p><code>Result</code> represents expected failures as values in a closed error type. better-result, neverthrow, and Effect provide related local composition models; result-rpc adds the RPC contract, wire validation, query state, and React ownership model.</p>
+            <p>Anticipated failures that callers can respond to belong in the procedure contract, not in exceptional control flow. <code>Result</code> makes those branches explicit and closed; throwing remains available for unexpected failures, programmer errors, cancellation, and deliberate boundary escalation.</p>
             <p>A tagged error is validated by its codec and reconstructed after crossing the network. The client therefore receives the same <code>Result&lt;T, E&gt;</code> API and tagged-error definitions used by server code.</p>
+            <p>Declared failures produce structured Result events. Unexpected server exceptions remain incident signals with private causes and cross the wire only as <code>server/internal</code>.</p>
           </div>
         </details>
 
@@ -301,7 +303,7 @@ archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Is it production-ready?</span></summary>
           <div class="faq-body">
-            <p>It's <code>0.1.0</code> — pre-1.0, and the API surface can still move before it settles. What's there is heavily tested (counter-pinned request assertions, a seeded coherence oracle, the same app built on three frameworks), but you should treat a pre-1.0 pin as pre-1.0.</p>
+            <p>Not yet. The repository is at <code>0.1.0</code>, the package is not published to npm, and the API surface can still move. The implementation is exercised by runnable examples and end-to-end tests, but it should currently be evaluated from source rather than treated as a production dependency.</p>
           </div>
         </details>
       </div>

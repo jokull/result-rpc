@@ -9,6 +9,13 @@ change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
 
+**Expected failures are part of the contract. Unexpected exceptions are not.**
+Procedures return anticipated failures as tagged values in their declared
+`Result`. Unexpected server exceptions are reported through `onInternalError`
+with their private cause and exposed to clients only as a sanitized
+`server/internal` failure. Declared failures produce structured Result events;
+exceptions remain incident signals.
+
 The problem it addresses shows up once an app is a few years old. Offline
 behavior, 5xx handling, session expiry, and observability stop being polish and
 become the work, and you end up threading them through every query and
@@ -39,10 +46,12 @@ if (query.state === "failure") {
 ```
 
 Ten tags looks like a lot until you notice they are not new failure modes —
-they are the ones your stack already has, mostly unnamed. tRPC spreads them
-across `error.data?.code`, `TRPCClientError.cause`, and unhandled fetch
-rejections; result-rpc's union is the same reality, admitted, in one place,
-closed. And no component has to
+they are the ones your stack already has, mostly unnamed. With tRPC's standard
+model, returned domain failures live in procedure data while thrown server,
+framework, and transport failures use the query error channel. A custom error
+formatter can enrich that shared channel, but it does not combine both halves
+into one exact per-procedure Result union. result-rpc's union is the same
+reality, admitted, in one place, closed. And no component has to
 branch on all of it, because the same union is narrowed by what the tree
 already takes responsibility for:
 
@@ -67,8 +76,9 @@ The pieces, in the order this document builds them:
    shared by both sides; rich values survive the wire.
 2. **Middleware and services** — request context that grows as middleware adds
    guarantees; process-lifetime resources resolved once as a dependency graph.
-3. **A client** whose every call resolves `Result<T, ExactUnion>` — never a
-   thrown transport error on the side.
+3. **A direct client** whose every call resolves `Result<T, ExactUnion>` —
+   never a thrown transport error on the side. Shell-owned mutation control
+   and cancellation remain separate non-failure signals.
 4. **A Result-native query cache** — caching, retries, optimistic updates,
    SSR, all speaking Result.
 5. **Shells** — error boundaries for values: providers that own classes of
@@ -97,14 +107,14 @@ query.data;
 // Result<Doc, DocNotFound | Unauthorized> | undefined
 
 query.error;
-// TRPCClientError | null  — code buried in error.data?.code, cause stripped
+// TRPCClientError | null — a separate, framework-wide error shape
 ```
 
-Domain failures are _successful query data_. Network failures use the query
-error channel. Retries, error boundaries, offline behavior, and exhaustive
-matching now operate on different halves of the same operation — and the half
-in `query.error` is stringly typed, because error classes do not survive the
-wire.
+Domain failures are _successful query data_. Network and thrown server
+failures use the query error channel. Retries, error boundaries, offline
+behavior, and exhaustive matching now operate on different halves of the same
+operation. A formatter can enrich the framework-wide error shape, but it does
+not give each procedure its own closed `E` union.
 
 Every good team patches this, and each patch is a known move:
 

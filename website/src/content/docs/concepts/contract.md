@@ -184,7 +184,8 @@ Malformed input is the client's fault, not an incident: it becomes a public
 `server/bad-request` (400) carrying path-and-message issues — never values —
 while `onInternalError` stays reserved for genuine defects.
 
-Unknown exceptions are logged with an incident ID. The client receives only:
+Unknown exceptions receive an incident ID and are passed to `onInternalError`
+when configured. The client receives only:
 
 ```ts
 {

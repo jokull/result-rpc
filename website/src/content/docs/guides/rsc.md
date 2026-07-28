@@ -138,7 +138,7 @@ because it proves a value survives the trip.
 
 `mode: "direct"` runs the procedure in-process. Use it for server rendering,
 server actions, and background jobs. It keeps everything that decides whether a
-call is *correct* — the middleware chain and its context, input validation,
+call is _correct_ — the middleware chain and its context, input validation,
 output encode/decode (which also brands entities), and the sanitization of
 private errors into `server/internal` — and drops only the transport: no
 serializer round trip, no HTTP envelope, no contract digest, no retry, no
@@ -148,12 +148,20 @@ The reason to care is not speed. It is the type:
 
 ```ts
 // mode: "parity" — the full client union, none of which a server can act on
-DocNotFound | Unauthorized | ServerInternal | ServerBadRequest
-  | Offline | NetworkFailure | Timeout | HttpFailure
-  | ProtocolViolation | DecodeFailure | Stale
+DocNotFound |
+  Unauthorized |
+  ServerInternal |
+  ServerBadRequest |
+  Offline |
+  NetworkFailure |
+  Timeout |
+  HttpFailure |
+  ProtocolViolation |
+  DecodeFailure |
+  Stale;
 
 // mode: "direct" — what is actually reachable in-process
-DocNotFound | Unauthorized | ServerInternal | ServerBadRequest
+DocNotFound | Unauthorized | ServerInternal | ServerBadRequest;
 ```
 
 The client-boundary tags are gone because they are unreachable, not because
@@ -165,7 +173,7 @@ and no second build to drift from. That narrowing is what makes an exhaustive
 
 `result-rpc/react` is a client entry, and claiming is React context. A server
 component can render `<ResultRpcHydrationBoundary>` as a client reference, but
-it cannot *use* a shell — and what shells do (pause and resume on reconnect,
+it cannot _use_ a shell — and what shells do (pause and resume on reconnect,
 redirect to login, hold and drain) only means something in a live browser.
 
 So a server component sees the complete union and handles it itself. You have
@@ -173,7 +181,7 @@ three honest options:
 
 1. **Ignore the failure.** Legitimate, and usually right. A failed prefetch is
    not dehydrated (see below), so the client mounts that query cold, fetches
-   once, and the shells own the failure *there* — live, and retryable.
+   once, and the shells own the failure _there_ — live, and retryable.
 2. **Handle the outcomes that belong to the response.** Some failures deserve a
    server answer: `notFound()` on `doc/not-found`, `redirect("/login")` on
    session expiry, a 500 page on `server/internal`. These are framework

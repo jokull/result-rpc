@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { err, ok } from "../../src/index.js";
 import { createClient, fetchTransport } from "../../src/client/index.js";
-import { GreetingNotFound, handler, router } from "./app.js";
+import { appContract, GreetingNotFound } from "./contract.js";
+import { handler } from "./server.js";
 
 const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
   handler(new Request(input, init))) as typeof globalThis.fetch;
 
 const client = createClient({
-  router,
+  contract: appContract,
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });
 

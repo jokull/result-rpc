@@ -3,8 +3,9 @@ title: "Quickstart"
 description: "One query, one domain error, a provider, and a hook \u2014 the smallest possible result-rpc app."
 ---
 
-The smallest possible app: one procedure, one domain error, no shells. This is
-`examples/01-hello` in the repository, verbatim.
+The smallest browser-safe app: one procedure, one domain error, no shells.
+The contract is separate from its server implementation because the browser
+needs the codecs and error definitions, not the handler or its dependencies.
 
 Coming from tRPC, watch for two differences. The handler _returns_ its
 failure — `err(...)` against a declared union — instead of throwing it. And
@@ -15,37 +16,47 @@ either.
 ## Declare the error and the procedure
 
 ```ts
-import { err, error, ok, rpc, wire } from "result-rpc";
+import { error, rpc, wire } from "result-rpc";
 
-const GreetingNotFound = error({
+export const GreetingNotFound = error({
   tag: "greeting/not-found",
   data: wire.object({ name: wire.string }),
   httpStatus: 404,
 });
 
-const app = rpc.context<{}>();
+export const app = rpc.context<{}>();
 
-export const router = app.router({
-  greet: app
-    .procedure()
-    .input(wire.object({ name: wire.string }))
-    .output(wire.string)
-    .errors({ GreetingNotFound })
-    .query(({ input, errors }) =>
-      input.name === "nobody"
-        ? err(errors.GreetingNotFound({ name: input.name }))
-        : ok(`Hello, ${input.name}!`),
-    ),
+export const greetContract = app
+  .procedure()
+  .input(wire.object({ name: wire.string }))
+  .output(wire.string)
+  .errors({ GreetingNotFound })
+  .query();
+
+export const appContract = app.contract({
+  greet: greetContract,
 });
 ```
 
-The handler must return the declared Result — returning an undeclared tag is a
-type error, and smuggling one at runtime yields a sanitized `server/internal`.
+This shared module contains only the runtime contract: codecs, error
+definitions, and policies. It is safe to import from either side of the wire.
 
-## Serve it
+## Implement and serve it
 
 ```ts
+import { err, ok } from "result-rpc";
 import { createFetchHandler } from "result-rpc/server";
+import { app, greetContract } from "./contract";
+
+const greet = app
+  .implement(greetContract)
+  .handler(({ input, errors }) =>
+    input.name === "nobody"
+      ? err(errors.GreetingNotFound({ name: input.name }))
+      : ok(`Hello, ${input.name}!`),
+  );
+
+export const router = app.router({ greet });
 
 export const handler = createFetchHandler({
   router,
@@ -57,16 +68,26 @@ export const handler = createFetchHandler({
 fetch-native server (Bun, Deno, Cloudflare Workers, Node 20+, Hono, Next
 route handlers).
 
+The handler must return the declared Result. Returning an undeclared tag is a
+type error; throwing unexpectedly or smuggling a malformed error is treated as
+a defect and yields a sanitized `server/internal`. Configure `onInternalError`
+on the fetch handler to report the private cause.
+
 ## Call it
 
 ```ts
 import { createClient, fetchTransport } from "result-rpc/client";
+import { appContract } from "./contract";
 
 export const client = createClient({
-  router,
+  contract: appContract,
   transport: fetchTransport({ url: "/rpc" }),
 });
 ```
+
+Do not import the implemented router into browser code. A router retains its
+handlers and may retain server-only dependencies; the contract is the public
+runtime value intended for the client bundle.
 
 ## Render it
 

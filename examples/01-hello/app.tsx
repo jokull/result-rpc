@@ -1,50 +1,12 @@
 /**
  * Rung 1: the smallest possible result-rpc app.
  *
- * One query, one domain error, no shells. The point of this example is to feel
- * how many concepts stand between "npm install" and a rendered result.
+ * One query, one domain error, no shells. Contract, server, and client live in
+ * separate modules so the first example also demonstrates the browser
+ * boundary correctly.
  */
-import { err, error, ok, rpc, wire } from "../../src/index.js";
-import { createFetchHandler } from "../../src/server/index.js";
-import { createClient, fetchTransport } from "../../src/client/index.js";
 import { ResultRpcProvider, useResultQuery } from "../../src/react/index.js";
-
-// -- shared -------------------------------------------------------------------
-
-export const GreetingNotFound = error({
-  tag: "greeting/not-found",
-  data: wire.object({ name: wire.string }),
-  httpStatus: 404,
-});
-
-// -- server -------------------------------------------------------------------
-
-const app = rpc.context<{}>();
-
-export const router = app.router({
-  greet: app
-    .procedure()
-    .input(wire.object({ name: wire.string }))
-    .output(wire.string)
-    .errors({ GreetingNotFound })
-    .query(({ input, errors }) =>
-      input.name === "nobody"
-        ? err(errors.GreetingNotFound({ name: input.name }))
-        : ok(`Hello, ${input.name}!`),
-    ),
-});
-
-export const handler = createFetchHandler({
-  router,
-  createContext: () => ({}),
-});
-
-// -- client -------------------------------------------------------------------
-
-export const client = createClient({
-  router,
-  transport: fetchTransport({ url: "/rpc" }),
-});
+import { client } from "./client.js";
 
 // -- ui -----------------------------------------------------------------------
 

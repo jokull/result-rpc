@@ -1,8 +1,4 @@
-import {
-  createClient,
-  registerClientLike,
-  type ClientOf,
-} from "../client/client.js";
+import { createClient, registerClientLike, type ClientOf } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import type { ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import type { Result } from "../result.js";
@@ -42,9 +38,10 @@ export interface ServerCallOptions {
 }
 
 /** Zero-input procedures may be called with no argument. */
-export type ServerCallArgs<TInput> = Record<never, never> extends TInput
-  ? [input?: TInput, options?: ServerCallOptions]
-  : [input: TInput, options?: ServerCallOptions];
+export type ServerCallArgs<TInput> =
+  Record<never, never> extends TInput
+    ? [input?: TInput, options?: ServerCallOptions]
+    : [input: TInput, options?: ServerCallOptions];
 
 export type ServerProcedureCaller<TProcedure> =
   TProcedure extends SubscriptionProcedure<any, infer TInput, infer TOutput, infer TDefinitions>
@@ -54,7 +51,13 @@ export type ServerProcedureCaller<TProcedure> =
       ) => AsyncIterable<Result<TOutput, ServerCallerError<TDefinitions>>>) & {
         readonly $kind: "subscription";
       }
-    : TProcedure extends Procedure<any, infer TInput, infer TOutput, infer TDefinitions, infer TKind>
+    : TProcedure extends Procedure<
+          any,
+          infer TInput,
+          infer TOutput,
+          infer TDefinitions,
+          infer TKind
+        >
       ? TKind extends "subscription"
         ? ((
             input: TInput,
@@ -77,9 +80,8 @@ export type ServerCallerRecord<TRecord> = {
       : never;
 };
 
-export type ServerCallerOf<TRouter> = TRouter extends Router<any, infer TRecord>
-  ? ServerCallerRecord<TRecord>
-  : never;
+export type ServerCallerOf<TRouter> =
+  TRouter extends Router<any, infer TRecord> ? ServerCallerRecord<TRecord> : never;
 
 export interface CreateServerClientOptions<TRouter extends Router<any, RouterRecord>> {
   /**
@@ -94,8 +96,7 @@ export interface CreateServerClientOptions<TRouter extends Router<any, RouterRec
 }
 
 const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure =>
-  "_kind" in value
-  && (value._kind === "procedure" || value._kind === "subscription-procedure");
+  "_kind" in value && (value._kind === "procedure" || value._kind === "subscription-procedure");
 
 /**
  * A caller that runs procedures in-process. It keeps everything that decides
@@ -119,21 +120,20 @@ const createDirectCaller = <TRouter extends Router<any, RouterRecord>>(
     context: options.context,
     procedurePath: path,
     ...(call?.signal === undefined ? {} : { signal: call.signal }),
-    ...(options.onInternalError === undefined
-      ? {}
-      : { onInternalError: options.onInternalError }),
+    ...(options.onInternalError === undefined ? {} : { onInternalError: options.onInternalError }),
   });
 
   const callable = (procedure: AnyProcedure, path: string): Function => {
-    const fn = procedure._kind === "subscription-procedure"
-      ? (input: unknown, call?: ServerCallOptions) =>
-          executeSubscription(procedure, input as never, executionOptions(path, call) as never)
-      : (input?: unknown, call?: ServerCallOptions) =>
-          executeProcedure(
-            procedure as never,
-            (input ?? {}) as never,
-            executionOptions(path, call) as never,
-          );
+    const fn =
+      procedure._kind === "subscription-procedure"
+        ? (input: unknown, call?: ServerCallOptions) =>
+            executeSubscription(procedure, input as never, executionOptions(path, call) as never)
+        : (input?: unknown, call?: ServerCallOptions) =>
+            executeProcedure(
+              procedure as never,
+              (input ?? {}) as never,
+              executionOptions(path, call) as never,
+            );
     Object.defineProperty(fn, "$kind", { value: procedure._def.kind, enumerable: true });
     registry.set(path, { fn, procedure });
     return fn;
