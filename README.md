@@ -9,6 +9,8 @@
   ·
   <a href="https://result-rpc.com/start/quickstart/">Quickstart</a>
   ·
+  <a href="https://demo.result-rpc.com">Live ticket demo</a>
+  ·
   <a href="https://result-rpc.com/guides/migrating-from-trpc/">Migrate from tRPC</a>
 </p>
 

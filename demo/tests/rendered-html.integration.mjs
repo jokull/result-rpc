@@ -1,0 +1,80 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { after, before, test } from "node:test";
+import { createBrowserClient, fetchTransport } from "result-rpc/client";
+import { createTestHarness } from "wrangler";
+import { appContract } from "../shared/contract.ts";
+
+const server = createTestHarness({
+  workers: [
+    {
+      configPath: fileURLToPath(new URL("../dist/server/wrangler.json", import.meta.url)),
+    },
+  ],
+});
+
+before(async () => {
+  await server.listen();
+});
+
+after(async () => {
+  await server.close();
+});
+
+test("server-renders the branded demo shell from the production Worker", async () => {
+  const response = await server.fetch("/");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+  const html = await response.text();
+  assert.match(html, /<title>Ticket cache demo · result-rpc<\/title>/i);
+  assert.match(html, /result-rpc/);
+  assert.match(html, /DEMO/);
+  assert.doesNotMatch(html, /Your site is taking shape/);
+});
+
+test("runs pagination, detail, and mutation through the production RPC wire", async () => {
+  const fetchThroughWorker = (input, init) => server.fetch(input, init);
+  const client = createBrowserClient({
+    contract: appContract,
+    transport: fetchTransport({
+      url: "http://result-rpc-demo.test/api/rpc",
+      fetch: fetchThroughWorker,
+      headers: { "x-demo-workspace": "ws_productiontest" },
+    }),
+    contractVersion: "result-rpc-demo-v1",
+  });
+
+  const page = await client.tickets.list({
+    list: { status: "all", search: "" },
+    cursor: null,
+  });
+  assert.equal(page.ok, true);
+  if (!page.ok) return;
+  assert.equal(page.value.items.length, 10);
+  assert.equal(typeof page.value.nextCursor, "string");
+
+  const ticket = page.value.items[0];
+  assert.ok(ticket);
+  const moved = await client.tickets.move({ id: ticket.id, status: "backlog" });
+  assert.equal(moved.ok, true);
+  if (moved.ok) assert.equal(moved.value.status, "backlog");
+
+  const detail = await client.tickets.byId({ id: ticket.id });
+  assert.equal(detail.ok, true);
+  if (detail.ok) assert.equal(detail.value.status, "backlog");
+});
+
+test("keeps server-only implementation out of browser assets", async () => {
+  const files = await readdir(new URL("../dist/client/assets/", import.meta.url));
+  const scripts = files.filter((file) => file.endsWith(".js"));
+  const browserCode = (
+    await Promise.all(
+      scripts.map((file) =>
+        readFile(new URL(`../dist/client/assets/${file}`, import.meta.url), "utf8"),
+      ),
+    )
+  ).join("\n");
+  assert.doesNotMatch(browserCode, /RESULT_RPC_DEMO_SERVER_GRAPH_DO_NOT_SHIP/);
+  assert.doesNotMatch(browserCode, /CREATE TABLE IF NOT EXISTS tickets/);
+});

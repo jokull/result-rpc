@@ -45,8 +45,16 @@ export interface ExecutionOptions<TRootContext> {
   readonly responseHeaders?: Headers;
 }
 
-/** Fallback for executions with no caller lifetime (tests, jobs). */
-const neverAborted = new AbortController().signal;
+/**
+ * Fallback for executions with no caller lifetime (tests, jobs). Created on
+ * first use because Workers forbid constructing runtime I/O primitives during
+ * module initialization.
+ */
+let detachedSignal: AbortSignal | undefined;
+const neverAborted = (): AbortSignal => {
+  detachedSignal ??= new AbortController().signal;
+  return detachedSignal;
+};
 
 /**
  * Adds `headers` to the context for procedures that declared `.headers()`.
@@ -1107,7 +1115,7 @@ export const executeProcedure = async <
         input: decodedInput.value,
         errors: procedure._def.definitions,
         touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
-        signal: options.signal ?? neverAborted,
+        signal: options.signal ?? neverAborted(),
       });
     } catch (cause) {
       return internalFailure("handler", cause, options);
@@ -1233,7 +1241,7 @@ export async function* executeSubscription<
       input: decodedInput.value,
       errors: procedure._def.definitions,
       touch: (model, id) => options.onTouch?.(`${model.name}:${entityIdFor(model, id)}`),
-      signal: options.signal ?? neverAborted,
+      signal: options.signal ?? neverAborted(),
     });
   } catch (cause) {
     yield internalFailure("handler", cause, options);

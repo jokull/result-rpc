@@ -1,0 +1,45 @@
+{
+  "name": "result-rpc-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run cf-typegen && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
+    "build": "npm run cf-typegen && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
+    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
+    "test": "npm run build && node --import tsx --test tests/rendered-html.integration.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "cf-typegen": "wrangler types --config wrangler.jsonc",
+    "cf-types:check": "wrangler types --check --config wrangler.jsonc",
+    "typecheck": "npm run cf-typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "result-rpc": "file:.."
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.48.0",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.12",
+    "react-server-dom-webpack": "19.2.8",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3",
+    "vinext": "0.0.50",
+    "vite": "8.0.13",
+    "wrangler": "4.115.0"
+  },
+  "overrides": {
+    "postcss": "8.5.24",
+    "sharp": "0.35.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

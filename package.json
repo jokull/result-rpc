@@ -66,7 +66,7 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
-    "test": "bun test",
+    "test": "bun test src examples tests && npm --prefix demo test",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
     "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test && pnpm build",
     "prepack": "pnpm run build",

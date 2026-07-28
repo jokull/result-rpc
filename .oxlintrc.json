@@ -16,7 +16,7 @@
     "react-hooks/rules-of-hooks": "error",
     "unicorn/no-useless-spread": "off"
   },
-  "ignorePatterns": ["**/*.gen.ts"],
+  "ignorePatterns": ["**/*.gen.ts", "demo/worker-configuration.d.ts"],
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
