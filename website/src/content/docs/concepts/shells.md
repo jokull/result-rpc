@@ -300,10 +300,21 @@ function OfflineBanner() {
 That is the structural reason the per-operation error channel was the wrong
 home for connectivity: no single operation owns it.
 
-## The server declares, the client discharges
+## Errors accumulate; shells discharge
 
-Middleware adds an error to the union and produces context. A shell removes
-the error and produces context. They are inverses over the same declaration:
+The application contract, server boundary, and client boundary all contribute
+to the operation union. Middleware is one application contributor: it adds an
+error while strengthening server context. A shell claims an error while
+providing UI context. Those two operations are inverses over the same shared
+declaration:
+
+```text
+procedure and middleware failures
++ server-boundary failures
++ client-boundary failures
+− enclosing shell claims
+= component-visible union
+```
 
 ```ts
 // shared/errors.ts

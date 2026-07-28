@@ -1,7 +1,7 @@
 {
   "name": "result-rpc",
   "version": "0.1.0",
-  "description": "One Result and one wire-safe error union per procedure",
+  "description": "Typed RPC for React: errors accumulate along the call path and discharge along the component tree",
   "keywords": [
     "query-cache",
     "react",

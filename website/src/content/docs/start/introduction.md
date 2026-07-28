@@ -1,6 +1,6 @@
 ---
 title: "Introduction"
-description: "Typed RPC for React. One Result and one wire-safe error union per procedure."
+description: "Typed RPC for React. Errors accumulate along the call path and discharge along the component tree."
 ---
 
 result-rpc is an RPC layer for React in the tRPC tradition — contract in

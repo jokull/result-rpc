@@ -2,7 +2,7 @@
   <img src="brand/logo/result-rpc-lockup-preview.png" alt="result-rpc" width="720" />
 </p>
 
-<p align="center"><strong>Typed RPC for React. One Result and one wire-safe error union per procedure.</strong></p>
+<p align="center"><strong>Typed RPC for React. Errors accumulate along the call path and discharge along the component tree.</strong></p>
 
 <p align="center">
   <a href="https://result-rpc.com/start/introduction/">Documentation</a>
@@ -14,30 +14,26 @@
 
 ---
 
-result-rpc is an RPC layer for React in the tRPC tradition — contract in
-TypeScript, procedures on the server, hooks in components — with one foundational
-change: every way an operation can fail is a typed, wire-safe value in that
-operation's own closed union, and responsibility for each failure is assigned
-to exactly one place in the component tree.
+result-rpc is typed RPC for React with one closed, wire-safe failure union per
+operation.
 
-The problem it addresses shows up once an app is a few years old. Offline
-behavior, 5xx handling, session expiry, and observability stop being polish and
-become the work, and you end up threading them through every query and
-mutation, or bolting them on with `onError` defaults, axios-style interceptors,
-and a Sentry integration that guesses at what happened. This library treats
-those cases as ordinary values with declared owners, and emits observability as
-a structured stream rather than something you reconstruct after the fact.
+Errors accumulate along the call path and discharge along the component tree.
+Procedures and middleware contribute application failures on the server. The
+server boundary sanitizes defects. The client adds transport, offline,
+protocol, decoding, and deployment-skew failures. React shells claim the
+failures owned by higher-level UI behavior and subtract them from the unions
+visible below.
 
-If you looked at Effect for this and decided it was more than you wanted, the
-overlapping parts are here — typed errors, services, layers — with a smaller
-API surface and hooks that look like the ones you already write.
+The library provides the standard infrastructure: codecs, serialization,
+batching, caching, retries, offline pausing, protocol validation, server-defect
+handling, and React owners for framework failures. Applications define layers
+for product-specific guarantees such as authentication, write access,
+entitlements, or an active workspace.
 
-If you tried the halfway version — neverthrow or better-result on the server,
-procedures returning `Result` as data — you know where it stops: tagged errors
-are only shallowly serialized, so their runtime API dies at the serializer, and on the client
-`query.error` becomes a different thing from `query.data.error`. This library
-starts there: it validates the plain wire form, then reconstructs both the Result
-and its real `TaggedError` instance on the client.
+A server layer strengthens request context before a handler runs. Its
+corresponding React shell provides UI context and owns the same failure
+definitions. The handler cannot run without its required context, and the
+component cannot silently ignore an unowned failure.
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" });
@@ -49,13 +45,13 @@ if (query.state === "failure") {
 }
 ```
 
-Ten tags looks like a lot until you notice they are not new failure modes —
-they are the ones your stack already has, mostly unnamed. tRPC spreads them
-across `error.data?.code`, `TRPCClientError.cause`, and unhandled fetch
-rejections; result-rpc's union is the same reality, admitted, in one place,
-closed. And no component has to
-branch on all of it, because the same union is narrowed by what the tree
-already takes responsibility for:
+This is the complete operation union. `DocNotFound` and `Unauthorized` come
+from the application contract, `ServerInternal` comes from the server
+boundary, and the remaining failures come from the client runtime. They share
+one result channel while retaining distinct tags and policies.
+
+A component does not have to handle failures already owned above it. Shell
+hooks narrow the same operation union according to the mounted shell chain:
 
 ```ts
 const query = AuthShell.useQuery(client.doc.byId, { id: "doc_123" });
@@ -66,11 +62,11 @@ if (query.state === "failure") {
 }
 ```
 
-Nothing was hidden. `Unauthorized` is gone because an enclosing shell
-guarantees a session and redirects when that stops being true. The transport
-tags are gone because the app shell owns the offline banner. The protocol tags
-are gone because they escalate to an error boundary. Each shell subtracts
-exactly what it takes responsibility for, and it does so in the type.
+`Unauthorized` is absent because an enclosing shell guarantees a session and
+owns session failure. Transport tags are handled by the transport shell, and
+protocol tags escalate through the defect shell. The operation and cached
+failure remain unchanged; only the union visible at this tree position is
+narrowed.
 
 The pieces, in the order this document builds them:
 
@@ -96,10 +92,10 @@ are providers and hooks, so they compose with whatever owns the tree.
 
 ## The two problems
 
-### Problem one: two failure channels
+### Problem one: one operation, two failure channels
 
-You have written this component. Domain failures come back as data; transport
-failures come back somewhere else:
+A common Result-over-RPC integration returns domain failures as data while
+transport failures use a separate query-error channel:
 
 ```ts
 const query = useQuery({
@@ -119,7 +115,7 @@ matching now operate on different halves of the same operation — and the half
 in `query.error` is stringly typed, because error classes do not survive the
 wire.
 
-Every good team patches this, and each patch is a known move:
+Common workarounds address only part of the split:
 
 - **Discipline.** Decree that `query.error` is transport-only and return a
   discriminated union as data. Now the cache's machinery — retries, error
@@ -153,25 +149,22 @@ The shared contract declares server and middleware errors. The client boundary
 adds transport and protocol errors. The query runtime preserves the full union
 while handling caching, retries, pausing, hydration, and cancellation.
 
-### Problem two: the 401 interceptor
+### Problem two: failure ownership is positional
 
 A complete union is honest, but exhaustiveness is not relevance. A component
 that renders a document has business with `DocNotFound`. It has no business
 deciding what happens when the network is down or the session is revoked
 mid-render.
 
-`Unauthorized` is the halfway house that exposes this. It is domain-shaped —
-declared, typed, expected by every procedure that requires a session — and it
-is ambient: it can surface on any call, and no document component should
-carry branching logic for what sign-out looks like. The domain bucket taxes
-every component with it; the transport bucket makes it stringly. Neither
-holds it — and it is not alone: plan limits, org suspension, maintenance
-windows, read-only mode all have the same shape, declared like domain errors
-but owned like infrastructure. So every app that survives contact with
-production grows one of these:
+`Unauthorized` makes the ownership problem visible. It is a declared,
+application-specific failure expected by every procedure that requires a
+session, but an individual document component should not decide how session
+loss is presented. Write-access requirements, plan limits, organization
+suspension, and maintenance windows have the same shape: declared like domain
+errors and handled by application-wide behavior. A typical implementation is
+a global interceptor:
 
 ```ts
-// somewhere global, in every codebase, in some costume
 queryClient.setDefaultOptions({
   queries: {
     onError: (error) => {
@@ -183,13 +176,9 @@ queryClient.setDefaultOptions({
 });
 ```
 
-A global, stringly hook, invisible to the type system, that fires once per
-in-flight query, races the components' own error branches, and blanks whatever
-the user was looking at. The disciplined version — a cache-level handler plus
-per-query `meta` flags to suppress it on the login screen — is the same move
-with more indirection, and it double-fires and races the same way. Both exist
-because the alternative — handling session expiry in every component that
-fetches — is worse.
+A global callback is outside the operation's error type. It observes status or
+message data, may fire once per observer, and needs per-query exceptions for
+screens that handle the same failure locally.
 
 The requirement the interceptor cannot express is that ownership depends on
 _where you are_: the app shell should own `Unauthorized` almost everywhere,
@@ -201,7 +190,13 @@ every component beneath it sees — while a component rendered outside the
 shell (or using the unnarrowed hook) sees the full union again. Handling a
 tag or delegating it is a choice made by position, and the type at every call
 site shows which choice is in force. That is the [Shells](#shells-error-boundaries-for-values)
-section, and it is the reason the rest of the machinery exists.
+section.
+
+For a protected class of mutations, middleware can contribute
+`WriteAccessRequired` while adding `writer` to server context. A corresponding
+React shell claims that tag, opens the login dialog, and provides writer state
+to its subtree. Mutation handlers do not repeat the access check, and mutation
+consumers do not inspect HTTP status or match an error message.
 
 ## Install
 
@@ -1182,10 +1177,21 @@ function OfflineBanner() {
 That is the structural reason the per-operation error channel was the wrong
 home for connectivity: no single operation owns it.
 
-### The server declares, the client discharges
+### Errors accumulate; shells discharge
 
-Middleware adds an error to the union and produces context. A shell removes
-the error and produces context. They are inverses over the same declaration:
+The application contract, server boundary, and client boundary all contribute
+to the operation union. Middleware is one application contributor: it adds an
+error while strengthening server context. A shell claims an error while
+providing UI context. Those two operations are inverses over the same shared
+declaration:
+
+```text
+procedure and middleware failures
++ server-boundary failures
++ client-boundary failures
+− enclosing shell claims
+= component-visible union
+```
 
 ```ts
 // shared/errors.ts
@@ -1203,12 +1209,12 @@ union changes and nothing breaks. Remove one and the components that branched
 on it stop compiling. The shared map is a value in the shared contract
 package, so no server middleware code reaches the browser bundle.
 
-## Layers: one auth declaration instead of three
+## Layers: one shared declaration for server and React
 
-The footgun: every authenticated app maintains three artifacts that must agree
-and drift apart anyway — the server middleware that resolves the session, the
-`/me` endpoint the client bootstraps from, and the React context that hands
-`user` to components. Three files, one concept, no compiler between them.
+Authentication commonly requires three related artifacts: server middleware
+that resolves the session, an endpoint that returns the established value, and
+React context that provides it to components. If they are declared separately,
+their codecs and error definitions can diverge.
 
 A **layer** (this word means exactly this artifact, nothing else in this
 document) is the one shared declaration those three derive from: the context
