@@ -223,11 +223,20 @@ procedures reusing a tag must share the definition — the same reference — an
 `app.router(...)` rejects a tag redeclared with a different definition at
 build time. This is what makes tags safe as global identities: shells claim by
 tag alone, so a tag can never mean two different things in one app. The
-registry is inspectable:
+registry is inspectable at runtime:
 
 ```ts
-appRouter.errors; // ReadonlyMap<string, ErrorDefinition> — every declared tag
+// tag → definition. Keyed by `string`: this is the map the client decodes
+// against and a devtools panel can enumerate, not a typed lookup.
+appRouter.errors;
 ```
+
+The key stays `string` on purpose. `ReadonlyMap` is invariant in its key type,
+so narrowing it to the tag union would make a concrete router stop satisfying
+`Router<any, RouterRecord>` — the bound every function here accepts. For
+compile-time exhaustiveness over declared errors, reach for
+[`errorCatalog`](/concepts/client/) instead; that is
+the typed door, and this is the runtime window.
 
 ## Retry policy follows the tag
 
