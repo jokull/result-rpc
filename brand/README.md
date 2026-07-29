@@ -6,10 +6,11 @@ infrastructure, and none of the costume-like heaviness of an all-monospace UI.
 
 ## Primary logo
 
-Use the full wordmark only. The master lockup is black with the letters knocked
-out to transparency, so the surface behind the logo becomes the letter color.
-On branded digital surfaces, use the direct-path Iris-blue SVG; it stays crisp
-at navigation sizes and avoids resampling the knockout mask.
+Use the full wordmark in horizontal brand positions. The master lockup is black
+with the letters knocked out to transparency, so the surface behind the logo
+becomes the letter color. On branded digital surfaces, use the direct-path
+Iris-blue SVG; it stays crisp at navigation sizes and avoids resampling the
+knockout mask.
 
 - `logo/result-rpc-lockup.svg` — primary scalable asset
 - `logo/result-rpc-lockup-blue.svg` — crisp Iris digital lockup
@@ -17,6 +18,26 @@ at navigation sizes and avoids resampling the knockout mask.
 - `logo/result-rpc-wordmark.svg` — uncontained wordmark for exceptional layouts
 - `logo/result-rpc-wordmark.png` — black wordmark on transparency
 - `logo/result-rpc-wordmark-white.png` — reversed wordmark on transparency
+
+## Compact badge
+
+Use the square badge where the horizontal wordmark cannot retain useful size.
+It keeps the full name: `RESULT` on the first row and a uniformly enlarged
+`RPC` on the second, optically aligned to the same width. The letterforms remain
+the cleaned wordmark paths; the lower row is enlarged, not horizontally
+distorted.
+
+- `logo/result-rpc-badge.svg` — primary black knockout badge
+- `logo/result-rpc-badge-blue.svg` — Iris knockout badge
+- `logo/result-rpc-badge.png` — transparent 1024 px raster
+- `logo/result-rpc-badge-blue.png` — transparent 1024 px Iris raster
+- `logo/result-rpc-favicon.svg` — single traced `R` for favicon-sized use only
+- `logo/result-rpc-favicon.png` — transparent 512 px favicon export
+
+The `R` badge is the sole abbreviation. Its Iris field and Canvas letter are
+deliberately opaque so browser chrome cannot change the mark. Use it for
+favicons and touch icons, not as a replacement for the full wordmark or square
+badge in ordinary layouts.
 
 Do not use the stacked `RR / PC` monogram. Do not add distress to the cleaned
 Bezier outlines.
