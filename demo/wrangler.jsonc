@@ -4,14 +4,20 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-07-28",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    {
+      "pattern": "demo.result-rpc.com",
+      "custom_domain": true,
+    },
+  ],
   "assets": {
     "binding": "ASSETS",
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "site-creator-d1",
-      "database_id": "00000000-0000-4000-8000-000000000000",
+      "database_name": "result-rpc-demo",
+      "database_id": "caedc918-a787-468f-b668-9f6386f5f91d",
     },
   ],
 }

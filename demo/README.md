@@ -26,6 +26,16 @@ npm install
 npm run dev
 ```
 
+Deploys go directly to the `result-rpc-demo` Worker and D1 database in the
+result-rpc.com Cloudflare account:
+
+```bash
+npm run deploy
+```
+
+`demo.result-rpc.com` is a Worker Custom Domain declared in `wrangler.jsonc`,
+so Cloudflare owns its DNS record and certificate lifecycle.
+
 The Worker configuration is the source of truth for runtime and binding types:
 
 ```bash
