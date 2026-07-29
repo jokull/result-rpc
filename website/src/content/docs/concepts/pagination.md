@@ -119,6 +119,18 @@ lists a `staleTime`:
 useResultPaginatedQuery(client.feed, { q }, { staleTime: 60_000 });
 ```
 
+When a component boundary needs to name the inferred state, derive it from the
+procedure instead of reconstructing its row, cursor, and error types:
+
+```ts
+import type { PaginatedStateOf } from "result-rpc/react";
+
+type FeedState = PaginatedStateOf<AppClient["feed"]>;
+```
+
+The corresponding unary and mutation helpers are `QueryStateOf` and
+`MutationStateOf`.
+
 With a stale window, a mutation that patches a visible row does so in place at
 exactly one request — the row updates, the scroll position holds, nothing
 refetches.

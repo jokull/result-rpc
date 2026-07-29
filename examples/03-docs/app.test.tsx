@@ -134,7 +134,8 @@ export type _RenameIsExactlyDomain = Assert<
 void probeRename;
 void probeDoc;
 
-// cache.updateEntity is typed by the model's canonical shape.
+// cache.updateEntity receives an identity-bearing projection; non-key fields
+// remain optional because a cached query may select only part of the model.
 import { UserModel } from "./domain.js";
 import type { QueryRuntime } from "../../src/react/index.js";
 declare const probeRuntime: QueryRuntime;

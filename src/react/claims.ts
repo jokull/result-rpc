@@ -2,25 +2,31 @@
  * Ambient failure claiming.
  *
  * A mounted shell is a monitor on ALL procedure activity beneath it — not just
- * operations issued through its own hooks. The wire contract makes this sound:
- * claiming is keyed by tag, so a shell needs no knowledge of which procedures
- * run underneath, only of the error union it owns.
+ * operations issued through its own hooks. A tag finds a candidate owner; that
+ * owner's definition registry must then recognize the exact reified instance.
+ * A shell needs no knowledge of which procedures run underneath, only of the
+ * definitions it owns.
  *
  * Runtime and types split deliberately:
  * - runtime absorption is ambient — every base hook consults the mounted claim
- *   scope, so a claimed tag NEVER becomes a terminal failure below its owner;
+ *   scope, so a claimed definition NEVER becomes a terminal failure below its owner;
  * - type subtraction stays explicit — it rides the shell's hooks, because the
  *   type system cannot see tree position. A plain hook's union is therefore a
  *   sound over-approximation: it may list tags that can no longer surface.
  */
 import { createContext, useContext, useEffect, useId } from "react";
-import type { AnyTaggedError } from "../error.js";
+import type { AnyErrorDefinition, AnyTaggedError } from "../error.js";
 import type { QueryState } from "../query/runtime.js";
+
+export interface ClaimRegistry<TError extends AnyTaggedError = AnyTaggedError> {
+  readonly definitions: ReadonlyMap<string, AnyErrorDefinition>;
+  is(value: unknown): value is TError;
+}
 
 export interface ClaimEntry {
   readonly name: string;
   readonly effect: "pause" | "escalate";
-  readonly tags: ReadonlySet<string>;
+  readonly registry: ClaimRegistry;
   readonly report: (id: string, error: AnyTaggedError, retry?: () => void) => void;
   readonly release: (id: string) => void;
   readonly whenChanged: () => Promise<void>;
@@ -48,13 +54,17 @@ export const useAmbientClaim = (
   const id = useId();
   let claimant: ClaimEntry | undefined;
   if (error) {
+    const tag = error._tag;
     // innermost owner wins
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const entry = entries[index]!;
-      if (entry.tags.has(error._tag)) {
-        claimant = entry;
-        break;
+      const definition = entry.registry.definitions.get(tag);
+      if (!definition) continue;
+      if (!entry.registry.is(error)) {
+        throw new TypeError(`Shell ${entry.name} claims ${tag} with a different error definition`);
       }
+      claimant = entry;
+      break;
     }
   }
   const held = claimant?.effect === "pause" && error ? error : undefined;
@@ -74,9 +84,19 @@ export const useAmbientClaim = (
 export const useClaimScope = (): readonly ClaimEntry[] => useContext(ClaimScopeContext);
 
 /** Innermost mounted owner of a tag, if any (scope is outermost-first). */
-export const claimOwner = (entries: readonly ClaimEntry[], tag: string): ClaimEntry | undefined => {
+export const claimOwner = (
+  entries: readonly ClaimEntry[],
+  error: AnyTaggedError,
+): ClaimEntry | undefined => {
+  const tag = error._tag;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (entries[index]!.tags.has(tag)) return entries[index];
+    const entry = entries[index]!;
+    const definition = entry.registry.definitions.get(tag);
+    if (!definition) continue;
+    if (!entry.registry.is(error)) {
+      throw new TypeError(`Shell ${entry.name} claims ${tag} with a different error definition`);
+    }
+    return entry;
   }
   return undefined;
 };
@@ -93,7 +113,7 @@ export const pauseQueryProjection = <T, E extends AnyTaggedError>(
     failureCount: state.failureCount,
     isStale: state.isStale,
     updatedAt: state.updatedAt,
-    refetch: state.refetch as unknown as () => Promise<QueryState<T, never>>,
+    refetch: state.refetch,
   };
   const previous = state.state === "failure" ? state.previous : undefined;
   return previous === undefined

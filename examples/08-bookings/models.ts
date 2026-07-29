@@ -38,7 +38,7 @@ export const TourContent = defineModel("tour-content", {
   key: ["id", "locale"],
   shape: {
     id: wire.string,
-    locale: wire.union([wire.literal("en"), wire.literal("ja")] as const),
+    locale: wire.union([wire.literal("en"), wire.literal("ja")]),
     title: wire.string,
     summary: wire.string,
   },
@@ -50,7 +50,7 @@ export const User = defineModel("user", {
   shape: {
     id: wire.string,
     name: wire.string,
-    avatarUrl: wire.union([wire.string, wire.null] as const),
+    avatarUrl: wire.union([wire.string, wire.null]),
   },
 }).$satisfies<typeof users.$inferSelect>();
 
@@ -78,7 +78,7 @@ export const UserCard = User.pick("id", "name", "avatarUrl");
 /** Marketing copy — every column is public by construction. */
 export const TourContentView = TourContent.all("public marketing copy, no private columns");
 
-export const LocaleCodec = wire.union([wire.literal("en"), wire.literal("ja")] as const);
+export const LocaleCodec = wire.union([wire.literal("en"), wire.literal("ja")]);
 export type Locale = InputOf<typeof LocaleCodec>;
 
 // -- the orders tree: one-off composites around entity nodes ---------------------
@@ -173,5 +173,5 @@ export const NextDepartureCodec = wire.union([
     hotelName: wire.string,
   }),
   wire.object({ kind: wire.literal("none") }),
-] as const);
+]);
 export type NextDeparture = InputOf<typeof NextDepartureCodec>;

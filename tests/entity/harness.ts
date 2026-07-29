@@ -1,7 +1,7 @@
 /**
  * Shared probe harness — mirrors src/query/runtime.test.ts world-building.
  */
-import { createBrowserClient } from "../../src/client/client.js";
+import { createFixtureClient } from "../../src/testing/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import type { AnyTaggedError } from "../../src/error.js";
@@ -40,7 +40,7 @@ export const localClient = <TRouter extends Parameters<typeof createFetchHandler
     createContext: createContext as never,
   });
   let requests = 0;
-  const client = createBrowserClient({
+  const client = createFixtureClient({
     router: router as never,
     transport: fetchTransport({
       url: "https://probe.test/rpc",

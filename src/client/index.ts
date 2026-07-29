@@ -10,10 +10,19 @@ export type {
   ClientErrorRegistry,
   ClientErrors,
   CreateBrowserClientOptions,
-  CreateContractClientOptions,
-  CreateRouterClientOptions,
   ResultSubscription,
 } from "./client.js";
+export type {
+  ClientPaginationTypes,
+  ClientProcedureError,
+  ClientProcedureInput,
+  ClientProcedureKind,
+  ClientProcedureOutput,
+  ClientProcedurePagination,
+  ClientProcedureSource,
+  ClientProcedureTypes,
+  ProcedureClientTypeCarrier,
+} from "./base-client.js";
 
 export {
   cancelled,

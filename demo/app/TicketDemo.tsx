@@ -12,6 +12,7 @@ import {
 import type { ClientEvent } from "result-rpc/client";
 import {
   boundaryShells,
+  type PaginatedStateOf,
   ResultRpcProvider,
   useResultClient,
   useResultMutation,
@@ -20,6 +21,12 @@ import {
 } from "result-rpc/react";
 import { makeClient, type AppClient } from "../client/rpc-client";
 import { Ticket, type TicketValue } from "../shared/models";
+
+declare module "result-rpc/react" {
+  interface Register {
+    client: AppClient;
+  }
+}
 
 type Status = TicketValue["status"];
 type Priority = TicketValue["priority"];
@@ -116,7 +123,7 @@ function Workspace({
   const [createOpen, setCreateOpen] = useState(false);
   const [proofOpen, setProofOpen] = useState(true);
   const deferredSearch = useDeferredValue(search);
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const stats = useResultQuery(client.tickets.stats, {}, { staleTime: 60_000 });
   const tickets = useResultPaginatedQuery(
     client.tickets.list,
@@ -319,7 +326,7 @@ function Sidebar({
   );
 }
 
-type TicketListState = ReturnType<typeof useResultPaginatedQuery<AppClient["tickets"]["list"]>>;
+type TicketListState = PaginatedStateOf<AppClient["tickets"]["list"]>;
 
 function TicketList({
   state,
@@ -386,7 +393,7 @@ function TicketList({
 }
 
 function TicketDetail({ id, setProof }: { id: string; setProof: (proof: Proof) => void }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const query = useResultQuery(client.tickets.byId, { id }, { staleTime: 60_000 });
   if (query.state === "pending") return <DetailSkeleton />;
   if (query.state === "failure")
@@ -401,7 +408,7 @@ function TicketEditor({
   ticket: TicketValue;
   setProof: (proof: Proof) => void;
 }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [title, setTitle] = useState(ticket.title);
   const [description, setDescription] = useState(ticket.description);
 
@@ -582,7 +589,7 @@ function ProofPanel({
   onClose: () => void;
   onReset: () => void;
 }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const reset = useResultMutation(client.tickets.reset, { onSuccess: onReset });
   const calls = timeline.filter(({ event }) => event.type === "call").length;
   const mutations = timeline.filter(
@@ -667,7 +674,7 @@ function CreateDialog({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<Priority>("medium");

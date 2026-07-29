@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, defineLayer, err, error, ok, transportErrors, wire } from "../index.js";
-import { createBrowserClient } from "../client/client.js";
+import { createFixtureClient } from "../testing/index.js";
 import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
-import { rpc } from "../server/contract.js";
+import { executeProcedure, rpc } from "../server/contract.js";
 import { ResultRpcProvider, defineShell, layerShell } from "./index.js";
 
 (
@@ -75,7 +75,7 @@ const clientFor = (sessionUserId: string | undefined) => {
   });
   const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
     handler(new Request(input, init))) as typeof globalThis.fetch;
-  return createBrowserClient({
+  return createFixtureClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });
@@ -228,7 +228,7 @@ describe("layer factory", () => {
 
   test("an optional layer refines into a required layer with a growing context", async () => {
     const UserCodec = wire.object({ id: wire.string });
-    const NullableUserCodec = wire.union([UserCodec, wire.null] as const);
+    const NullableUserCodec = wire.union([UserCodec, wire.null]);
 
     // optional: always establishes, claims nothing
     const SessionLayer = defineLayer({
@@ -253,18 +253,17 @@ describe("layer factory", () => {
     const session = SessionLayer.middleware(cookieApp, ({ context }) =>
       ok(context.cookieUserId === undefined ? null : { id: context.cookieUserId }),
     );
-    const requireViewer = ViewerLayer.middleware(cookieApp);
+    const requireViewer = ViewerLayer.middleware(cookieApp, session);
 
     const sessionContract = SessionLayer.contract(cookieApp);
     const viewerContract = ViewerLayer.contract(cookieApp);
     const cookieRouter = cookieApp.router({
       session: SessionLayer.procedure(cookieApp, sessionContract, session),
-      viewer: ViewerLayer.procedure(cookieApp, viewerContract, session, requireViewer),
+      viewer: ViewerLayer.procedure(cookieApp, viewerContract, requireViewer),
       greet: cookieApp
         .procedure()
         .input(wire.object({}))
         .output(wire.string)
-        .use(session)
         .use(requireViewer)
         // context.viewer is User here, not User | null
         .query(({ context }) => ok(`hi ${context.viewer.id}`)),
@@ -275,7 +274,7 @@ describe("layer factory", () => {
     });
     const cookieFetch = ((input: string | URL | Request, init?: RequestInit) =>
       cookieHandler(new Request(input, init))) as typeof globalThis.fetch;
-    const cookieClient = createBrowserClient({
+    const cookieClient = createFixtureClient({
       router: cookieRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: cookieFetch }),
     });
@@ -330,7 +329,7 @@ describe("layer factory", () => {
 
   test("a bundled middleware pulls its chain in once, deduplicated", async () => {
     const UserCodec = wire.object({ id: wire.string });
-    const NullableUserCodec = wire.union([UserCodec, wire.null] as const);
+    const NullableUserCodec = wire.union([UserCodec, wire.null]);
     const SessionLayer = defineLayer({
       name: "session-c",
       key: "viewer",
@@ -376,7 +375,7 @@ describe("layer factory", () => {
     });
     const cookieFetch = ((input: string | URL | Request, init?: RequestInit) =>
       cookieHandler(new Request(input, init))) as typeof globalThis.fetch;
-    const cookieClient = createBrowserClient({
+    const cookieClient = createFixtureClient({
       router: cookieRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: cookieFetch }),
     });
@@ -390,9 +389,39 @@ describe("layer factory", () => {
     expect(sessionRuns).toBe(2); // once more, not twice more
   });
 
+  test("a refined context procedure carries the whole composed error map", async () => {
+    const UserCodec = wire.object({ id: wire.string });
+    const SessionLayer = defineLayer({
+      name: "fallible-session",
+      key: "viewer",
+      provides: wire.union([UserCodec, wire.null]),
+      errors: { Unauthorized },
+    });
+    const ViewerLayer = SessionLayer.require({
+      name: "fallible-viewer",
+      provides: UserCodec,
+      errors: { TripNotFound },
+      refine: ({ value, errors }) =>
+        value === null ? err(errors.TripNotFound({ docId: "viewer" })) : ok(value),
+    });
+    const app = rpc.context<{}>();
+    const session = SessionLayer.middleware(app, () => ok({ id: "u_composed" }));
+    const viewer = ViewerLayer.middleware(app, session);
+    const contract = ViewerLayer.contract(app);
+    const procedure = ViewerLayer.procedure(app, contract, viewer);
+
+    expect(Object.values(contract._def.definitions).map((definition) => definition.tag)).toEqual([
+      "auth/unauthorized",
+      "trip/not-found",
+    ]);
+    expect(await executeProcedure(procedure, {}, { context: {} })).toEqual(
+      ok({ id: "u_composed" }),
+    );
+  });
+
   test("sign back in: re-established layer value auto-resumes held operations", async () => {
     const UserCodec = wire.object({ id: wire.string });
-    const NullableUserCodec = wire.union([UserCodec, wire.null] as const);
+    const NullableUserCodec = wire.union([UserCodec, wire.null]);
     const SessionLayer2 = defineLayer({
       name: "session-resume",
       key: "viewer",
@@ -424,7 +453,7 @@ describe("layer factory", () => {
         .query(({ context }) => ok(`secret #${++serial} for ${context.viewer.id}`)),
     });
     const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
-    const client2 = createBrowserClient({
+    const client2 = createFixtureClient({
       router: router2,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -493,7 +522,7 @@ describe("layer factory", () => {
     const SessionLayer = defineLayer({
       name: "session-b",
       key: "viewer",
-      provides: wire.union([wire.object({}), wire.null] as const),
+      provides: wire.union([wire.object({}), wire.null]),
       errors: {},
     });
     expect(() =>

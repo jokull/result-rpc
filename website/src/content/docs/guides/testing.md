@@ -34,7 +34,7 @@ required. The examples run their full React trees this way:
 const handler = createFetchHandler({ router, createContext: () => context });
 
 const client = createBrowserClient({
-  router,
+  contract: appContract,
   transport: fetchTransport({
     url: "https://example.test/rpc",
     fetch: (input, init) => handler(new Request(input, init)),

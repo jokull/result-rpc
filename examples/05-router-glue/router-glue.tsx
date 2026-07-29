@@ -1,24 +1,25 @@
 /**
  * Userland glue: shells + TanStack Router in ~60 lines.
  *
- * This used to be a package export (`result-rpc/router`) and was demoted on
- * purpose: shells are just providers and hooks, so they compose with any
- * router without the library knowing routers exist. This file is the whole
- * integration — copy it into an app and own it.
+ * Shells are providers and hooks, so they compose with any router without the
+ * library knowing routers exist. This file is the whole integration — copy it
+ * into an app and own it.
  */
 import { createElement, type ReactNode } from "react";
 import { Outlet, RouterProvider, type AnyRouter } from "@tanstack/react-router";
 import type { QueryRuntime } from "../../src/react/index.js";
 import {
-  getLayerProcedureResolver,
-  ResultRpcProvider,
+  prefetchLayer,
+  type ResultRpcProviderProps,
+  type AnyLayerShell,
   type AnyShell,
+  type LayerShellClient,
 } from "../../src/react/index.js";
 import { createQueryRuntime } from "../../src/query/runtime.js";
 
 export interface ResultRouterContext<TClient = unknown> {
   readonly client: TClient;
-  readonly runtime: QueryRuntime;
+  readonly runtime: QueryRuntime<TClient>;
 }
 
 export interface RouteShellOptions {
@@ -33,7 +34,10 @@ export interface RouteShellOptions {
  */
 export interface ShellRouteFragment {
   readonly component: () => ReactNode;
-  readonly loader?: (args: { readonly context: ResultRouterContext }) => Promise<unknown>;
+}
+
+export interface LayerShellRouteFragment<TClient> extends ShellRouteFragment {
+  readonly loader: (args: { readonly context: ResultRouterContext<TClient> }) => Promise<unknown>;
 }
 
 export const routeShell = (
@@ -48,19 +52,32 @@ export const routeShell = (
   };
   const component = () =>
     createElement(
-      shell.Provider as (props: { children?: ReactNode; fallback?: ReactNode }) => ReactNode,
+      shell.Provider,
       options.pending === undefined ? {} : { fallback: options.pending },
       content(),
     );
-  const resolver = getLayerProcedureResolver(shell);
-  if (!resolver) return { component };
+  return { component };
+};
+
+export const routeLayerShell = <TShell extends AnyLayerShell>(
+  shell: TShell,
+  options: RouteShellOptions = {},
+): LayerShellRouteFragment<LayerShellClient<TShell>> => {
+  const content = () => {
+    const inner: ReactNode = options.component
+      ? createElement(options.component)
+      : createElement(Outlet);
+    return options.layout ? options.layout(inner) : inner;
+  };
+  const component = () =>
+    createElement(
+      shell.Provider,
+      options.pending === undefined ? {} : { fallback: options.pending },
+      content(),
+    );
   return {
     component,
-    loader: ({ context }: { context: ResultRouterContext }) =>
-      (context.runtime.prefetch as (procedure: unknown, input: unknown) => Promise<unknown>)(
-        resolver(context.client),
-        {},
-      ),
+    loader: ({ context }) => prefetchLayer(context.runtime, shell, context.client),
   };
 };
 
@@ -76,17 +93,19 @@ export const createResultRouter = <TClient extends object, TRouter extends AnyRo
   };
 };
 
-export const ResultRouterProvider = <TClient, TRouter extends AnyRouter>({
+export const ResultRouterProvider = <TClient extends object, TRouter extends AnyRouter>({
   world,
+  provider: Provider,
 }: {
   readonly world: {
-    readonly runtime: QueryRuntime;
+    readonly runtime: QueryRuntime<TClient>;
     readonly router: TRouter;
     readonly client: TClient;
   };
+  readonly provider: (props: ResultRpcProviderProps<TClient>) => ReactNode;
 }): ReactNode =>
   createElement(
-    ResultRpcProvider,
+    Provider,
     { runtime: world.runtime },
     createElement(RouterProvider, { router: world.router }),
   );

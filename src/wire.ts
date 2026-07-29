@@ -30,6 +30,49 @@ export type WireValue =
   | ReadonlySet<WireValue>
   | { readonly [key: string]: WireValue };
 
+/** Runtime counterpart of {@link WireValue}, used at untrusted wire boundaries. */
+export const isWireValue = (value: unknown, seen = new WeakSet<object>()): value is WireValue => {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint"
+  ) {
+    return true;
+  }
+  if (typeof value !== "object") return false;
+  if (
+    value instanceof Date ||
+    value instanceof RegExp ||
+    value instanceof URL ||
+    value instanceof URLSearchParams ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value)
+  ) {
+    return true;
+  }
+  if (seen.has(value)) return true;
+  seen.add(value);
+  if (Array.isArray(value)) return value.every((entry) => isWireValue(entry, seen));
+  if (value instanceof Map) {
+    for (const [key, entry] of value) {
+      if (!isWireValue(key, seen) || !isWireValue(entry, seen)) return false;
+    }
+    return true;
+  }
+  if (value instanceof Set) {
+    for (const entry of value) {
+      if (!isWireValue(entry, seen)) return false;
+    }
+    return true;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every((entry) => isWireValue(entry, seen));
+};
+
 export interface CodecIssue {
   readonly path: readonly (string | number)[];
   readonly message: string;
@@ -41,9 +84,17 @@ export type DecodeResult<T> =
 
 export interface WireCodec<Input, Encoded extends WireValue = WireValue> {
   readonly kind: string;
-  encode(input: Input): DecodeResult<Encoded>;
-  decode(value: unknown): DecodeResult<Input>;
+  readonly encode: (input: Input) => DecodeResult<Encoded>;
+  readonly decode: (value: unknown) => DecodeResult<Input>;
 }
+
+// `any` is intentional for runtime codec registries; concrete codecs recover
+// both associated types through `InputOf` and `EncodedOf` before use.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyWireCodec = WireCodec<any, any>;
+
+/** An object with no string properties; unlike `{}`, primitives do not satisfy it. */
+export type EmptyObject = Readonly<Record<string, never>>;
 
 /**
  * Preserve an explicit `undefined` when a codec accepts it. When it does not,
@@ -60,8 +111,7 @@ export const encodeProcedureInput = <TInput, TEncoded extends WireValue>(
 
 export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, WireValue> ? TInput : never;
 
-export type EncodedOf<TCodec> =
-  TCodec extends WireCodec<unknown, infer TEncoded> ? TEncoded : never;
+export type EncodedOf<TCodec> = TCodec extends WireCodec<any, infer TEncoded> ? TEncoded : never;
 
 const success = <T>(value: T): DecodeResult<T> => ({ ok: true, value });
 
@@ -202,16 +252,18 @@ const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
   };
 };
 
-const serializable = <T>(): WireCodec<T, T & WireValue> => ({
+export type WireGuard<T> = (value: unknown) => value is T;
+
+const serializable = <T>(guard: WireGuard<T>): WireCodec<T, T & WireValue> => ({
   kind: "serializable",
   encode: (input) =>
-    isSerializable(input)
+    guard(input) && isWireValue(input)
       ? success(input as T & WireValue)
-      : failure("Expected a value supported by the wire serializer"),
+      : failure("Expected a validated value supported by the wire serializer"),
   decode: (value) =>
-    isSerializable(value)
-      ? success(value as T)
-      : failure("Expected a value supported by the wire serializer"),
+    guard(value) && isWireValue(value)
+      ? success(value)
+      : failure("Expected a validated value supported by the wire serializer"),
 });
 
 const nullCodec: WireCodec<null, null> = {
@@ -280,15 +332,11 @@ const array = <TInput, TEncoded extends WireValue>(
   },
 });
 
-type CodecInputUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> = InputOf<
-  TCodecs[number]
->;
+type CodecInputUnion<TCodecs extends readonly AnyWireCodec[]> = InputOf<TCodecs[number]>;
 
-type CodecEncodedUnion<TCodecs extends readonly WireCodec<unknown, WireValue>[]> = EncodedOf<
-  TCodecs[number]
->;
+type CodecEncodedUnion<TCodecs extends readonly AnyWireCodec[]> = EncodedOf<TCodecs[number]>;
 
-const union = <const TCodecs extends readonly WireCodec<unknown, WireValue>[]>(
+const union = <const TCodecs extends readonly AnyWireCodec[]>(
   codecs: TCodecs,
 ): WireCodec<CodecInputUnion<TCodecs>, CodecEncodedUnion<TCodecs>> => ({
   kind: "union",
@@ -308,7 +356,7 @@ const union = <const TCodecs extends readonly WireCodec<unknown, WireValue>[]>(
   },
 });
 
-export type CodecShape = Readonly<Record<string, WireCodec<unknown, WireValue>>>;
+export type CodecShape = Readonly<Record<string, AnyWireCodec>>;
 
 interface OptionalWireCodec<TInput, TEncoded extends WireValue> extends WireCodec<
   TInput | undefined,
@@ -325,13 +373,21 @@ type RequiredShapeKeys<TShape extends CodecShape> = Exclude<
   OptionalShapeKeys<TShape>
 >;
 
-export type ShapeInput<TShape extends CodecShape> = {
-  readonly [TKey in RequiredShapeKeys<TShape>]: InputOf<TShape[TKey]>;
-} & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<InputOf<TShape[TKey]>, undefined> };
+export type ShapeInput<TShape extends CodecShape> = keyof TShape extends never
+  ? EmptyObject
+  : {
+      readonly [TKey in RequiredShapeKeys<TShape>]: InputOf<TShape[TKey]>;
+    } & {
+      readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<InputOf<TShape[TKey]>, undefined>;
+    };
 
-export type ShapeEncoded<TShape extends CodecShape> = {
-  readonly [TKey in RequiredShapeKeys<TShape>]: EncodedOf<TShape[TKey]>;
-} & { readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<EncodedOf<TShape[TKey]>, undefined> };
+export type ShapeEncoded<TShape extends CodecShape> = keyof TShape extends never
+  ? EmptyObject
+  : {
+      readonly [TKey in RequiredShapeKeys<TShape>]: EncodedOf<TShape[TKey]>;
+    } & {
+      readonly [TKey in OptionalShapeKeys<TShape>]?: Exclude<EncodedOf<TShape[TKey]>, undefined>;
+    };
 
 const optional = <TInput, TEncoded extends WireValue>(
   codec: WireCodec<TInput, TEncoded>,

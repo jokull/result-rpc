@@ -15,14 +15,12 @@ export const fetchMemberIds = (fetchDirectory: () => Promise<unknown>) =>
     const payload = yield* await tryPromise(fetchDirectory, (cause) =>
       upstreamErrors.unreachable({ reason: String(cause) }),
     );
-    if (
-      typeof payload !== "object" ||
-      payload === null ||
-      !Array.isArray((payload as { memberIds?: unknown }).memberIds)
-    ) {
+    if (typeof payload !== "object" || payload === null) {
       return yield* err(upstreamErrors.malformed({ reason: "memberIds missing" }));
     }
-    return (payload as { memberIds: unknown[] }).memberIds.filter(
-      (id): id is string => typeof id === "string",
-    );
+    const memberIds = "memberIds" in payload ? payload.memberIds : undefined;
+    if (!Array.isArray(memberIds)) {
+      return yield* err(upstreamErrors.malformed({ reason: "memberIds missing" }));
+    }
+    return memberIds.filter((id): id is string => typeof id === "string");
   });

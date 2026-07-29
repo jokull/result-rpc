@@ -7,6 +7,7 @@
  */
 import { HeadContent, Link, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { isTaggedError } from "result-rpc";
 import { ResultRpcProvider } from "result-rpc/react";
 import { client } from "../rpc-client.js";
 import appCss from "../styles.css?url";
@@ -24,7 +25,7 @@ export const Route = createRootRoute({
   component: RootLayout,
   errorComponent: ({ error }) => (
     <p role="alert" className="error">
-      Broken: {(error as { _tag?: string })._tag ?? error.message}
+      Broken: {isTaggedError(error) ? error._tag : error.message}
     </p>
   ),
 });

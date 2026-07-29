@@ -14,11 +14,12 @@ import {
   createMemoryHistory,
   Outlet,
 } from "@tanstack/react-router";
-import { errorCatalog } from "../../src/index.js";
-import { boundaryShells, defineShell, layerShell, useResultClient } from "../../src/react/index.js";
+import { errorCatalog, isTaggedError } from "../../src/index.js";
+import { boundaryShells, createResultRpcReact, defineShell } from "../../src/react/index.js";
 import {
   createResultRouter,
   ResultRouterProvider,
+  routeLayerShell,
   routeShell,
   type ResultRouterContext,
 } from "./router-glue.js";
@@ -31,18 +32,24 @@ import {
 } from "../03-docs/domain.js";
 import type { DocClient } from "../03-docs/ui.js";
 
+const {
+  layerShell,
+  ResultRpcProvider: ScopedResultRpcProvider,
+  useResultClient,
+} = createResultRpcReact<DocClient>();
+
 // -- shells: one chain, defined at module level ----------------------------------------
 
 export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } = boundaryShells();
 
 export const SessionShell = layerShell(SessionLayer, {
   from: StaleShell,
-  procedure: (client: DocClient) => client.auth.whoami,
+  select: (client) => client.auth.whoami,
 });
 
 export const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: (client: DocClient) => client.auth.me,
+  select: (client) => client.auth.me,
   onError: () => void world.router.navigate({ to: "/signed-out" }),
 });
 
@@ -62,14 +69,14 @@ const rootRoute = createRootRouteWithContext<ResultRouterContext<DocClient>>()({
     </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
-    <p role="alert">Broken: {(error as { _tag?: string })._tag ?? "unknown"}</p>
+    <p role="alert">Broken: {isTaggedError(error) ? error._tag : "unknown"}</p>
   ),
 });
 
 const sessionRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "session",
-  ...routeShell(SessionShell, {
+  ...routeLayerShell(SessionShell, {
     pending: <p>starting…</p>,
     layout: (outlet) => (
       <>
@@ -95,7 +102,7 @@ const signedOutRoute = createRoute({
 const authedRoute = createRoute({
   getParentRoute: () => sessionRoute,
   id: "authed",
-  ...routeShell(ViewerShell, { pending: <p>signing in…</p> }),
+  ...routeLayerShell(ViewerShell, { pending: <p>signing in…</p> }),
 });
 
 const docRoute = createRoute({
@@ -137,7 +144,7 @@ const buildRouter = (context: ResultRouterContext<DocClient>, initialPath: strin
 
 export let world: {
   client: DocClient;
-  runtime: ResultRouterContext["runtime"];
+  runtime: ResultRouterContext<DocClient>["runtime"];
   router: ReturnType<typeof buildRouter>;
 };
 
@@ -150,7 +157,9 @@ export const makeWorld = (client: DocClient, initialPath = "/") =>
 // NOTE: rung 4 already claims the global Register augmentation; this example's
 // router is used through its concrete type instead.
 
-export const FrameworkApp = () => <ResultRouterProvider world={world} />;
+export const FrameworkApp = () => (
+  <ResultRouterProvider world={world} provider={ScopedResultRpcProvider} />
+);
 
 // -- components -----------------------------------------------------------------------------
 
@@ -192,7 +201,7 @@ const renameMessages = errorCatalog(
 
 function DocDetail() {
   const { docId } = docRoute.useParams();
-  const client = useResultClient<DocClient>();
+  const client = useResultClient();
   const viewer = ViewerShell.use();
   const doc = DocShell.useQuery(client.doc.byId, { id: docId });
   const rename = DocShell.useMutation(client.doc.rename);

@@ -76,7 +76,12 @@ const message = errorCatalog(
 
 Adding a definition to the map breaks every catalog missing the new tag. For
 inline one-offs, `matchError(result.error, { ...handlers })` gives the same
-exhaustiveness on a single value.
+exhaustiveness on a single value. At an `unknown` boundary, use the catalog's
+exact guard before projecting:
+
+```ts
+if (message.is(caught)) return message(caught);
+```
 
 The full composition surface — `gen` with `yield*`, `tryPromise`, `all`, the
 transform family — is covered in

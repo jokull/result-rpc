@@ -18,8 +18,8 @@ const work = join(here, ".work");
 const baselinePath = join(here, "baseline.json");
 const SIZES = [25, 50, 100];
 
-const fixture = (n) => {
-  let s = `import { rpc, wire, ok, error, defineModel } from "../../src/index.js";
+const contractFixture = (n) => {
+  let s = `import { rpc, wire, error, defineModel } from "../../src/index.js";
 import { createBrowserClient } from "../../src/client/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import type { RouterInputs, RouterOutputs } from "../../src/index.js";
@@ -34,18 +34,18 @@ export const q${i} = app.procedure()
   .input(wire.object({ id: wire.string, n: wire.number, f: wire.optional(wire.boolean) }))
   .output(wire.object({ v: V, list: wire.array(V), extra: wire.string }))
   .errors({ E${i} })
-  .query(({ input }) => ok({ v: { id: input.id, a: "x" }, list: [], extra: "e" }));
+  .query();
 export const m${i} = app.procedure()
   .input(wire.object({ id: wire.string, name: wire.string }))
   .output(M.select({ id: true, a: true, count: wire.number }))
   .errors({ E${i} })
-  .mutation(({ input }) => ok({ id: input.id, a: input.name, count: 1 }));
+  .mutation();
 `;
   }
-  s += `\nexport const router = app.router({\n`;
+  s += `\nexport const contract = app.contract({\n`;
   for (let i = 0; i < n; i++) s += `  g${i}: { q: q${i}, m: m${i} },\n`;
-  s += `});\nexport const client = createBrowserClient({ router, transport: fetchTransport({ url: "/rpc" }) });\n`;
-  s += `export type Inputs = RouterInputs<typeof router>;\nexport type Outputs = RouterOutputs<typeof router>;\n`;
+  s += `});\nexport const client = createBrowserClient({ contract, transport: fetchTransport({ url: "/rpc" }) });\n`;
+  s += `export type Inputs = RouterInputs<typeof contract>;\nexport type Outputs = RouterOutputs<typeof contract>;\n`;
   for (let i = 0; i < n; i++) {
     s += `export const r${i} = await client.g${i}.q({ id: "1", n: 1 });
 export const s${i} = r${i}.ok ? r${i}.value.v.a : r${i}.error._tag;\n`;
@@ -53,8 +53,48 @@ export const s${i} = r${i}.ok ? r${i}.value.v.a : r${i}.error._tag;\n`;
   return s;
 };
 
-const measure = (n) => {
-  writeFileSync(join(work, `f${n}.ts`), fixture(n));
+const shellFixture = (n) => {
+  let s = `import { rpc, wire, error } from "../../src/index.js";
+import { createBrowserClient } from "../../src/client/index.js";
+import { fetchTransport } from "../../src/client/transport.js";
+import { defineShell } from "../../src/react/index.js";
+const app = rpc.context<{ db: string }>();
+const Session = error({ tag: "shared/session", data: wire.object({ userId: wire.string }) });
+const Offline = error({ tag: "shared/offline", data: wire.object({ retryAt: wire.number }) });
+const Defect = error({ tag: "shared/defect", data: wire.object({ incidentId: wire.string }) });
+const AppShell = defineShell({ name: "app", claims: { Offline } });
+const DefectShell = defineShell({ name: "defect", from: AppShell, claims: { Defect } });
+const SessionShell = defineShell({ name: "session", from: DefectShell, claims: { Session } });
+`;
+  for (let i = 0; i < n; i++) {
+    s += `
+const E${i} = error({ tag: "domain/e${i}", data: wire.object({ id: wire.string }) });
+export const q${i} = app.procedure()
+  .input(wire.object({ id: wire.string }))
+  .output(wire.string)
+  .errors({ Session, Offline, Defect, E${i} })
+  .query();
+`;
+  }
+  s += `\nexport const contract = app.contract({\n`;
+  for (let i = 0; i < n; i++) s += `  g${i}: { q: q${i} },\n`;
+  s += `});\nexport const client = createBrowserClient({ contract, transport: fetchTransport({ url: "/rpc" }) });\n`;
+  for (let i = 0; i < n; i++) {
+    s += `declare const useQ${i}: typeof SessionShell.useQuery;
+export type Failure${i} = Extract<ReturnType<typeof useQ${i}<typeof client.g${i}.q>>, { readonly state: "failure" }>["error"]["_tag"];
+`;
+  }
+  return s;
+};
+
+const fixtures = {
+  contract: contractFixture,
+  shell: shellFixture,
+};
+
+const measure = (profile, n) => {
+  const filename = `${profile}-${n}.ts`;
+  writeFileSync(join(work, filename), fixtures[profile](n));
   writeFileSync(
     join(work, "tsconfig.json"),
     JSON.stringify(
@@ -65,12 +105,13 @@ const measure = (n) => {
           moduleResolution: "NodeNext",
           strict: true,
           noEmit: true,
+          jsx: "react-jsx",
           skipLibCheck: true,
           allowImportingTsExtensions: true,
           types: [],
           lib: ["ES2022", "DOM"],
         },
-        include: [`f${n}.ts`],
+        include: [filename],
       },
       null,
       2,
@@ -88,18 +129,24 @@ const measure = (n) => {
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 const results = {};
-for (const n of SIZES) results[n] = measure(n);
+for (const [profile] of Object.entries(fixtures)) {
+  const measurements = {};
+  for (const n of SIZES) measurements[n] = measure(profile, n);
+  const marginal = Math.round(
+    (measurements[SIZES.at(-1)].instantiations - measurements[SIZES[0]].instantiations) /
+      (SIZES.at(-1) - SIZES[0]),
+  );
+  results[profile] = { ...measurements, marginalInstantiationsPerUnit: marginal };
+}
 rmSync(work, { recursive: true, force: true });
 
-// Marginal cost per procedure between the smallest and largest run: the
-// number that must stay flat.
-const per = (a, b) => Math.round((results[b].instantiations - results[a].instantiations) / (b - a));
-const marginal = per(SIZES[0], SIZES.at(-1));
-const report = { ...results, marginalInstantiationsPerProcedure: marginal };
-console.log(JSON.stringify(report, null, 2));
+// Marginal cost between the smallest and largest run is the number that must
+// stay flat. A contract unit contains one query/mutation pair; a shell unit is
+// one query error union narrowed through a three-shell chain.
+console.log(JSON.stringify(results, null, 2));
 
 if (process.argv.includes("--update")) {
-  writeFileSync(baselinePath, JSON.stringify(report, null, 2) + "\n");
+  writeFileSync(baselinePath, JSON.stringify(results, null, 2) + "\n");
   console.log("baseline updated");
   process.exit(0);
 }
@@ -112,13 +159,20 @@ try {
   process.exit(0);
 }
 
-const drift =
-  (marginal - baseline.marginalInstantiationsPerProcedure) /
-  baseline.marginalInstantiationsPerProcedure;
-console.log(
-  `marginal/procedure: ${marginal} (baseline ${baseline.marginalInstantiationsPerProcedure}, ${(drift * 100).toFixed(1)}%)`,
-);
-if (drift > 0.15) {
-  console.error("REGRESSION: per-procedure type cost grew more than 15%");
-  process.exit(1);
+for (const [profile, measurement] of Object.entries(results)) {
+  const expected = baseline[profile]?.marginalInstantiationsPerUnit;
+  if (typeof expected !== "number") {
+    console.error(`no ${profile} baseline yet — run with --update`);
+    process.exitCode = 1;
+    continue;
+  }
+  const actual = measurement.marginalInstantiationsPerUnit;
+  const drift = (actual - expected) / expected;
+  console.log(
+    `${profile} marginal/unit: ${actual} (baseline ${expected}, ${(drift * 100).toFixed(1)}%)`,
+  );
+  if (drift > 0.15) {
+    console.error(`REGRESSION: ${profile} type cost grew more than 15%`);
+    process.exitCode = 1;
+  }
 }

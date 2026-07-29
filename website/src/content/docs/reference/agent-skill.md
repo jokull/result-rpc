@@ -54,7 +54,7 @@ wrong:
   [client boundary](/concepts/client-boundary/) rule, because a value import of
   server code ships handlers and secrets to the browser.
 - Errors are declared, closed, and returned — not thrown.
-- The contract is the error registry; shells claim by tag.
+- The contract is the error registry; shells index by tag and claim exact definitions.
 - Mutations declare their blast radius in the contract.
 
 Everything else it defers to the page map, fetched as Markdown on demand.

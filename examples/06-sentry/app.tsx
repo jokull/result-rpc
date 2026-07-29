@@ -13,93 +13,15 @@
  */
 import {
   defectErrors,
-  defineErrors,
-  err,
   errorCatalog,
-  ok,
   pickErrors,
-  rpc,
   staleErrors,
   transportErrors,
-  wire,
 } from "../../src/index.js";
-import { createFetchHandler } from "../../src/server/index.js";
-import { createBrowserClient, fetchTransport, type ClientEvent } from "../../src/client/index.js";
 import { defineShell, ResultRpcProvider } from "../../src/react/index.js";
+import { billingErrors } from "./contract.js";
+import type { BillingClient } from "./client.js";
 import type { SentryLike } from "./sentry.js";
-
-// -- shared -------------------------------------------------------------------
-
-export const billingErrors = defineErrors("billing", {
-  cardDeclined: { data: wire.object({ code: wire.string }), httpStatus: "payment-required" },
-  planExpired: { httpStatus: "forbidden", severity: "warning" },
-});
-
-// -- server -------------------------------------------------------------------
-
-const app = rpc.context<{}>();
-
-export const router = app.router({
-  charge: app
-    .procedure()
-    .input(wire.object({ card: wire.string }))
-    .output(wire.string)
-    .errors(billingErrors)
-    .mutation(({ input, errors }) => {
-      if (input.card === "declined") return err(errors.cardDeclined({ code: "51" }));
-      if (input.card === "expired-plan") return err(errors.planExpired());
-      if (input.card === "boom") throw new Error("charge processor crashed");
-      return ok(`charged ${input.card}`);
-    }),
-});
-
-export const createHandler = (sentry: SentryLike) =>
-  createFetchHandler({
-    router,
-    createContext: () => ({}),
-    // 3. declared errors: policy included, severity routes the sink
-    onError: ({ error, policy, procedurePath, httpStatus }) => {
-      sentry.addBreadcrumb({
-        category: "rpc.server",
-        message: `${procedurePath ?? "?"} -> ${error._tag}`,
-        level: policy?.severity === "error" ? "error" : "warning",
-        data: { httpStatus },
-      });
-      if (policy?.severity === "warning") {
-        sentry.captureMessage(`${procedurePath}: ${error._tag}`, "warning");
-      }
-    },
-    // 4. defects: the only tap that sees causes; tagged with the incident id
-    onInternalError: ({ incidentId, cause, procedurePath, phase }) => {
-      sentry.captureException(cause, {
-        tags: {
-          incidentId,
-          phase,
-          ...(procedurePath === undefined ? {} : { procedurePath }),
-        },
-      });
-    },
-  });
-
-// -- client -------------------------------------------------------------------
-
-const levelFor = (event: ClientEvent): "info" | "warning" =>
-  event.type === "failure" || event.type === "claimed" ? "warning" : "info";
-
-export const makeObservedClient = (sentry: SentryLike, fetch: typeof globalThis.fetch) =>
-  createBrowserClient({
-    router,
-    transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
-    // 1. wire breadcrumbs — safe to forward verbatim: no values in the stream
-    onEvent: (event) =>
-      sentry.addBreadcrumb({
-        category: `rpc.${event.type}`,
-        message: "path" in event ? event.path : "",
-        level: levelFor(event),
-        data: event as unknown as Record<string, unknown>,
-      }),
-  });
-export type BillingClient = ReturnType<typeof makeObservedClient>;
 
 // -- shells ---------------------------------------------------------------------
 

@@ -24,7 +24,6 @@ and tagged error data transparently preserve:
 - `undefined`, `NaN`, infinity, and `-0`
 - `Date`, `BigInt`, `RegExp`, `URL`, and `URLSearchParams`
 - `Map`, `Set`, `ArrayBuffer`, and typed arrays
-- Temporal values when `Temporal` is available in both runtimes
 - cycles and repeated object identity
 
 The error prototype is not serialized as bytes or guessed from a constructor
@@ -42,11 +41,11 @@ const RichDoc = wire.object({
 });
 ```
 
-For a recursive or otherwise richer application type, validate serializer
-support at the boundary:
+For a recursive or otherwise richer application type, supply an actual type
+guard. Serializer support alone cannot prove an application shape:
 
 ```ts
-const Graph = wire.serializable<DocGraph>();
+const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value));
 ```
 
 Functions, symbols, unsupported application class instances, and arbitrary

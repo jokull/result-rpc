@@ -10,10 +10,9 @@ import "server-only";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
 import { err, matchError, ok } from "result-rpc";
 import { tryDb } from "result-rpc/db";
-import { createFetchHandler } from "result-rpc/server";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
 import {
   addSpotContract,
-  app,
   feedContract,
   likeSpotContract,
   overviewContract,
@@ -25,6 +24,8 @@ export interface AppContext {
   db: Db;
 }
 
+const server = serverRpc.context<AppContext>();
+
 /**
  * Canary for the client-boundary proof: this constant lives inside a
  * handler closure. Build the client bundle and grep for it — it must be
@@ -34,7 +35,7 @@ const SERVER_SECRET = "NEXT_SECRET_marker_do_not_ship";
 
 const PAGE_SIZE = 8;
 
-const feed = app.implement(feedContract).handler(async ({ input, context }) => {
+const feed = server.implement(feedContract).handler(async ({ input, context }) => {
   // input is `{ list: {}, cursor: string | null }` — the paginate split.
   const rows = await context.db
     .select()
@@ -49,13 +50,13 @@ const feed = app.implement(feedContract).handler(async ({ input, context }) => {
   });
 });
 
-const spotById = app.implement(spotByIdContract).handler(async ({ input, errors, context }) => {
+const spotById = server.implement(spotByIdContract).handler(async ({ input, errors, context }) => {
   const row = (await context.db.select().from(spots).where(eq(spots.id, input.id)).limit(1))[0];
   if (!row) return err(errors.notFound({ spotId: input.id }));
   return ok(row);
 });
 
-const likeSpot = app.implement(likeSpotContract).handler(async ({ input, errors, context }) => {
+const likeSpot = server.implement(likeSpotContract).handler(async ({ input, errors, context }) => {
   // Reference the canary against runtime input so the minifier cannot
   // constant-fold it away — it must survive in the SERVER bundle only.
   if (input.id === SERVER_SECRET) {
@@ -72,7 +73,7 @@ const likeSpot = app.implement(likeSpotContract).handler(async ({ input, errors,
   return ok(updated);
 });
 
-const addSpot = app.implement(addSpotContract).handler(async ({ input, errors, context }) => {
+const addSpot = server.implement(addSpotContract).handler(async ({ input, errors, context }) => {
   const row = {
     id: `spot-${Date.now().toString(36)}`,
     name: input.name,
@@ -103,7 +104,7 @@ const addSpot = app.implement(addSpotContract).handler(async ({ input, errors, c
   return ok(inserted.value[0]!);
 });
 
-const overview = app.implement(overviewContract).handler(async ({ context }) => {
+const overview = server.implement(overviewContract).handler(async ({ context }) => {
   const totals = (
     await context.db.select({ spotCount: count(), totalLikes: sum(spots.likes) }).from(spots)
   )[0]!;
@@ -122,7 +123,7 @@ const overview = app.implement(overviewContract).handler(async ({ context }) => 
   });
 });
 
-export const router = app.router({
+export const router = server.router({
   spots: { feed, byId: spotById, like: likeSpot, add: addSpot },
   stats: { overview },
 });

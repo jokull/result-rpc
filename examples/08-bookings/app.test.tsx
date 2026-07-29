@@ -5,8 +5,14 @@ import { err, ok } from "../../src/index.js";
 import { makeClient, type AppClient } from "./client.js";
 import { seedDb, TODAY } from "./world.js";
 import { makeHandler, type AppContext } from "./server.js";
-import { ResultRpcProvider } from "../../src/react/index.js";
-import { App, BoundaryProvider, Dashboard, ReviewsPanel, StaleShell } from "./app.tsx";
+import {
+  App,
+  BoundaryProvider,
+  Dashboard,
+  ResultRpcProvider,
+  ReviewsPanel,
+  StaleShell,
+} from "./app.tsx";
 import { hotelErrors, tourErrors } from "./errors.js";
 
 // -- world ----------------------------------------------------------------------

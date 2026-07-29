@@ -61,116 +61,121 @@ import {
   collectEntities,
   entityBrandOf,
   entityIdFor,
+  entityIdOf,
   entityKey,
   mergeByExistingKeys,
   patchEntity,
   shareStructural,
   type AnyModel,
   type ModelKeyInput,
+  type ModelProjection,
   type ModelValue,
 } from "../model.js";
 import type { ResultSubscription } from "../client/client.js";
+import type {
+  ClientPaginationTypes,
+  ClientProcedureError,
+  ClientProcedureInput,
+  ClientProcedureOutput,
+  ClientProcedurePagination,
+  ProcedureClientTypes,
+  ProcedureClientTypeCarrier,
+} from "../client/base-client.js";
 import { isCancelled } from "../client/transport.js";
 import type { ErrorDefinitionMap } from "../server/contract.js";
 export type ResultQueryKey = readonly [path: string, encodedInput: string];
 
-type ProcedureClientLike = (
+export type ProcedureClientLike = ((
   input: any,
   options?: { readonly signal?: AbortSignal },
-) => Promise<Result<any, AnyTaggedError>>;
-type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
+) => Promise<Result<any, AnyTaggedError>>) &
+  ProcedureClientTypeCarrier<
+    ProcedureClientTypes<any, any, AnyTaggedError, "query" | "mutation", any, never>
+  >;
+export type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
 export type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
-type SubscriptionProcedureClientLike = ((
+export type SubscriptionProcedureClientLike = ((
   input: any,
   options?: { readonly signal?: AbortSignal },
-) => ResultSubscription<any, AnyTaggedError>) & { readonly $kind: "subscription" };
+) => ResultSubscription<any, AnyTaggedError>) & {
+  readonly $kind: "subscription";
+} & ProcedureClientTypeCarrier<
+    ProcedureClientTypes<any, any, AnyTaggedError, "subscription", any, never>
+  >;
 
-export type SubscriptionClientInput<TProcedureClient> = TProcedureClient extends (
-  input: infer TInput,
-  ...rest: any[]
-) => unknown
-  ? TInput
-  : never;
-export type SubscriptionClientOutput<TProcedureClient> = TProcedureClient extends (
-  ...args: any[]
-) => ResultSubscription<infer T, any>
-  ? T
-  : never;
-export type SubscriptionClientError<TProcedureClient> = TProcedureClient extends (
-  ...args: any[]
-) => ResultSubscription<any, infer E>
-  ? E
-  : never;
+export type SubscriptionClientInput<TProcedureClient> = ClientProcedureInput<TProcedureClient>;
+export type SubscriptionClientOutput<TProcedureClient> = ClientProcedureOutput<TProcedureClient>;
+export type SubscriptionClientError<TProcedureClient> = ClientProcedureError<TProcedureClient>;
 
-export type ProcedureClientInput<TProcedureClient> = TProcedureClient extends (
-  input: infer TInput,
-  ...rest: any[]
-) => unknown
-  ? TInput
-  : never;
-
-export type ProcedureClientResult<TProcedureClient> = TProcedureClient extends (
-  ...args: any[]
-) => Promise<infer TReturn>
-  ? TReturn
-  : never;
-
-export type ProcedureClientOutput<TProcedureClient> =
-  ProcedureClientResult<TProcedureClient> extends Result<infer TOutput, AnyTaggedError>
-    ? TOutput
-    : never;
-
-export type ProcedureClientError<TProcedureClient> =
-  ProcedureClientResult<TProcedureClient> extends Result<unknown, infer TError> ? TError : never;
+export type ProcedureClientInput<TProcedureClient> = ClientProcedureInput<TProcedureClient>;
+export type ProcedureClientResult<TProcedureClient> = Result<
+  ClientProcedureOutput<TProcedureClient>,
+  ClientProcedureError<TProcedureClient>
+>;
+export type ProcedureClientOutput<TProcedureClient> = ClientProcedureOutput<TProcedureClient>;
+export type ProcedureClientError<TProcedureClient> = ClientProcedureError<TProcedureClient>;
 
 /** A client function minted for a `.paginate()` procedure. */
 export type PaginatedProcedureClientLike = ((
   input: PageRequest<any, any>,
   options?: { readonly signal?: AbortSignal },
-) => Promise<Result<Page<any, any>, AnyTaggedError>>) & { readonly $kind: "query" };
+) => Promise<Result<Page<any, any>, AnyTaggedError>>) & {
+  readonly $kind: "query";
+} & ProcedureClientTypeCarrier<
+    ProcedureClientTypes<
+      PageRequest<any, any>,
+      Page<any, any>,
+      AnyTaggedError,
+      "query",
+      any,
+      ClientPaginationTypes<any, any, any>
+    >
+  >;
 
-export type PaginatedClientListInput<TProcedureClient> = TProcedureClient extends (
-  input: PageRequest<infer TListInput, any>,
-  ...rest: any[]
-) => unknown
-  ? TListInput
-  : never;
-export type PaginatedClientCursor<TProcedureClient> = TProcedureClient extends (
-  input: PageRequest<any, infer TCursor>,
-  ...rest: any[]
-) => unknown
-  ? TCursor
-  : never;
-export type PaginatedClientItem<TProcedureClient> = TProcedureClient extends (
-  ...args: any[]
-) => Promise<Result<Page<infer TItem, any>, any>>
-  ? TItem
-  : never;
+type QueryKeyProcedureClientLike = QueryProcedureClientLike | PaginatedProcedureClientLike;
+
+export type PaginatedClientListInput<TProcedureClient> =
+  ClientProcedurePagination<TProcedureClient> extends ClientPaginationTypes<
+    infer TListInput,
+    any,
+    any
+  >
+    ? TListInput
+    : never;
+export type PaginatedClientCursor<TProcedureClient> =
+  ClientProcedurePagination<TProcedureClient> extends ClientPaginationTypes<any, infer TCursor, any>
+    ? TCursor
+    : never;
+export type PaginatedClientItem<TProcedureClient> =
+  ClientProcedurePagination<TProcedureClient> extends ClientPaginationTypes<any, any, infer TItem>
+    ? TItem
+    : never;
 
 export type FetchState = "idle" | "fetching" | "paused";
 
-interface QueryControls<T, E extends AnyTaggedError> {
+interface QueryControls {
   readonly fetch: FetchState;
   readonly failureCount: number;
   readonly isStale: boolean;
   readonly updatedAt: number;
-  readonly refetch: () => Promise<QueryState<T, E>>;
+  /** Starts a fresh fetch. Observe the returned state through this observer/hook. */
+  readonly refetch: () => Promise<void>;
 }
 
 export type QueryState<T, E extends AnyTaggedError> =
-  | (QueryControls<T, E> &
+  | (QueryControls &
       Readonly<{
         state: "pending";
         value?: undefined;
         error?: undefined;
       }>)
-  | (QueryControls<T, E> &
+  | (QueryControls &
       Readonly<{
         state: "success";
         value: T;
         error?: undefined;
       }>)
-  | (QueryControls<T, E> &
+  | (QueryControls &
       Readonly<{
         state: "failure";
         error: E;
@@ -182,7 +187,7 @@ export interface QueryOptions<E extends AnyTaggedError> {
   readonly enabled?: boolean;
   readonly staleTime?: number;
   readonly gcTime?: number;
-  readonly retry?: false | number | ((error: E, failureCount: number) => boolean);
+  readonly retry?: false | number | ((error: E, failureCount: number) => boolean) | undefined;
 }
 
 export interface ResultQueryObserver<T, E extends AnyTaggedError> {
@@ -193,7 +198,7 @@ export interface ResultQueryObserver<T, E extends AnyTaggedError> {
   readonly destroy: () => void;
 }
 
-interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
+interface PaginatedControls {
   readonly fetch: FetchState;
   readonly failureCount: number;
   readonly isStale: boolean;
@@ -203,9 +208,9 @@ interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
   readonly hasNext: boolean;
   readonly fetchingNext: boolean;
   /** Sequentially refetches EVERY loaded page — the whole list converges. */
-  readonly refetch: () => Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly refetch: () => Promise<void>;
   /** Loads the next page; a no-op while already fetching or exhausted. */
-  readonly fetchNext: () => Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly fetchNext: () => Promise<void>;
 }
 
 /**
@@ -214,20 +219,20 @@ interface PaginatedControls<TItem, TCursor, E extends AnyTaggedError> {
  * between fetches appears once — its fields stay fresh via entity patches
  * regardless of which page carried it).
  */
-export type PaginatedState<TItem, TCursor, E extends AnyTaggedError> =
-  | (PaginatedControls<TItem, TCursor, E> &
+export type PaginatedState<TItem, E extends AnyTaggedError> =
+  | (PaginatedControls &
       Readonly<{
         state: "pending";
         rows?: undefined;
         error?: undefined;
       }>)
-  | (PaginatedControls<TItem, TCursor, E> &
+  | (PaginatedControls &
       Readonly<{
         state: "success";
         rows: readonly TItem[];
         error?: undefined;
       }>)
-  | (PaginatedControls<TItem, TCursor, E> &
+  | (PaginatedControls &
       Readonly<{
         state: "failure";
         error: E;
@@ -235,12 +240,12 @@ export type PaginatedState<TItem, TCursor, E extends AnyTaggedError> =
         previous?: readonly TItem[];
       }>);
 
-export interface ResultPaginatedObserver<TItem, TCursor, E extends AnyTaggedError> {
+export interface ResultPaginatedObserver<TItem, E extends AnyTaggedError> {
   readonly key: ResultQueryKey;
-  readonly getCurrentState: () => PaginatedState<TItem, TCursor, E>;
+  readonly getCurrentState: () => PaginatedState<TItem, E>;
   readonly subscribe: (listener: () => void) => () => void;
-  readonly refetch: () => Promise<PaginatedState<TItem, TCursor, E>>;
-  readonly fetchNext: () => Promise<PaginatedState<TItem, TCursor, E>>;
+  readonly refetch: () => Promise<PaginatedState<TItem, E>>;
+  readonly fetchNext: () => Promise<PaginatedState<TItem, E>>;
   readonly destroy: () => void;
 }
 
@@ -286,8 +291,11 @@ export interface MutationOptions<
   TError extends AnyTaggedError,
   TContext = undefined,
 > {
-  readonly retry?: false | number | ((error: TError, failureCount: number) => boolean);
-  readonly optimistic?: (input: TInput, cache: QueryCache) => TContext | Promise<TContext>;
+  readonly retry?: false | number | ((error: TError, failureCount: number) => boolean) | undefined;
+  readonly optimistic?: (
+    input: TInput,
+    cache: QueryCache,
+  ) => TContext | undefined | Promise<TContext | undefined>;
   readonly onSuccess?: (value: TOutput, input: TInput) => void | Promise<void>;
   readonly onFailure?: (
     error: TError,
@@ -332,18 +340,21 @@ export interface QueryCache {
     procedure: TProcedureClient,
   ): Promise<void>;
   /** Invalidates every cached query whose result contains the entity. */
-  invalidateEntity(model: AnyModel, id: ModelKeyInput): Promise<void>;
+  invalidateEntity<TModel extends AnyModel>(
+    model: TModel,
+    id: ModelKeyInput<TModel>,
+  ): Promise<void>;
   /**
    * Patches the entity in place everywhere it appears — one call updates the
    * detail view, every list row, the header. The updater receives the cached
-   * value (possibly a projection; treat it as the canonical shape and spread)
-   * and its result is merged by the projection rule. Returns a rollback,
+   * value as an identity-bearing projection: non-key model fields are optional.
+   * Its partial result is merged by the projection rule. Returns a rollback,
    * composing with `optimistic:` exactly like `update`.
    */
   updateEntity<TModel extends AnyModel>(
     model: TModel,
-    id: ModelKeyInput,
-    updater: (current: ModelValue<TModel>) => ModelValue<TModel>,
+    id: ModelKeyInput<TModel>,
+    updater: (current: ModelProjection<TModel>) => Partial<ModelValue<TModel>>,
   ): () => void;
 }
 
@@ -370,6 +381,30 @@ export interface SubscriptionState<T, E extends AnyTaggedError> {
   readonly reconnect: () => void;
   readonly close: () => void;
 }
+
+/** Hook/observer state derived directly from a concrete query client procedure. */
+export type QueryStateOf<TProcedureClient extends QueryProcedureClientLike> = QueryState<
+  ProcedureClientOutput<TProcedureClient>,
+  ProcedureClientError<TProcedureClient>
+>;
+
+/** Paginated state derived directly from a concrete paginated client procedure. */
+export type PaginatedStateOf<TProcedureClient extends PaginatedProcedureClientLike> =
+  PaginatedState<PaginatedClientItem<TProcedureClient>, ProcedureClientError<TProcedureClient>>;
+
+/** Mutation state derived directly from a concrete mutation client procedure. */
+export type MutationStateOf<TProcedureClient extends MutationProcedureClientLike> = MutationState<
+  ProcedureClientInput<TProcedureClient>,
+  ProcedureClientOutput<TProcedureClient>,
+  ProcedureClientError<TProcedureClient>
+>;
+
+/** Subscription state derived directly from a concrete subscription client procedure. */
+export type SubscriptionStateOf<TProcedureClient extends SubscriptionProcedureClientLike> =
+  SubscriptionState<
+    SubscriptionClientOutput<TProcedureClient>,
+    SubscriptionClientError<TProcedureClient>
+  >;
 
 export interface ResultSubscriptionObserver<T, E extends AnyTaggedError> {
   readonly getCurrentState: () => SubscriptionState<T, E>;
@@ -442,9 +477,9 @@ const defaultRetryDelay = (
 
 const project = <T, E extends AnyTaggedError>(
   observed: QueryObserverResult<T, E>,
-  refetch: () => Promise<QueryState<T, E>>,
+  refetch: () => Promise<void>,
 ): QueryState<T, E> => {
-  const controls: QueryControls<T, E> = {
+  const controls: QueryControls = {
     fetch: observed.fetchStatus,
     failureCount: observed.failureCount,
     isStale: observed.isStale,
@@ -463,7 +498,7 @@ const project = <T, E extends AnyTaggedError>(
   return {
     ...controls,
     state: "failure",
-    error: observed.error as E,
+    error: observed.error,
     ...(observed.data === undefined ? {} : { previous: observed.data }),
   };
 };
@@ -475,21 +510,18 @@ const project = <T, E extends AnyTaggedError>(
  * field freshness is identity-driven (patches reach the retained row), so
  * dropping the later copy loses nothing.
  */
-const flattenPages = (data: unknown): readonly unknown[] | undefined => {
-  if (data === null || typeof data !== "object" || !("pages" in data)) return undefined;
-  const pages = (data as { readonly pages: unknown }).pages;
-  if (!Array.isArray(pages)) return undefined;
-  const rows: unknown[] = [];
+const flattenPages = <TItem, TCursor>(
+  data: InfiniteData<Page<TItem, TCursor>> | undefined,
+): readonly TItem[] | undefined => {
+  if (data === undefined) return undefined;
+  const rows: TItem[] = [];
   const seen = new Set<string>();
-  for (const page of pages as readonly unknown[]) {
-    if (page === null || typeof page !== "object" || !("items" in page)) continue;
-    const items = (page as { readonly items: unknown }).items;
-    if (!Array.isArray(items)) continue;
-    for (const item of items as readonly unknown[]) {
+  for (const page of data.pages) {
+    for (const item of page.items) {
       if (item !== null && typeof item === "object") {
         const model = entityBrandOf(item);
         if (model) {
-          const id = entityIdFor(model, item as Readonly<Record<string, string | number>>);
+          const id = entityIdOf(item, model);
           if (id !== undefined) {
             const key = entityKey(model.name, id);
             if (seen.has(key)) continue;
@@ -518,7 +550,7 @@ export function toResult(
   state: Readonly<{ state: string; value?: unknown; error?: AnyTaggedError | undefined }>,
 ): Result<unknown, AnyTaggedError> | undefined {
   if (state.state === "success") return ok(state.value);
-  if (state.state === "failure") return err(state.error as AnyTaggedError);
+  if (state.state === "failure" && state.error !== undefined) return err(state.error);
   return undefined;
 }
 
@@ -532,9 +564,9 @@ export interface DehydratedQueryRuntime {
   readonly payload: string;
 }
 
-export interface QueryRuntime {
+export interface QueryRuntime<TClient = unknown> {
   /** The client this runtime was created with. */
-  readonly client: unknown;
+  readonly client: TClient;
   readonly cache: QueryCache;
   observe<TProcedureClient extends QueryProcedureClientLike>(
     procedure: TProcedureClient,
@@ -555,7 +587,6 @@ export interface QueryRuntime {
     options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
   ): ResultPaginatedObserver<
     PaginatedClientItem<TProcedureClient>,
-    PaginatedClientCursor<TProcedureClient>,
     ProcedureClientError<TProcedureClient>
   >;
   /** Warms the first page; loaders and SSR use this. */
@@ -594,7 +625,7 @@ export interface QueryRuntime {
 
 export const createQueryRuntime = <TClient>(
   options: CreateQueryRuntimeOptions<TClient>,
-): QueryRuntime => {
+): QueryRuntime<TClient> => {
   if (
     (typeof options.client !== "object" && typeof options.client !== "function") ||
     options.client === null
@@ -631,7 +662,9 @@ export const createQueryRuntime = <TClient>(
   });
   queryClient.mount();
 
-  const metadataFor = (procedure: Function) => {
+  const metadataFor = <TProcedureClient extends Function & ProcedureClientTypeCarrier>(
+    procedure: TProcedureClient,
+  ) => {
     const metadata = getProcedureClientMetadata(procedure);
     if (!metadata || metadata.clientIdentity !== clientIdentity) {
       throw new TypeError("Procedure client belongs to a different result-rpc client");
@@ -640,12 +673,9 @@ export const createQueryRuntime = <TClient>(
   };
 
   const paginationOf = (metadata: ReturnType<typeof metadataFor>): PaginationManifest | undefined =>
-    (metadata.procedure._def as { readonly pagination?: PaginationManifest }).pagination;
+    metadata.procedure._def.pagination;
 
-  const queryKey = <TProcedureClient extends ProcedureClientLike>(
-    procedure: TProcedureClient,
-    input: ProcedureClientInput<TProcedureClient>,
-  ): ResultQueryKey => {
+  const queryKey = (procedure: QueryKeyProcedureClientLike, input: unknown): ResultQueryKey => {
     const metadata = metadataFor(procedure);
     if (metadata.procedure._def.kind !== "query") {
       throw new TypeError(`${metadata.path} is not a query procedure`);
@@ -920,7 +950,7 @@ export const createQueryRuntime = <TClient>(
       const restores = patchQueriesWith(model, resolved, (current) =>
         mergeByExistingKeys(
           current,
-          updater(current as ModelValue<typeof model>) as Record<string, unknown>,
+          updater(current as ModelProjection<typeof model>) as Record<string, unknown>,
         ),
       );
       return () => {
@@ -929,7 +959,7 @@ export const createQueryRuntime = <TClient>(
     },
   };
 
-  const runtime: QueryRuntime = {
+  const runtime: QueryRuntime<TClient> = {
     client: options.client,
     cache,
     observe: <TProcedureClient extends QueryProcedureClientLike>(
@@ -950,7 +980,7 @@ export const createQueryRuntime = <TClient>(
       const encodedInput = encodeProcedureInput(metadata.procedure._def.input, input);
       if (!encodedInput.ok) throw new TypeError(`Invalid query input for ${metadata.path}`);
 
-      const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
+      const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
       const key = queryKey(procedure, input);
       const hydratedState = queryClient.getQueryState(key);
       if (hydratedState?.status === "success") {
@@ -1014,12 +1044,15 @@ export const createQueryRuntime = <TClient>(
         ProcedureClientError<TProcedureClient>
       >;
 
-      const refetch = async (): Promise<
+      const refetchState = async (): Promise<
         QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>
       > => {
         const observed = await observer.refetch();
         cached = project(observed, refetch);
         return cached;
+      };
+      const refetch = async (): Promise<void> => {
+        await refetchState();
       };
       cached = project(observer.getCurrentResult(), refetch);
 
@@ -1031,7 +1064,7 @@ export const createQueryRuntime = <TClient>(
             cached = project(observed, refetch);
             listener();
           }),
-        refetch,
+        refetch: refetchState,
         destroy: () => observer.destroy(),
       };
     },
@@ -1064,8 +1097,8 @@ export const createQueryRuntime = <TClient>(
       if (metadata.procedure._def.kind !== "query" || !pagination) {
         throw new TypeError(`${metadata.path} is not a paginated query procedure`);
       }
-      const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
-      const key = queryKey(procedure as ProcedureClientLike, input);
+      const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
+      const key = queryKey(procedure, input);
 
       // Hydrated pages are normalized through the page codec before trust —
       // per page, because the cached shape is InfiniteData, not one page.
@@ -1132,7 +1165,7 @@ export const createQueryRuntime = <TClient>(
               { signal },
             );
             if (!result.ok) throw result.error;
-            return result.value as TPage;
+            return result.value;
           } catch (failure) {
             if (isCancelled(failure)) throw new CancelledError({ revert: true });
             throw failure;
@@ -1150,9 +1183,9 @@ export const createQueryRuntime = <TClient>(
           defaultRetryDelay(definitions, failureCount, failure),
       });
 
-      let cached: PaginatedState<TItem, TCursor, TError>;
+      let cached: PaginatedState<TItem, TError>;
 
-      const refetch = async (): Promise<PaginatedState<TItem, TCursor, TError>> => {
+      const refetchState = async (): Promise<PaginatedState<TItem, TError>> => {
         // InfiniteQueryObserver.refetch replays every loaded page
         // SEQUENTIALLY (each page's cursor comes from the previous page's
         // fresh response) — the whole loaded window converges, not just
@@ -1163,19 +1196,25 @@ export const createQueryRuntime = <TClient>(
         );
         return cached;
       };
-      const fetchNext = async (): Promise<PaginatedState<TItem, TCursor, TError>> => {
+      const refetch = async (): Promise<void> => {
+        await refetchState();
+      };
+      const fetchNextState = async (): Promise<PaginatedState<TItem, TError>> => {
         const current = observer.getCurrentResult();
         if (!current.hasNextPage || current.isFetchingNextPage) return cached;
         const observed = await observer.fetchNextPage();
         cached = projectPaginated(observed);
         return cached;
       };
+      const fetchNext = async (): Promise<void> => {
+        await fetchNextState();
+      };
 
       const projectPaginated = (
         observed: InfiniteQueryObserverResult<InfiniteData<TPage>, TError>,
-      ): PaginatedState<TItem, TCursor, TError> => {
-        const rows = flattenPages(observed.data) as readonly TItem[] | undefined;
-        const controls: PaginatedControls<TItem, TCursor, TError> = {
+      ): PaginatedState<TItem, TError> => {
+        const rows = flattenPages(observed.data);
+        const controls: PaginatedControls = {
           fetch: observed.fetchStatus,
           failureCount: observed.failureCount,
           isStale: observed.isStale,
@@ -1198,7 +1237,7 @@ export const createQueryRuntime = <TClient>(
         return {
           ...controls,
           state: "failure",
-          error: observed.error as TError,
+          error: observed.error,
           ...(rows === undefined ? {} : { previous: rows }),
         };
       };
@@ -1212,8 +1251,8 @@ export const createQueryRuntime = <TClient>(
             cached = projectPaginated(observed);
             listener();
           }),
-        refetch,
-        fetchNext,
+        refetch: refetchState,
+        fetchNext: fetchNextState,
         destroy: () => observer.destroy(),
       };
     },
@@ -1246,11 +1285,9 @@ export const createQueryRuntime = <TClient>(
       if (metadata.procedure._def.kind !== "mutation") {
         throw new TypeError(`${metadata.path} is not a mutation procedure`);
       }
-      const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
-      const declaredAffects: readonly AffectsEntry[] =
-        (metadata.procedure._def as { affects?: readonly AffectsEntry[] }).affects ?? [];
-      const declaredWrites: readonly WritesEntry[] =
-        (metadata.procedure._def as { writes?: readonly WritesEntry[] }).writes ?? [];
+      const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
+      const declaredAffects: readonly AffectsEntry[] = metadata.procedure._def.affects ?? [];
+      const declaredWrites: readonly WritesEntry[] = metadata.procedure._def.writes ?? [];
       let activeController: AbortController | undefined;
       // Read retry lazily on every attempt: React callers hand in a fresh
       // options object per render, and the current value must win.
@@ -1267,93 +1304,90 @@ export const createQueryRuntime = <TClient>(
 
       let lastTouched: readonly string[] | undefined;
       let lastStartSeq = 0;
-      const observer = new MutationObserver<TOutput, TError, TInput, TContext>(queryClient, {
-        mutationKey: [metadata.path],
-        mutationFn: async (input) => {
-          // Request-start order is the write order the guard in
-          // applyEntityWrites enforces against out-of-order responses.
-          lastStartSeq = nextWriteSeq();
-          const result = await procedure(input, { signal: activeController!.signal });
-          lastTouched = getTouchedEntities(result);
-          if (!result.ok) throw result.error;
-          return result.value;
-        },
-        retry,
-        retryDelay: (failureCount: number, failure: unknown) =>
-          defaultRetryDelay(definitions, failureCount, failure),
-        ...(mutationOptions.optimistic === undefined
-          ? {}
-          : { onMutate: (input: TInput) => mutationOptions.optimistic!(input, cache) }),
-        onSuccess: (value: TOutput, input: TInput) => {
-          // Entities the mutation returned patch every containing query in
-          // place — field freshness by identity, zero refetches.
-          const written = new Set(
-            collectEntities(value).map((entity) => entityKey(entity.model.name, entity.id)),
-          );
-          applyEntityWrites(value, lastStartSeq);
-          // Server-declared writes (handler `touch`): identity invalidation
-          // for cascades and deletes the output cannot mention. Entities the
-          // output DID carry were just patched everywhere — refetching those
-          // same queries again would be redundant.
-          if (lastTouched && lastTouched.length > 0) {
-            const cascades = lastTouched.filter((key) => !written.has(key));
-            if (cascades.length > 0) void invalidateEntityKeys(cascades);
-          }
-          // .writes(): identity invalidation for mutations whose output
-          // doesn't carry the entity.
-          for (const entry of declaredWrites) {
-            void cache.invalidateEntity(
-              entry.model,
-              (entry.map as (input: TInput) => ModelKeyInput)(input),
+      const observer = new MutationObserver<TOutput, TError, TInput, TContext | undefined>(
+        queryClient,
+        {
+          mutationKey: [metadata.path],
+          mutationFn: async (input) => {
+            // Request-start order is the write order the guard in
+            // applyEntityWrites enforces against out-of-order responses.
+            lastStartSeq = nextWriteSeq();
+            const result = await procedure(input, { signal: activeController!.signal });
+            lastTouched = getTouchedEntities(result);
+            if (!result.ok) throw result.error;
+            return result.value;
+          },
+          retry,
+          retryDelay: (failureCount: number, failure: unknown) =>
+            defaultRetryDelay(definitions, failureCount, failure),
+          ...(mutationOptions.optimistic === undefined
+            ? {}
+            : { onMutate: (input: TInput) => mutationOptions.optimistic!(input, cache) }),
+          onSuccess: (value: TOutput, input: TInput) => {
+            // Entities the mutation returned patch every containing query in
+            // place — field freshness by identity, zero refetches.
+            const written = new Set(
+              collectEntities(value).map((entity) => entityKey(entity.model.name, entity.id)),
             );
-          }
-          // .affects(): declared membership/blast-radius invalidation.
-          for (const entry of declaredAffects) {
-            const target = resolveAffectsTarget(entry.target);
-            if (!target) continue;
-            if (entry.map) {
-              void cache.invalidate(
-                target as never,
-                (entry.map as (input: TInput) => never)(input),
-              );
-            } else {
-              void cache.invalidateAll(target as never);
+            applyEntityWrites(value, lastStartSeq);
+            // Server-declared writes (handler `touch`): identity invalidation
+            // for cascades and deletes the output cannot mention. Entities the
+            // output DID carry were just patched everywhere — refetching those
+            // same queries again would be redundant.
+            if (lastTouched && lastTouched.length > 0) {
+              const cascades = lastTouched.filter((key) => !written.has(key));
+              if (cascades.length > 0) void invalidateEntityKeys(cascades);
             }
-          }
-          return mutationOptions.onSuccess?.(value, input);
+            // .writes(): identity invalidation for mutations whose output
+            // doesn't carry the entity.
+            for (const entry of declaredWrites) {
+              void cache.invalidateEntity(entry.model, entry.map(input));
+            }
+            // .affects(): declared membership/blast-radius invalidation.
+            for (const entry of declaredAffects) {
+              const target = resolveAffectsTarget(entry.target);
+              if (!target) continue;
+              if (entry.map) {
+                void cache.invalidate(target, entry.map(input));
+              } else {
+                void cache.invalidateAll(target);
+              }
+            }
+            return mutationOptions.onSuccess?.(value, input);
+          },
+          ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
+            ? {}
+            : {
+                onError: (failure: TError, input: TInput, context: TContext | undefined) => {
+                  if (isCancelled(failure)) {
+                    return mutationOptions.onCancel?.(input, context, cache);
+                  }
+                  // Untagged failures are programmer errors travelling by throw —
+                  // they never enter the tagged callback channel.
+                  if (!isTaggedError(failure)) return undefined;
+                  return mutationOptions.onFailure?.(failure, input, context, cache);
+                },
+              }),
+          ...(mutationOptions.onSettled === undefined && mutationOptions.onCancel === undefined
+            ? {}
+            : {
+                onSettled: (
+                  value: TOutput | undefined,
+                  failure: TError | null,
+                  input: TInput,
+                  context: TContext | undefined,
+                ) =>
+                  failure !== null && (isCancelled(failure) || !isTaggedError(failure))
+                    ? undefined
+                    : mutationOptions.onSettled?.(
+                        failure === null ? ok(value as TOutput) : err(failure),
+                        input,
+                        context,
+                        cache,
+                      ),
+              }),
         },
-        ...(mutationOptions.onFailure === undefined && mutationOptions.onCancel === undefined
-          ? {}
-          : {
-              onError: (failure: TError, input: TInput, context: TContext | undefined) => {
-                if (isCancelled(failure)) {
-                  return mutationOptions.onCancel?.(input, context, cache);
-                }
-                // Untagged failures are programmer errors travelling by throw —
-                // they never enter the tagged callback channel.
-                if (!isTaggedError(failure)) return undefined;
-                return mutationOptions.onFailure?.(failure, input, context, cache);
-              },
-            }),
-        ...(mutationOptions.onSettled === undefined && mutationOptions.onCancel === undefined
-          ? {}
-          : {
-              onSettled: (
-                value: TOutput | undefined,
-                failure: TError | null,
-                input: TInput,
-                context: TContext | undefined,
-              ) =>
-                failure !== null && (isCancelled(failure) || !isTaggedError(failure))
-                  ? undefined
-                  : mutationOptions.onSettled?.(
-                      failure === null ? ok(value as TOutput) : err(failure),
-                      input,
-                      context,
-                      cache,
-                    ),
-            }),
-      });
+      );
 
       let cached: MutationState<TInput, TOutput, TError>;
       const mutate = async (input: TInput): Promise<Result<TOutput, TError>> => {
@@ -1376,7 +1410,7 @@ export const createQueryRuntime = <TClient>(
         observer.reset();
       };
       const projectMutation = (
-        observed: MutationObserverResult<TOutput, TError, TInput, TContext>,
+        observed: MutationObserverResult<TOutput, TError, TInput, TContext | undefined>,
       ): MutationState<TInput, TOutput, TError> => {
         const controls = {
           ...(observed.variables === undefined ? {} : { variables: observed.variables }),
@@ -1414,7 +1448,7 @@ export const createQueryRuntime = <TClient>(
             return {
               ...controls,
               state: "failure",
-              error: observed.error as TError,
+              error: observed.error,
               variables: observed.variables,
             };
           }
@@ -1446,7 +1480,7 @@ export const createQueryRuntime = <TClient>(
       if (!metadata || metadata.procedure._def.kind !== "subscription") {
         throw new TypeError("Expected a result-rpc subscription procedure client");
       }
-      const definitions = metadata.procedure._def.definitions as ErrorDefinitionMap;
+      const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
       const listeners = new Set<() => void>();
       let currentStream: ResultSubscription<TOutput, TError> | undefined;
       let generation = 0;

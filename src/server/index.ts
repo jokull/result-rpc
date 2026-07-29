@@ -1,11 +1,11 @@
 /**
- * The server runtime. Contract building (`rpc`, `wire`, errors, layers,
- * services) lives at the package root — it is isomorphic; this entry holds
- * only what runs on the server.
+ * The server runtime. Shared contracts use `rpc` from the package root;
+ * middleware, implementations, and executable routers use `serverRpc` here.
  */
 export { createFetchHandler } from "./http.js";
 export type { ErrorResponseEvent, FetchHandlerOptions } from "./http.js";
 export { createServerClient } from "./server-client.js";
+export { rpc as serverRpc } from "./contract.js";
 export type {
   CreateServerClientOptions,
   ServerCallArgs,
@@ -16,4 +16,5 @@ export type {
   ServerClientRecord,
   ServerProcedureClient,
 } from "./server-client.js";
-export type { ExecutionOptions, InternalErrorEvent } from "./contract.js";
+export type { ExecutionOptions, InternalErrorEvent, ProcedureHandlerArgs } from "./contract.js";
+export type { RpcFactory as ServerRpcFactory } from "./contract.js";

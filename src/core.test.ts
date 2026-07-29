@@ -6,6 +6,7 @@ import {
   deserialize,
   err,
   error,
+  errorCatalog,
   isTaggedError,
   matchError,
   ok,
@@ -32,6 +33,25 @@ const Offline = error({
 });
 
 describe("wire codecs", () => {
+  test("an empty object codec rejects primitives and undeclared fields", () => {
+    const codec = wire.object({});
+    expect(codec.encode({})).toEqual({ ok: true, value: {} });
+    expect(codec.encode(123 as never).ok).toBe(false);
+    expect(codec.encode({ unexpected: true } as never).ok).toBe(false);
+  });
+
+  test("serializable requires shape evidence when decoding", () => {
+    const User = wire.serializable(
+      (value): value is { readonly id: string } =>
+        value !== null &&
+        typeof value === "object" &&
+        "id" in value &&
+        typeof value.id === "string",
+    );
+    expect(User.decode({ id: "u1" })).toEqual({ ok: true, value: { id: "u1" } });
+    expect(User.decode("shape-compatible only by assertion").ok).toBe(false);
+  });
+
   test("encode and decode exact plain objects", () => {
     const codec = wire.object({ id: wire.string, count: wire.integer({ min: 0 }) });
     expect(codec.encode({ id: "a", count: 1 })).toEqual({
@@ -127,6 +147,21 @@ describe("wire codecs", () => {
 });
 
 describe("tagged errors", () => {
+  test("catalogs narrow unknown values to their exact error union", () => {
+    const message = errorCatalog(
+      { NotFound, Offline },
+      {
+        "test/not-found": (failure) => `Missing ${failure.data.id}`,
+        "test/offline": () => "Offline",
+      },
+    );
+    const failure: unknown = NotFound({ id: "trip_1" });
+    expect(message.is(failure)).toBe(true);
+    if (message.is(failure)) expect(message(failure)).toBe("Missing trip_1");
+    expect(message.is(new Error("nope"))).toBe(false);
+    expect(message.is({ _tag: "test/not-found", data: { id: "trip_1" } })).toBe(false);
+  });
+
   test("creates frozen instances with a structural wire representation", () => {
     const value = NotFound({ id: "trip_1" });
     expect(value.toJSON()).toEqual({ _tag: "test/not-found", data: { id: "trip_1" } });

@@ -45,10 +45,11 @@ definitions, and policies. It is safe to import from either side of the wire.
 
 ```ts
 import { err, ok } from "result-rpc";
-import { createFetchHandler } from "result-rpc/server";
-import { app, greetContract } from "./contract";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
+import { greetContract } from "./contract";
 
-const greet = app
+const server = serverRpc.context<{}>();
+const greet = server
   .implement(greetContract)
   .handler(({ input, errors }) =>
     input.name === "nobody"
@@ -56,7 +57,7 @@ const greet = app
       : ok(`Hello, ${input.name}!`),
   );
 
-export const router = app.router({ greet });
+export const router = server.router({ greet });
 
 export const handler = createFetchHandler({
   router,

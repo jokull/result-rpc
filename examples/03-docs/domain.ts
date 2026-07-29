@@ -58,7 +58,7 @@ export type Doc = InputOf<typeof DocCodec>;
 
 export const DocEventCodec = wire.object({
   docId: wire.string,
-  kind: wire.union([wire.literal("renamed"), wire.literal("locked")] as const),
+  kind: wire.union([wire.literal("renamed"), wire.literal("locked")]),
   at: wire.date,
 });
 export type DocEvent = InputOf<typeof DocEventCodec>;
@@ -69,7 +69,7 @@ export type DocEvent = InputOf<typeof DocEventCodec>;
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: wire.union([UserCodec, wire.null] as const),
+  provides: wire.union([UserCodec, wire.null]),
   errors: {},
 });
 

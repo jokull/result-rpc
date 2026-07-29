@@ -3,7 +3,8 @@ import { err, error, gen, isTaggedError, ok, serialize, wire } from "../index.js
 import { ClientHttpFailure, ClientTimeout } from "../framework-errors.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
-import { createBrowserClient, __resetClientBoundaryWarning, type ClientEvent } from "./client.js";
+import { createFixtureClient } from "../testing/index.js";
+import type { ClientEvent } from "./client.js";
 import {
   batchFetchTransport,
   cancelled,
@@ -120,7 +121,7 @@ const handler = createFetchHandler({
 const localFetch = (async (input: string | URL | Request, init?: RequestInit) =>
   handler(new Request(input, init))) as typeof globalThis.fetch;
 
-const client = createBrowserClient({
+const client = createFixtureClient({
   router,
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });
@@ -162,7 +163,7 @@ describe("unary client and server", () => {
       router: r.router({ shared: { byId: implementation } }),
       createContext: () => ({ values: new Map() }),
     });
-    const contractClient = createBrowserClient({
+    const contractClient = createFixtureClient({
       contract,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -185,7 +186,7 @@ describe("unary client and server", () => {
 
   test("batches concurrent calls while preserving per-item results", async () => {
     let requests = 0;
-    const batched = createBrowserClient({
+    const batched = createFixtureClient({
       router,
       transport: batchFetchTransport({
         url: "https://example.test/rpc",
@@ -211,7 +212,7 @@ describe("unary client and server", () => {
       maxBatchItems: 1,
       createContext: () => ({ values: new Map([["one", "first"]]) }),
     });
-    const batched = createBrowserClient({
+    const batched = createFixtureClient({
       router,
       transport: batchFetchTransport({
         url: "https://example.test/rpc",
@@ -235,7 +236,7 @@ describe("unary client and server", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
-    const batched = createBrowserClient({
+    const batched = createFixtureClient({
       router,
       transport: batchFetchTransport({
         url: "https://example.test/rpc",
@@ -361,7 +362,7 @@ describe("unary client and server", () => {
   });
 
   test("maps an intermediary HTML 502 to an HTTP failure", async () => {
-    const intermediary = createBrowserClient({
+    const intermediary = createFixtureClient({
       router,
       transport: {
         request: async () => ({
@@ -392,7 +393,7 @@ describe("unary client and server", () => {
     for (const testCase of cases) {
       const encoded = serialize(testCase.envelope);
       if (!encoded.ok) throw new Error("test envelope did not serialize");
-      const hostile = createBrowserClient({
+      const hostile = createFixtureClient({
         router,
         transport: {
           request: async () => ({
@@ -415,13 +416,13 @@ describe("unary client and server", () => {
     const transport: ClientTransport = {
       request: async () => ({ ok: false, reason: "timeout", timeoutMs: 50 }),
     };
-    const timed = createBrowserClient({ router, transport });
+    const timed = createFixtureClient({ router, transport });
     const result = await timed.value.byId({ id: "one" });
     expect(result).toEqual(err(ClientTimeout({ timeoutMs: 50 })));
   });
 
   test("classifies a library-owned fetch timeout", async () => {
-    const timed = createBrowserClient({
+    const timed = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -445,7 +446,7 @@ describe("unary client and server", () => {
   test("direct calls can opt into the tagged retry policy", async () => {
     let attempts = 0;
     const local = fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
-    const retrying = createBrowserClient({
+    const retrying = createFixtureClient({
       router,
       transport: {
         request: (...args) => {
@@ -463,7 +464,7 @@ describe("unary client and server", () => {
 
   test("validates client inputs before transport", async () => {
     let called = false;
-    const invalid = createBrowserClient({
+    const invalid = createFixtureClient({
       router,
       transport: {
         request: async () => {
@@ -477,7 +478,7 @@ describe("unary client and server", () => {
   });
 
   test("bounds response bodies before decoding them", async () => {
-    const bounded = createBrowserClient({
+    const bounded = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -495,7 +496,7 @@ describe("unary client and server", () => {
   });
 
   test("the proxy is inert under introspection: only router paths mint nodes", () => {
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
     });
@@ -548,7 +549,7 @@ describe("observability events", () => {
     const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
       handler(new Request(input, init))) as typeof globalThis.fetch;
     const events: ClientEvent[] = [];
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
       onEvent: (event) => events.push(event),
@@ -606,7 +607,7 @@ describe("observability events", () => {
         .query(() => ok("pong")),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -659,7 +660,7 @@ describe("contract skew", () => {
   test("a stale client's contract failure becomes client/stale, once-per-client skew event included", async () => {
     const { staleRouter, localFetch } = makeSkewWorld();
     const events: ClientEvent[] = [];
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router: staleRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
       onEvent: (event) => void events.push(event),
@@ -689,7 +690,7 @@ describe("contract skew", () => {
     });
     const sameStampFetch = ((input: string | URL | Request, init?: RequestInit) =>
       handlerSameStamp(new Request(input, init))) as typeof globalThis.fetch;
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router: staleRouter,
       transport: fetchTransport({ url: "https://example.test/rpc", fetch: sameStampFetch }),
       contractVersion: "build-42",
@@ -720,91 +721,5 @@ describe("content-type gate (CSRF surface)", () => {
       expect(response.status).toBe(400);
       expect(await response.text()).toContain("protocol/invalid-request");
     }
-  });
-});
-
-describe("client-boundary dev guard", () => {
-  // Hermetic DOM-global control: set window/document to an exact presence,
-  // run, then restore whatever was there before — so these tests are
-  // deterministic no matter what ambient state other suites leave behind.
-  const withDom = <T>(present: boolean, fn: () => T): T => {
-    const g = globalThis as { window?: unknown; document?: unknown };
-    const hadWindow = "window" in g;
-    const hadDocument = "document" in g;
-    const savedWindow = g.window;
-    const savedDocument = g.document;
-    if (present) {
-      g.window = {};
-      g.document = {};
-    } else {
-      delete g.window;
-      delete g.document;
-    }
-    try {
-      return fn();
-    } finally {
-      if (hadWindow) g.window = savedWindow;
-      else delete g.window;
-      if (hadDocument) g.document = savedDocument;
-      else delete g.document;
-    }
-  };
-
-  const withWarnCapture = (fn: () => void): string[] => {
-    const warnings: string[] = [];
-    const original = console.warn;
-    console.warn = (...args: unknown[]) => void warnings.push(args.join(" "));
-    try {
-      fn();
-    } finally {
-      console.warn = original;
-    }
-    return warnings;
-  };
-
-  const transport = () => fetchTransport({ url: "https://example.test/rpc", fetch: localFetch });
-  const boundaryContract = r.contract({
-    value: {
-      byId: r
-        .procedure()
-        .input(wire.object({ id: wire.string }))
-        .output(wire.string)
-        .query(),
-    },
-  });
-
-  test("warns once when a router is handed to createBrowserClient in a browser", () => {
-    withDom(true, () => {
-      __resetClientBoundaryWarning();
-      const warnings = withWarnCapture(() => {
-        createBrowserClient({ router, transport: transport() });
-        createBrowserClient({ router, transport: transport() }); // second call stays silent
-      });
-      expect(warnings.length).toBe(1);
-      expect(warnings[0]).toContain("client bundle");
-      expect(warnings[0]).toContain("client-boundary");
-    });
-    __resetClientBoundaryWarning();
-  });
-
-  test("stays silent on the server (no window), even for a router", () => {
-    withDom(false, () => {
-      __resetClientBoundaryWarning();
-      const warnings = withWarnCapture(() =>
-        createBrowserClient({ router, transport: transport() }),
-      );
-      expect(warnings.length).toBe(0);
-    });
-  });
-
-  test("stays silent for a contract client in a browser", () => {
-    withDom(true, () => {
-      __resetClientBoundaryWarning();
-      const warnings = withWarnCapture(() =>
-        createBrowserClient({ contract: boundaryContract, transport: transport() }),
-      );
-      expect(warnings.length).toBe(0);
-    });
-    __resetClientBoundaryWarning();
   });
 });

@@ -41,7 +41,7 @@ docErrors.notFound({ docId }); // TaggedError<"doc/not-found", { docId: string }
 
 The key→tag rule is mechanical: camelCase keys become kebab-case tag
 segments under the namespace — `notFound` → `doc/not-found`, `titleTaken` →
-`doc/title-taken`. Shells claim by tag and tests assert tags, so knowing the
+`doc/title-taken`. Shells index definitions by tag and tests assert tags, so knowing the
 derivation beats guessing it at a distance.
 
 Public definitions use the same map shape everywhere: procedure `.errors()`,
@@ -205,7 +205,7 @@ type. If a field can be independently unavailable, say so in the schema —
   author: wire.union([
     User.pick("id", "name", "avatarUrl"),
     wire.object({ unavailable: wire.literal(true) }),
-  ] as const),
+  ]),
 }))
 ```
 
@@ -220,9 +220,10 @@ visible in the contract diff like any other API decision.
 
 One tag maps to exactly one definition across the whole application. Two
 procedures reusing a tag must share the definition — the same reference — and
-`app.router(...)` rejects a tag redeclared with a different definition at
-build time. This is what makes tags safe as global identities: shells claim by
-tag alone, so a tag can never mean two different things in one app. The
+`server.router(...)` rejects a tag redeclared with a different definition at
+build time. This is what makes tags safe as global registry keys: a shell uses
+the tag to find a candidate and the exact definition to prove ownership, so a
+tag can never mean two different things in one app. The
 registry is inspectable at runtime:
 
 ```ts

@@ -330,9 +330,9 @@ tests assert the actual byte/JSON round doc.
 The declared map is authoritative:
 
 ```ts
-const authenticated = rpc.middleware().errors({ Unauthorized }).use(/* ... */);
+const authenticated = serverRpc.middleware().errors({ Unauthorized }).use(/* ... */);
 
-const getDoc = rpc
+const getDoc = serverRpc
   .procedure()
   .use(authenticated)
   .input(GetDocInput)

@@ -2,20 +2,17 @@
  * Rung 3, server: services supply the process graph, layers supply the request
  * chain, and handlers read like the business rules they implement.
  */
-import { defineService, err, ok, resolveServices, rpc, wire } from "../../src/index.js";
-import { createFetchHandler } from "../../src/server/index.js";
+import { defineService, err, ok, resolveServices } from "../../src/index.js";
+import { createFetchHandler, serverRpc } from "../../src/server/index.js";
+import { SessionLayer, ViewerLayer, type Doc, type User } from "./domain.js";
 import {
-  SessionLayer,
-  DocCodec,
-  UserCodec,
-  DocEventCodec,
-  DocForbidden,
-  DocLocked,
-  DocNotFound,
-  ViewerLayer,
-  type Doc,
-  type User,
-} from "./domain.js";
+  docByIdContract,
+  docEventsContract,
+  meContract,
+  renameDocContract,
+  setAvatarContract,
+  whoamiContract,
+} from "./contract.js";
 
 // -- services: the process-lifetime graph -----------------------------------------
 
@@ -75,57 +72,50 @@ export const Audit = defineService("audit", {
 
 // -- request context ----------------------------------------------------------------
 
-interface RequestContext {
+export interface RequestContext {
   readonly sessionToken: string | undefined;
   readonly db: DocDb;
   readonly audit: { log: (actorId: string, verb: string, docId: string) => Promise<void> };
 }
 
-export const app = rpc.context<RequestContext>();
+const server = serverRpc.context<RequestContext>();
 
 // session: reads the cookie, may find nobody — cannot fail
-const session = SessionLayer.middleware(app, async ({ context }) =>
+const session = SessionLayer.middleware(server, async ({ context }) =>
   ok(
     context.sessionToken ? ((await context.db.userBySession(context.sessionToken)) ?? null) : null,
   ),
 );
 
 // viewer: narrows to a real user, bundles session so one .use() is the whole chain
-const authenticated = ViewerLayer.middleware(app, session);
+const authenticated = ViewerLayer.middleware(server, session);
 
 // -- procedures -----------------------------------------------------------------------
 
-const whoami = SessionLayer.procedure(app, session);
-const me = ViewerLayer.procedure(app, authenticated);
+const whoami = SessionLayer.procedure(server, whoamiContract, session);
+const me = ViewerLayer.procedure(server, meContract, authenticated);
 
 /** Returns WHO changed: every cached query containing this user patches in place. */
-const setAvatar = app
-  .procedure()
-  .input(wire.object({ avatarUrl: wire.string }))
-  .output(UserCodec)
+const setAvatar = server
+  .implement(setAvatarContract)
   .use(authenticated)
-  .mutation(async ({ input, context }) =>
+  .handler(async ({ input, context }) =>
     ok(await context.db.setAvatar(context.viewer.id, input.avatarUrl)),
   );
 
-/** The tRPC protectedProcedure pattern: builders are immutable, bases fork freely. */
-const protectedProcedure = app.procedure().use(authenticated);
-
-const docById = protectedProcedure
-  .input(wire.object({ id: wire.string }))
-  .output(DocCodec)
-  .errors({ DocNotFound })
-  .query(async ({ input, context, errors }) => {
+const docById = server
+  .implement(docByIdContract)
+  .use(authenticated)
+  .handler(async ({ input, context, errors }) => {
     const doc = await context.db.doc(input.id);
     if (!doc) return err(errors.DocNotFound({ docId: input.id }));
     return ok(doc);
   });
 
-const renameDoc = protectedProcedure
-  .input(wire.object({ id: wire.string, title: wire.string }))
-  .output(DocCodec)
-  .errors({ DocNotFound, DocLocked, DocForbidden })
-  .mutation(async ({ input, context, errors }) => {
+const renameDoc = server
+  .implement(renameDocContract)
+  .use(authenticated)
+  .handler(async ({ input, context, errors }) => {
     const doc = await context.db.doc(input.id);
     if (!doc) return err(errors.DocNotFound({ docId: input.id }));
 
@@ -144,27 +134,24 @@ const renameDoc = protectedProcedure
     return ok(renamed);
   });
 
-const docEvents = protectedProcedure
-  .input(wire.object({ id: wire.string }))
-  .output(DocEventCodec)
-  .errors({ DocNotFound })
-  .subscription();
-
-export const docRouter = app.router({
+export const docRouter = server.router({
   auth: { whoami, me, setAvatar },
   doc: {
     byId: docById,
     rename: renameDoc,
-    events: app.implement(docEvents).stream(async function* ({ input, context, errors }) {
-      const doc = await context.db.doc(input.id);
-      if (!doc) {
-        yield err(errors.DocNotFound({ docId: input.id }));
-        return;
-      }
-      for (const event of context.db.events(input.id)) {
-        yield ok({ docId: input.id, ...event });
-      }
-    }),
+    events: server
+      .implement(docEventsContract)
+      .use(authenticated)
+      .stream(async function* ({ input, context, errors }) {
+        const doc = await context.db.doc(input.id);
+        if (!doc) {
+          yield err(errors.DocNotFound({ docId: input.id }));
+          return;
+        }
+        for (const event of context.db.events(input.id)) {
+          yield ok({ docId: input.id, ...event });
+        }
+      }),
   },
 });
 

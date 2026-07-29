@@ -42,18 +42,18 @@ codecs, tags, and policies, no middleware or handler code, safe in any browser
 bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
 
-(When client and server share a process — SSR, tests, server components — you
-can skip the split and hand `createBrowserClient` the router directly. Code-first
-procedures with inline handlers work the same way; the contract split is for
-the browser boundary, not a required style.)
+Browser clients are built from this contract. Implemented routers belong to
+`createFetchHandler` and `createServerClient`.
 
 ## Implement the contract on the server
 
 ```ts
 import { err, ok } from "result-rpc";
-import { app, getDocContract } from "./contract";
+import { serverRpc } from "result-rpc/server";
+import { getDocContract, type AppContext } from "./contract";
 
-export const getDoc = app
+const server = serverRpc.context<AppContext>();
+export const getDoc = server
   .implement(getDocContract)
   .use(authenticated)
   .handler(async ({ input, errors, context }) => {
@@ -84,10 +84,12 @@ the union:
 
 ```ts
 import { err } from "result-rpc";
-import { app } from "./doc";
+import { serverRpc } from "result-rpc/server";
+import type { AppContext } from "./contract";
 import { Unauthorized } from "./errors";
 
-const authenticated = app
+const server = serverRpc.context<AppContext>();
+const authenticated = server
   .middleware<{ user: User }>()
   .errors({ Unauthorized })
   .use(async ({ context, errors, next }) => {
@@ -102,7 +104,7 @@ const authenticated = app
     });
   });
 
-export const getDoc = app.implement(getDocContract).use(authenticated).handler(/* ... */);
+export const getDoc = server.implement(getDocContract).use(authenticated).handler(/* ... */);
 ```
 
 The procedure now returns:
@@ -115,7 +117,7 @@ Builders are immutable, so a base forks freely — the `protectedProcedure`
 pattern is one line:
 
 ```ts
-const protectedProcedure = app.procedure().use(authenticated);
+const protectedProcedure = server.procedure().use(authenticated);
 
 const renameDoc = protectedProcedure
   .input(RenameInput)
@@ -131,7 +133,7 @@ a 403-shaped outcome to whatever shell owns the auth union (whose reaction is
 a sign-in redirect). Not-the-owner is its own domain error.
 
 In contract-first code, middleware errors must already be present in the
-shared contract; `app.implement(...).use(...)` rejects an undeclared
+shared contract; `server.implement(...).use(...)` rejects an undeclared
 contribution. The code-first convenience form unions middleware definitions
 automatically. Duplicate tags with different definitions are rejected rather
 than silently overridden.
@@ -139,10 +141,12 @@ than silently overridden.
 ## Create the router and server
 
 ```ts
-import { createFetchHandler } from "result-rpc/server";
-import { app, getDoc } from "./doc";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
+import type { AppContext } from "./contract";
+import { getDoc } from "./doc";
 
-export const appRouter = app.router({
+const server = serverRpc.context<AppContext>();
+export const appRouter = server.router({
   doc: {
     byId: getDoc,
   },

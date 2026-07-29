@@ -10,7 +10,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../../src/index.js";
-import { createBrowserClient } from "../../src/client/client.js";
+import { createFixtureClient } from "../../src/testing/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { rpc } from "../../src/server/contract.js";
@@ -51,7 +51,7 @@ describe("attack-13 concurrent optimistic mutations on one entity", () => {
       });
     const router = app.router({ me, setName, star });
     const handler = createFetchHandler({ router, createContext: () => ({ db }) });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://probe.test/rpc",

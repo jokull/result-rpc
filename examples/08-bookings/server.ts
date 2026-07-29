@@ -8,10 +8,9 @@
 import { and, avg, count, eq, gte, lte, min } from "drizzle-orm";
 import { err, matchError, ok } from "../../src/index.js";
 import { tryDb, type DbError } from "../../src/db.js";
-import { createFetchHandler } from "../../src/server/index.js";
+import { createFetchHandler, serverRpc } from "../../src/server/index.js";
 import {
   addReviewContract,
-  app,
   appContract,
   availabilitySearchContract,
   editTitleContract,
@@ -51,12 +50,14 @@ export interface AppContext {
   gate?: () => Promise<void>;
 }
 
+const server = serverRpc.context<AppContext>();
+
 /** Reviews per page — `limit + 1` is fetched, the extra row becomes hasMore. */
 const REVIEWS_PAGE_SIZE = 3;
 
 // -- orders: the deep tree ---------------------------------------------------------
 
-const listOrders = app.implement(listOrdersContract).handler(async ({ context }) => {
+const listOrders = server.implement(listOrdersContract).handler(async ({ context }) => {
   // Column subsets at every level: `chargedAt` exists on the table and is
   // never selected; destinations carry no ids on the wire; occupants are
   // name pairs only.
@@ -99,7 +100,7 @@ const listOrders = app.implement(listOrdersContract).handler(async ({ context })
   );
 });
 
-const setNote = app.implement(setNoteContract).handler(async ({ input, errors, context }) => {
+const setNote = server.implement(setNoteContract).handler(async ({ input, errors, context }) => {
   const updated = await context.db
     .update(orders)
     .set({ note: input.note })
@@ -110,26 +111,30 @@ const setNote = app.implement(setNoteContract).handler(async ({ input, errors, c
   return ok(row);
 });
 
-const reschedule = app.implement(rescheduleContract).handler(async ({ input, errors, context }) => {
-  const updated = await context.db
-    .update(lineItems)
-    .set({ date: input.date })
-    .where(eq(lineItems.id, input.lineItemId))
-    .returning({ orderId: lineItems.orderId, date: lineItems.date });
-  const row = updated[0];
-  if (!row) return err(errors.lineItemNotFound({ lineItemId: input.lineItemId }));
-  return ok({ order: { id: row.orderId }, date: row.date });
-});
+const reschedule = server
+  .implement(rescheduleContract)
+  .handler(async ({ input, errors, context }) => {
+    const updated = await context.db
+      .update(lineItems)
+      .set({ date: input.date })
+      .where(eq(lineItems.id, input.lineItemId))
+      .returning({ orderId: lineItems.orderId, date: lineItems.date });
+    const row = updated[0];
+    if (!row) return err(errors.lineItemNotFound({ lineItemId: input.lineItemId }));
+    return ok({ order: { id: row.orderId }, date: row.date });
+  });
 
 // -- hotels -------------------------------------------------------------------------
 
-const hotelById = app.implement(hotelByIdContract).handler(async ({ input, errors, context }) => {
-  const hotel = await context.db.query.hotels.findFirst({ where: { id: input.id } });
-  if (!hotel) return err(errors.notFound({ hotelId: input.id }));
-  return ok(hotel);
-});
+const hotelById = server
+  .implement(hotelByIdContract)
+  .handler(async ({ input, errors, context }) => {
+    const hotel = await context.db.query.hotels.findFirst({ where: { id: input.id } });
+    if (!hotel) return err(errors.notFound({ hotelId: input.id }));
+    return ok(hotel);
+  });
 
-const updatePhone = app
+const updatePhone = server
   .implement(updatePhoneContract)
   .handler(async ({ input, errors, context }) => {
     const updated = await context.db
@@ -142,7 +147,7 @@ const updatePhone = app
     return ok(row);
   });
 
-const hotelReviews = app.implement(hotelReviewsContract).handler(async ({ input, context }) => {
+const hotelReviews = server.implement(hotelReviewsContract).handler(async ({ input, context }) => {
   // Offset pagination with the limit+1 sentinel: fetch one row past the
   // page; its presence is `hasMore`, and it never ships.
   const fetched = await context.db.query.reviews.findMany({
@@ -160,7 +165,7 @@ const hotelReviews = app.implement(hotelReviewsContract).handler(async ({ input,
   });
 });
 
-const reviewStats = app.implement(reviewStatsContract).handler(async ({ input, context }) => {
+const reviewStats = server.implement(reviewStatsContract).handler(async ({ input, context }) => {
   const aggregated = await context.db
     .select({ count: count(), average: avg(reviews.rating) })
     .from(reviews)
@@ -178,22 +183,24 @@ const reviewStats = app.implement(reviewStatsContract).handler(async ({ input, c
 
 // -- users ---------------------------------------------------------------------------
 
-const userById = app.implement(userByIdContract).handler(async ({ input, errors, context }) => {
+const userById = server.implement(userByIdContract).handler(async ({ input, errors, context }) => {
   const user = await context.db.query.users.findFirst({ where: { id: input.id } });
   if (!user) return err(errors.notFound({ userId: input.id }));
   return ok(user);
 });
 
-const renameUser = app.implement(renameUserContract).handler(async ({ input, errors, context }) => {
-  const updated = await context.db
-    .update(users)
-    .set({ name: input.name })
-    .where(eq(users.id, input.id))
-    .returning();
-  const row = updated[0];
-  if (!row) return err(errors.notFound({ userId: input.id }));
-  return ok(row);
-});
+const renameUser = server
+  .implement(renameUserContract)
+  .handler(async ({ input, errors, context }) => {
+    const updated = await context.db
+      .update(users)
+      .set({ name: input.name })
+      .where(eq(users.id, input.id))
+      .returning();
+    const row = updated[0];
+    if (!row) return err(errors.notFound({ userId: input.id }));
+    return ok(row);
+  });
 
 // -- reviews ---------------------------------------------------------------------------
 
@@ -203,47 +210,49 @@ const unexpectedDb = (failure: DbError): never => {
   throw new Error(`unexpected database failure: ${failure._tag}`);
 };
 
-const addReview = app.implement(addReviewContract).handler(async ({ input, errors, context }) => {
-  // No pre-check SELECTs. The author fetch is output composition (the row's
-  // name/avatar), not a check; the constraints do the checking.
-  const author = await context.db.query.users.findFirst({
-    where: { id: context.currentUserId },
-  });
-  if (!author) return err(errors.notFound({ hotelId: input.hotelId }));
-  const existing = await context.db.select({ count: count() }).from(reviews);
-  const review = {
-    id: `rv-${(existing[0]?.count ?? 0) + 1}`,
-    hotelId: input.hotelId,
-    authorId: author.id,
-    rating: input.rating,
-    body: input.body,
-  };
-  // Attempting the insert IS the uniqueness check — correct under
-  // concurrency, where a SELECT-first pre-check races with a concurrent
-  // insert between the check and the write. The db/* tags are private
-  // composition currency; each is collapsed to a declared domain tag here
-  // or rethrown as a defect, and none ever appears in `.errors()`.
-  const inserted = await tryDb(context.db.insert(reviews).values(review));
-  if (!inserted.ok) {
-    return matchError(inserted.error, {
-      "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId: input.hotelId })),
-      // The hotel id is the only client-supplied reference (the author comes
-      // from the session), so a foreign-key failure means the hotel is gone.
-      "db/foreign-key-violation": () => err(errors.notFound({ hotelId: input.hotelId })),
-      "db/not-null-violation": unexpectedDb,
-      "db/check-violation": unexpectedDb,
-      "db/query-failure": unexpectedDb,
+const addReview = server
+  .implement(addReviewContract)
+  .handler(async ({ input, errors, context }) => {
+    // No pre-check SELECTs. The author fetch is output composition (the row's
+    // name/avatar), not a check; the constraints do the checking.
+    const author = await context.db.query.users.findFirst({
+      where: { id: context.currentUserId },
     });
-  }
-  return ok({
-    review: { id: review.id, rating: review.rating, body: review.body },
-    author: { id: author.id, name: author.name, avatarUrl: author.avatarUrl },
+    if (!author) return err(errors.notFound({ hotelId: input.hotelId }));
+    const existing = await context.db.select({ count: count() }).from(reviews);
+    const review = {
+      id: `rv-${(existing[0]?.count ?? 0) + 1}`,
+      hotelId: input.hotelId,
+      authorId: author.id,
+      rating: input.rating,
+      body: input.body,
+    };
+    // Attempting the insert IS the uniqueness check — correct under
+    // concurrency, where a SELECT-first pre-check races with a concurrent
+    // insert between the check and the write. The db/* tags are private
+    // composition currency; each is collapsed to a declared domain tag here
+    // or rethrown as a defect, and none ever appears in `.errors()`.
+    const inserted = await tryDb(context.db.insert(reviews).values(review));
+    if (!inserted.ok) {
+      return matchError(inserted.error, {
+        "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId: input.hotelId })),
+        // The hotel id is the only client-supplied reference (the author comes
+        // from the session), so a foreign-key failure means the hotel is gone.
+        "db/foreign-key-violation": () => err(errors.notFound({ hotelId: input.hotelId })),
+        "db/not-null-violation": unexpectedDb,
+        "db/check-violation": unexpectedDb,
+        "db/query-failure": unexpectedDb,
+      });
+    }
+    return ok({
+      review: { id: review.id, rating: review.rating, body: review.body },
+      author: { id: author.id, name: author.name, avatarUrl: author.avatarUrl },
+    });
   });
-});
 
 // -- tours: composite-key content ------------------------------------------------------
 
-const tourById = app.implement(tourByIdContract).handler(async ({ input, errors, context }) => {
+const tourById = server.implement(tourByIdContract).handler(async ({ input, errors, context }) => {
   const content = await context.db.query.tourContent.findFirst({
     where: { id: input.id, locale: input.locale },
   });
@@ -251,41 +260,47 @@ const tourById = app.implement(tourByIdContract).handler(async ({ input, errors,
   return ok({ ...content, locale: input.locale });
 });
 
-const featuredTours = app.implement(featuredToursContract).handler(async ({ input, context }) => {
-  const contents = await context.db.query.tourContent.findMany({
-    where: { locale: input.locale },
-    orderBy: { id: "asc" },
+const featuredTours = server
+  .implement(featuredToursContract)
+  .handler(async ({ input, context }) => {
+    const contents = await context.db.query.tourContent.findMany({
+      where: { locale: input.locale },
+      orderBy: { id: "asc" },
+    });
+    return ok(contents.map((content) => ({ ...content, locale: input.locale })));
   });
-  return ok(contents.map((content) => ({ ...content, locale: input.locale })));
-});
 
-const editTitle = app.implement(editTitleContract).handler(async ({ input, errors, context }) => {
-  if (context.gate) await context.gate();
-  const updated = await context.db
-    .update(tourContent)
-    .set({ title: input.title })
-    .where(and(eq(tourContent.id, input.id), eq(tourContent.locale, input.locale)))
-    .returning();
-  const row = updated[0];
-  if (!row) return err(errors.notFound({ tourId: input.id, locale: input.locale }));
-  return ok({ ...row, locale: input.locale });
-});
+const editTitle = server
+  .implement(editTitleContract)
+  .handler(async ({ input, errors, context }) => {
+    if (context.gate) await context.gate();
+    const updated = await context.db
+      .update(tourContent)
+      .set({ title: input.title })
+      .where(and(eq(tourContent.id, input.id), eq(tourContent.locale, input.locale)))
+      .returning();
+    const row = updated[0];
+    if (!row) return err(errors.notFound({ tourId: input.id, locale: input.locale }));
+    return ok({ ...row, locale: input.locale });
+  });
 
-const retireTour = app.implement(retireTourContract).handler(async ({ input, context, touch }) => {
-  const removed = await context.db
-    .delete(tourContent)
-    .where(eq(tourContent.id, input.id))
-    .returning({ id: tourContent.id });
-  // Deleted entities cannot be returned — and the composite key means both
-  // locale variants must be touched BY RECORD KEY, one per entity.
-  touch(TourContent, { id: input.id, locale: "en" });
-  touch(TourContent, { id: input.id, locale: "ja" });
-  return ok({ removed: removed.length });
-});
+const retireTour = server
+  .implement(retireTourContract)
+  .handler(async ({ input, context, touch }) => {
+    const removed = await context.db
+      .delete(tourContent)
+      .where(eq(tourContent.id, input.id))
+      .returning({ id: tourContent.id });
+    // Deleted entities cannot be returned — and the composite key means both
+    // locale variants must be touched BY RECORD KEY, one per entity.
+    touch(TourContent, { id: input.id, locale: "en" });
+    touch(TourContent, { id: input.id, locale: "ja" });
+    return ok({ removed: removed.length });
+  });
 
 // -- availability: query-relative aggregate ---------------------------------------------
 
-const availabilitySearch = app
+const availabilitySearch = server
   .implement(availabilitySearchContract)
   .handler(async ({ input, context }) => {
     const mins = await context.db
@@ -320,7 +335,7 @@ const availabilitySearch = app
 
 // -- profile: derived summary --------------------------------------------------------------
 
-const nextDeparture = app.implement(nextDepartureContract).handler(async ({ context }) => {
+const nextDeparture = server.implement(nextDepartureContract).handler(async ({ context }) => {
   const next = await context.db.query.lineItems.findFirst({
     where: { date: { gte: context.today } },
     orderBy: { date: "asc" },
@@ -332,10 +347,10 @@ const nextDeparture = app.implement(nextDepartureContract).handler(async ({ cont
       },
     },
   });
-  if (!next) return ok({ kind: "none" as const });
+  if (!next) return ok({ kind: "none" });
   const first = next.destinations[0];
   return ok({
-    kind: "upcoming" as const,
+    kind: "upcoming",
     date: next.date,
     hotelName: first ? first.hotel.name : "your first stop",
   });
@@ -343,7 +358,7 @@ const nextDeparture = app.implement(nextDepartureContract).handler(async ({ cont
 
 // -- router and handler ------------------------------------------------------------------------
 
-export const router = app.router({
+export const router = server.router({
   orders: { list: listOrders, setNote, reschedule },
   hotels: { byId: hotelById, updatePhone, reviews: hotelReviews, reviewStats },
   users: { byId: userById, rename: renameUser },

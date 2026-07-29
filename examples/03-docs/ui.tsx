@@ -21,23 +21,19 @@
 import { Component, type ReactNode } from "react";
 import { defectErrors, errorCatalog } from "../../src/index.js";
 import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
-import {
-  boundaryShells,
-  layerShell,
-  ResultRpcProvider,
-  useResultClient,
-} from "../../src/react/index.js";
+import { boundaryShells, createResultRpcReact } from "../../src/react/index.js";
 import { SessionLayer, DocForbidden, DocLocked, DocNotFound, ViewerLayer } from "./domain.js";
-import { docRouter } from "./server.js";
+import { docContract } from "./contract.js";
 
 // -- client -----------------------------------------------------------------------
 
 export const makeDocClient = (fetch: typeof globalThis.fetch) =>
   createBrowserClient({
-    router: docRouter,
+    contract: docContract,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch }),
   });
 export type DocClient = ReturnType<typeof makeDocClient>;
+export const { layerShell, ResultRpcProvider, useResultClient } = createResultRpcReact<DocClient>();
 
 // -- the onion (module-level: no client required to declare it) ---------------------
 
@@ -51,7 +47,7 @@ export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } =
 
 export const SessionShell = layerShell(SessionLayer, {
   from: StaleShell,
-  procedure: (client: DocClient) => client.auth.whoami,
+  select: (client) => client.auth.whoami,
 });
 
 /** A real app redirects to /login here; tests observe the counter. */
@@ -59,7 +55,7 @@ export const signInReactions = { count: 0 };
 
 export const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: (client: DocClient) => client.auth.me,
+  select: (client) => client.auth.me,
   onError: () => {
     signInReactions.count += 1;
   },
@@ -121,7 +117,7 @@ function Greeting() {
 
 /** The flagship: change the avatar, watch the header — zero refetches. */
 export function AvatarForm() {
-  const client = useResultClient<DocClient>();
+  const client = useResultClient();
   const setAvatar = ViewerShell.useMutation(client.auth.setAvatar);
   return (
     <button onClick={() => void setAvatar.mutate({ avatarUrl: "v2.png" }).catch(() => undefined)}>
@@ -142,7 +138,7 @@ const renameMessages = errorCatalog(
 );
 
 export function DocPage({ docId }: { docId: string }) {
-  const client = useResultClient<DocClient>();
+  const client = useResultClient();
   const viewer = ViewerShell.use(); // User — guaranteed, not User | null
   const doc = ViewerShell.useQuery(client.doc.byId, { id: docId });
 
@@ -181,7 +177,7 @@ export function DocPage({ docId }: { docId: string }) {
 
 /** The same union, streaming: connection state lives beside the latest Result. */
 function DocActivity({ docId }: { docId: string }) {
-  const client = useResultClient<DocClient>();
+  const client = useResultClient();
   const events = ViewerShell.useSubscription(client.doc.events, { id: docId });
   if (!events.result?.ok) return null;
   return (
@@ -208,8 +204,9 @@ class Boundary extends Component<{ children?: ReactNode }, { caught?: unknown }>
   }
   override render() {
     if (this.state.caught === undefined) return this.props.children;
-    // escalated values are structural TaggedErrors, so the catalog still applies
-    const message = defectMessages(this.state.caught as Parameters<typeof defectMessages>[0]);
+    const message = defectMessages.is(this.state.caught)
+      ? defectMessages(this.state.caught)
+      : "Unexpected application failure.";
     return <p role="alert">{message} Reload to continue.</p>;
   }
 }

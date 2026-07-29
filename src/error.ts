@@ -1,4 +1,4 @@
-import type { DecodeResult, InputOf, WireCodec, WireValue } from "./wire.js";
+import type { DecodeResult, EmptyObject, InputOf, WireCodec, WireValue } from "./wire.js";
 import { DEFAULT_MAX_ERROR_BYTES, serialize } from "./serializer.js";
 import { err, type Err } from "./result.js";
 
@@ -148,7 +148,7 @@ export interface ErrorDefinition<
 > {
   /** The optional ErrorOptions retain a local cause; causes never cross the wire. */
   (
-    ...args: Record<never, never> extends Input
+    ...args: EmptyObject extends Input
       ? [input?: Input, options?: ErrorOptions]
       : [input: Input, options?: ErrorOptions]
   ): TaggedError<Tag, Data, Visibility>;
@@ -201,7 +201,7 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
   return value;
 };
 
-const emptyDataCodec: WireCodec<Record<never, never>, Record<never, never>> = {
+const emptyDataCodec: WireCodec<EmptyObject, EmptyObject> = {
   kind: "object",
   encode: (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value)
@@ -361,15 +361,15 @@ export function error<const Tag extends string, Input, Data extends WireValue>(
   },
 ): ErrorDefinition<Tag, Input, Data, "public">;
 export function error<const Tag extends string>(
-  options: ErrorDefinitionOptions<Tag, Record<never, never>, Record<never, never>, "private"> & {
+  options: ErrorDefinitionOptions<Tag, EmptyObject, EmptyObject, "private"> & {
     readonly data?: undefined;
   },
-): ErrorDefinition<Tag, Record<never, never>, Record<never, never>, "private">;
+): ErrorDefinition<Tag, EmptyObject, EmptyObject, "private">;
 export function error<const Tag extends string>(
-  options: ErrorDefinitionOptions<Tag, Record<never, never>, Record<never, never>, "public"> & {
+  options: ErrorDefinitionOptions<Tag, EmptyObject, EmptyObject, "public"> & {
     readonly data?: undefined;
   },
-): ErrorDefinition<Tag, Record<never, never>, Record<never, never>, "public">;
+): ErrorDefinition<Tag, EmptyObject, EmptyObject, "public">;
 export function error<const Tag extends string, Input, Data extends WireValue>(
   options: ErrorDefinitionOptions<Tag, Input, Data, ErrorVisibility>,
 ): ErrorDefinition<Tag, Input, Data, ErrorVisibility> {
@@ -404,6 +404,13 @@ type CatalogHandlers<TDefinitions extends Readonly<Record<string, AnyErrorDefini
   ) => R;
 };
 
+/** An exhaustive error projection that can also narrow an unknown boundary value. */
+export interface ErrorCatalog<TError extends AnyTaggedError, TResult> {
+  (error: TError): TResult;
+  /** Whether `value` is an instance of one of this catalog's definitions. */
+  is(value: unknown): value is TError;
+}
+
 /**
  * A reusable, exhaustive projection over an error definition map — the same
  * map shape middleware, shells, and layers take. Adding a definition to the
@@ -422,19 +429,27 @@ export const errorCatalog = <
 >(
   definitions: TDefinitions,
   handlers: THandlers,
-): ((
-  error: ErrorOf<TDefinitions[keyof TDefinitions]>,
-) => THandlers[keyof THandlers] extends (error: never) => infer R ? R : never) => {
+): ErrorCatalog<
+  ErrorOf<TDefinitions[keyof TDefinitions]>,
+  THandlers[keyof THandlers] extends (error: never) => infer R ? R : never
+> => {
+  type TError = ErrorOf<TDefinitions[keyof TDefinitions]>;
   type R = THandlers[keyof THandlers] extends (error: never) => infer TReturn ? TReturn : never;
-  const tags = new Set(Object.values(definitions).map((definition) => definition.tag));
+  const definitionList = Object.values(definitions);
+  const tags = new Set(definitionList.map((definition) => definition.tag));
   for (const tag of Object.keys(handlers)) {
     if (!tags.has(tag)) throw new TypeError(`Catalog handles unknown tag ${tag}`);
   }
   for (const tag of tags) {
     if (!(tag in handlers)) throw new TypeError(`Catalog is missing tag ${tag}`);
   }
-  return (error) =>
+  const dispatch = (error: TError): R =>
     (handlers as unknown as Record<string, (error: AnyTaggedError) => R>)[error._tag]!(error);
+  const catalog: ErrorCatalog<TError, R> = Object.assign(dispatch, {
+    is: (value: unknown): value is TError =>
+      definitionList.some((definition) => definition.is(value)),
+  });
+  return Object.freeze(catalog);
 };
 
 // --- Namespaced declaration -------------------------------------------------
@@ -477,10 +492,10 @@ type AnyErrorSpec = ErrorSpecBase<any, any> & {
 
 type SpecInput<TSpec> = TSpec extends { readonly data: WireCodec<infer Input, WireValue> }
   ? Input
-  : Record<never, never>;
-type SpecData<TSpec> = TSpec extends { readonly data: WireCodec<unknown, infer Data> }
+  : EmptyObject;
+type SpecData<TSpec> = TSpec extends { readonly data: WireCodec<any, infer Data> }
   ? Data
-  : Record<never, never>;
+  : EmptyObject;
 type SpecVisibility<TSpec> = TSpec extends {
   readonly visibility: infer Visibility extends ErrorVisibility;
 }

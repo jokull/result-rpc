@@ -14,7 +14,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../../src/index.js";
-import { createBrowserClient } from "../../src/client/client.js";
+import { createFixtureClient } from "../../src/testing/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { rpc } from "../../src/server/contract.js";
@@ -46,7 +46,7 @@ const boot = () => {
   const router = app.router({ me, setAvatar });
   const db = { user: { id: "u1", name: "J", avatarUrl: "v1.png" } };
   const handler = createFetchHandler({ router, createContext: () => ({ db }) });
-  const client = createBrowserClient({
+  const client = createFixtureClient({
     router,
     transport: fetchTransport({
       url: "https://probe.test/rpc",

@@ -17,6 +17,53 @@ export function Providers({ children }: { children: React.ReactNode }) {
 Pass an explicit `runtime` instead when the app needs the instance elsewhere —
 SSR prefetching, imperative cache access.
 
+## Register the application client once
+
+The default React entry follows TanStack's `Register` pattern. Augment it once
+and `useResultClient()` returns the application client with no call-site
+generic; deferred layer-shell selectors receive the same type:
+
+```ts
+import type { client } from "../../client";
+
+declare module "result-rpc/react" {
+  interface Register {
+    client: typeof client;
+  }
+}
+```
+
+```tsx
+import { useResultClient } from "result-rpc/react";
+
+function SaveButton() {
+  const client = useResultClient();
+  // client.doc.save is known here
+}
+```
+
+Declaration merging is application-wide. A monorepo that compiles several
+independent applications in one TypeScript program should bind a local React
+surface instead of registering several clients globally:
+
+```ts
+import { createResultRpcReact } from "result-rpc/react";
+import type { client } from "../../client";
+
+export const appReact = createResultRpcReact<typeof client>();
+
+export const {
+  ResultRpcProvider: AppResultRpcProvider,
+  useResultClient: useAppResultClient,
+  layerShell: appLayerShell,
+} = appReact;
+```
+
+Use those three scoped exports consistently inside that application. They
+share one client type without global declaration merging. The scoped hook and
+layer shells require that binding's matching provider; mixing bindings fails
+at the mount site instead of returning a falsely typed client.
+
 Query a procedure:
 
 ```tsx
@@ -38,6 +85,12 @@ export function DocPage({ id }: { id: string }) {
   }
 }
 ```
+
+The hook-level `refetch()` starts a new attempt and returns `Promise<void>`.
+Awaiting it tells you the attempt settled; the resulting `QueryState` arrives
+through the next React render. It does not return a snapshot or another
+`Result`. For imperative code, the lower-level runtime observer's `refetch()`
+returns the resulting state directly.
 
 `value` and `error` are not an independently-nullable pair — each exists only
 under its own state, so the impossible combinations are unrepresentable:

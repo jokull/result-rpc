@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { ok, rpc, wire } from "../index.js";
-import { createBrowserClient } from "../client/client.js";
+import { ok, wire } from "../index.js";
+import { createFixtureClient } from "../testing/index.js";
 import { fetchTransport, isCancelled } from "../client/transport.js";
 import { createFetchHandler } from "./index.js";
+import { rpc } from "./contract.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,7 +28,7 @@ describe("caller-lifetime signals reach handlers", () => {
         }),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://x.test/rpc",
@@ -67,7 +68,7 @@ describe("caller-lifetime signals reach handlers", () => {
       createContext: () => ({}),
       onInternalError: (event) => incidents.push(event),
     });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://x.test/rpc",
@@ -117,7 +118,7 @@ describe("caller-lifetime signals reach handlers", () => {
       createContext: () => ({}),
       onInternalError: (event) => incidents.push(event),
     });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://x.test/rpc",

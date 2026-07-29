@@ -4,16 +4,19 @@ import { useState } from "react";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { err, fieldIssues, ok, pickErrors, rpc, wire } from "../../src/index.js";
 import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
-import {
-  ResultRpcProvider,
-  useResultClient,
-  useResultMutation,
-  useResultQuery,
-} from "../../src/react/index.js";
+import { createResultRpcReact, useResultMutation, useResultQuery } from "../../src/react/index.js";
 import { makeClient, type AppClient } from "./client.js";
 import { CLOSED_AT, seedDb } from "./world.js";
 import { makeHandler, type AppContext } from "./server.js";
-import { App, BoundaryProvider, ConnectionBanner, signInReactions, ViewerShell } from "./app.tsx";
+import {
+  App,
+  BoundaryProvider,
+  ConnectionBanner,
+  ResultRpcProvider,
+  signInReactions,
+  useResultClient,
+  ViewerShell,
+} from "./app.tsx";
 import { authErrors, directoryErrors, issueErrors } from "./errors.js";
 import { Issue } from "./models.js";
 
@@ -265,7 +268,7 @@ test("close patches the issue by identity and touch(Project) refetches the proje
 
 /** Unnarrowed probe rendered outside the viewer shell (test-only). */
 function ListProbe() {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const list = useResultQuery(client.issues.list, {});
   if (list.state === "pending") {
     return <p>{list.fetch === "paused" ? "Waiting for a connection" : "Loading issues"}</p>;
@@ -410,7 +413,7 @@ test("codec-rejected input on the same-version client is a caller bug: mutate re
   // the mutation returns to idle (library behavior pinned after the fix).
   const rejections: unknown[] = [];
   function RawCreateProbe() {
-    const probeClient = useResultClient<AppClient>();
+    const probeClient = useResultClient();
     const create = useResultMutation(probeClient.issues.create);
     return (
       <div>
@@ -469,6 +472,7 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
     transport: fetchTransport({ url: "https://tracker.test/rpc", fetch: countingFetch }),
     contractVersion: "07-tracker",
   });
+  const { ResultRpcProvider: LooseResultRpcProvider } = createResultRpcReact<typeof looseClient>();
 
   function StaleDeployForm() {
     const [fields, setFields] = useState<Record<string, readonly string[]>>({});
@@ -488,9 +492,9 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
   }
 
   const renderer = await render(
-    <ResultRpcProvider client={looseClient}>
+    <LooseResultRpcProvider client={looseClient}>
       <StaleDeployForm />
-    </ResultRpcProvider>,
+    </LooseResultRpcProvider>,
   );
   await clickButton(renderer, "Create issue");
   await waitForText(

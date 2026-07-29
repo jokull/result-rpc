@@ -28,24 +28,22 @@ export const createIssueSchema: StandardSchemaV1<CreateIssueInput, CreateIssueIn
         return { issues: [{ message: "Expected an object" }] };
       }
       const record = value as Record<string, unknown>;
+      const { id, projectId, title } = record;
       const issues: StandardSchemaIssue[] = [];
-      if (typeof record.id !== "string" || record.id.length === 0) {
+      const idIsValid = typeof id === "string" && id.length > 0;
+      const projectIdIsValid = typeof projectId === "string" && projectId.length > 0;
+      const titleIsValid = typeof title === "string" && title.trim().length >= 3;
+      if (!idIsValid) {
         issues.push({ message: "A client-minted id is required", path: ["id"] });
       }
-      if (typeof record.projectId !== "string" || record.projectId.length === 0) {
+      if (!projectIdIsValid) {
         issues.push({ message: "A project is required", path: ["projectId"] });
       }
-      if (typeof record.title !== "string" || record.title.trim().length < 3) {
+      if (!titleIsValid) {
         issues.push({ message: "Title must be at least 3 characters", path: ["title"] });
       }
-      if (issues.length > 0) return { issues };
-      return {
-        value: {
-          id: record.id as string,
-          projectId: record.projectId as string,
-          title: (record.title as string).trim(),
-        },
-      };
+      if (!idIsValid || !projectIdIsValid || !titleIsValid) return { issues };
+      return { value: { id, projectId, title: title.trim() } };
     },
   },
 };

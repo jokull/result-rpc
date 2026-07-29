@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Component, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire } from "../index.js";
-import { createBrowserClient } from "../client/client.js";
+import { createFixtureClient } from "../testing/index.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
@@ -41,7 +41,7 @@ const makeSkewedPair = () => {
       .output(wire.string)
       .query(({ input }) => ok(input.id)),
   });
-  const client = createBrowserClient({
+  const client = createFixtureClient({
     router: staleRouter,
     transport: fetchTransport({
       url: "https://example.test/rpc",
@@ -153,7 +153,7 @@ describe("boundaryShells", () => {
       request: async (...args) =>
         offline ? { ok: false, reason: "offline" } : local.request(...args),
     };
-    const client = createBrowserClient({ router, transport });
+    const client = createFixtureClient({ router, transport });
     const { TransportShell, BoundaryProvider, useConnectivity } = boundaryShells({
       name: "test-c",
     });
@@ -202,7 +202,7 @@ describe("boundaryShells", () => {
         .query(() => ok("pong")),
     });
     const handler = createFetchHandler({ router, createContext: () => ({}) });
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: fetchTransport({
         url: "https://example.test/rpc",
@@ -263,7 +263,7 @@ describe("boundaryShells", () => {
         return { ok: false, reason: "offline" };
       },
     };
-    const client = createBrowserClient({ router, transport });
+    const client = createFixtureClient({ router, transport });
     const { TransportShell, BoundaryProvider, useConnectivity } = boundaryShells({
       name: "test-e",
     });

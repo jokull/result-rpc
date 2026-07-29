@@ -128,8 +128,8 @@ describe("result composition", () => {
   });
 
   test("all combines tuples and records, first failure wins", () => {
-    expect(all([find("a"), parse("xy")] as const)).toEqual(ok(["doc:a", 2]));
-    expect(all([find("missing"), parse("bad")] as const)).toEqual(err(NotFound({ id: "missing" })));
+    expect(all([find("a"), parse("xy")])).toEqual(ok(["doc:a", 2]));
+    expect(all([find("missing"), parse("bad")])).toEqual(err(NotFound({ id: "missing" })));
     expect(all({ doc: find("a"), size: parse("xy") })).toEqual(ok({ doc: "doc:a", size: 2 }));
     expect(all({ doc: find("a"), size: parse("bad") })).toEqual(
       err(ParseFailure({ reason: "bad" })),

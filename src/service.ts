@@ -44,11 +44,20 @@ export type ResolvedServices<TDefinitions extends ServiceDefinitionMap> = {
   readonly [TKey in keyof TDefinitions]: ServiceValue<TDefinitions[TKey]>;
 };
 
-export interface DefineServiceOptions<TValue, TNeeds extends ServiceDefinitionMap> {
-  /** Services this one depends on, by the property name `create` receives. */
-  readonly needs?: TNeeds;
+export type DefineServiceOptions<
+  TValue,
+  TNeeds extends ServiceDefinitionMap,
+> = (keyof TNeeds extends never
+  ? {
+      /** A dependency-free service cannot promise dependencies to `create`. */
+      readonly needs?: never;
+    }
+  : {
+      /** Services this one depends on, by the property name `create` receives. */
+      readonly needs: TNeeds;
+    }) & {
   readonly create: (needs: ResolvedServices<TNeeds>) => MaybePromise<TValue>;
-}
+};
 
 /**
  * Declares a service: a name, its dependencies, and how to build it. Store the
@@ -58,13 +67,15 @@ export interface DefineServiceOptions<TValue, TNeeds extends ServiceDefinitionMa
 export const defineService = <TValue, const TNeeds extends ServiceDefinitionMap = {}>(
   name: string,
   options: DefineServiceOptions<TValue, TNeeds>,
-): ServiceDefinition<TValue, TNeeds> =>
-  Object.freeze({
-    $service: true as const,
+): ServiceDefinition<TValue, TNeeds> => {
+  const needs = (options.needs ?? {}) as TNeeds;
+  return Object.freeze({
+    $service: true,
     name,
-    needs: options.needs ?? ({} as TNeeds),
+    needs,
     create: options.create,
   });
+};
 
 /**
  * Resolves a service graph. Each definition is constructed at most once per
@@ -78,30 +89,43 @@ export const resolveServices = async <const TDefinitions extends ServiceDefiniti
   definitions: TDefinitions,
 ): Promise<ResolvedServices<TDefinitions>> => {
   const memo = new Map<AnyServiceDefinition, Promise<unknown>>();
-  const building = new Set<AnyServiceDefinition>();
 
-  const resolve = (definition: AnyServiceDefinition, path: readonly string[]): Promise<unknown> => {
-    const cached = memo.get(definition);
-    if (cached) return cached;
-    if (building.has(definition)) {
+  // Validate the definition graph synchronously before async construction.
+  // A single mutable "currently building" set cannot detect a back-edge that
+  // reaches a memoized sibling while its promise is still pending.
+  const visited = new Set<AnyServiceDefinition>();
+  const visiting = new Set<AnyServiceDefinition>();
+  const validate = (definition: AnyServiceDefinition, path: readonly string[]): void => {
+    if (visiting.has(definition)) {
       throw new TypeError(`Service dependency cycle: ${[...path, definition.name].join(" -> ")}`);
     }
-    building.add(definition);
+    if (visited.has(definition)) return;
+    visiting.add(definition);
+    for (const dependency of Object.values(definition.needs as ServiceDefinitionMap)) {
+      validate(dependency, [...path, definition.name]);
+    }
+    visiting.delete(definition);
+    visited.add(definition);
+  };
+  for (const definition of Object.values(definitions)) validate(definition, []);
+
+  const resolve = (definition: AnyServiceDefinition): Promise<unknown> => {
+    const cached = memo.get(definition);
+    if (cached) return cached;
     const pending = (async () => {
       const needs: Record<string, unknown> = {};
       for (const [key, dependency] of Object.entries(definition.needs as ServiceDefinitionMap)) {
-        needs[key] = await resolve(dependency, [...path, definition.name]);
+        needs[key] = await resolve(dependency);
       }
       return definition.create(needs as ResolvedServices<ServiceDefinitionMap>);
     })();
     memo.set(definition, pending);
-    building.delete(definition);
     return pending;
   };
 
   const resolved: Record<string, unknown> = {};
   for (const [key, definition] of Object.entries(definitions)) {
-    resolved[key] = await resolve(definition, []);
+    resolved[key] = await resolve(definition);
   }
   return resolved as ResolvedServices<TDefinitions>;
 };

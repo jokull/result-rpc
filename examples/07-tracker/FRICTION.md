@@ -22,7 +22,8 @@ example has since been reworked to drop the corresponding workarounds:
   (`MutationOptions` and `QueryCache` are also exported now.)
 - **Papercut #4** (client proxy throwing under introspection): fixed — the
   proxy is inert off router paths. The app-owned ClientContext workaround is
-  gone; components use `useResultClient<AppClient>()` and the test harness
+  gone; one scoped `createResultRpcReact<AppClient>()` binding gives every
+  component a zero-generic `useResultClient()`, and the test harness
   passes the client as an ordinary prop, with no incident.
 
 The entries below are kept as written: they are the historical record the
@@ -166,7 +167,7 @@ forms guide needs a loud "mount your form outside the defect shell (or catch
 I wrote ~700 lines against APIs I had only read prose about — layer contract
 
 - `SessionLayer.procedure(app, contract, middleware)`, `layerShell` with a
-  `procedure:` _selector_, `.affects()` contract-first, `touch(Project, id)` in
+  `select:` client selector, `.affects()` contract-first, `touch(Project, id)` in
   a handler, `wire.standard` over a hand-rolled Standard Schema object,
   `errorCatalog` over a shell-narrowed union — and the first full `tsc` pass
   had **two** real errors (a missing `httpStatus`, readonly rows). Everything

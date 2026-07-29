@@ -21,14 +21,8 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { errorCatalog } from "../../src/index.js";
-import {
-  boundaryShells,
-  defineShell,
-  layerShell,
-  ResultRpcProvider,
-  useResultClient,
-} from "../../src/react/index.js";
+import { errorCatalog, isTaggedError } from "../../src/index.js";
+import { boundaryShells, createResultRpcReact, defineShell } from "../../src/react/index.js";
 import { createQueryRuntime } from "../../src/query/runtime.js";
 import type { QueryRuntime } from "../../src/react/index.js";
 import {
@@ -40,18 +34,20 @@ import {
 } from "../03-docs/domain.js";
 import type { DocClient } from "../03-docs/ui.js";
 
+const { layerShell, ResultRpcProvider, useResultClient } = createResultRpcReact<DocClient>();
+
 // -- shells: module level, no client instance needed --------------------------------
 
 export const { TransportShell, StaleShell, BoundaryProvider, useConnectivity } = boundaryShells();
 
 export const SessionShell = layerShell(SessionLayer, {
   from: StaleShell,
-  procedure: (client: DocClient) => client.auth.whoami,
+  select: (client) => client.auth.whoami,
 });
 
 export const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: (client: DocClient) => client.auth.me,
+  select: (client) => client.auth.me,
   onError: () => void router.navigate({ to: "/signed-out" }),
 });
 
@@ -77,7 +73,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
     </BoundaryProvider>
   ),
   errorComponent: ({ error }) => (
-    <p role="alert">Broken: {(error as { _tag?: string })._tag ?? "unknown"}</p>
+    <p role="alert">Broken: {isTaggedError(error) ? error._tag : "unknown"}</p>
   ),
 });
 
@@ -208,7 +204,7 @@ const renameMessages = errorCatalog(
 );
 
 function DocDetail({ docId }: { docId: string }) {
-  const client = useResultClient<DocClient>();
+  const client = useResultClient();
   const viewer = ViewerShell.use();
   const doc = DocShell.useQuery(client.doc.byId, { id: docId });
   const rename = DocShell.useMutation(client.doc.rename);

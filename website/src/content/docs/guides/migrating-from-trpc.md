@@ -34,20 +34,20 @@ instead of at the end.
 
 The concept mapping is mechanical:
 
-| tRPC                                         | result-rpc                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------ |
-| `initTRPC.context<Ctx>().create()`           | `rpc.context<Ctx>()`                                                     |
-| `t.procedure.input(z...).query(fn)`          | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
-| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                    |
-| `t.middleware` + `ctx` spread                | `app.middleware<Added>().errors({...}).use(...)`                         |
-| `protectedProcedure`                         | `app.procedure().use(authenticated)` — same pattern                      |
-| `httpBatchLink`                              | `batchFetchTransport`                                                    |
-| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
-| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
-| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
-| `createCaller`                               | `createServerClient`                                                     |
-| `ctx.resHeaders` / `responseMeta`            | `.headers()` on the procedure, then `context.headers`                    |
-| `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
+| tRPC                                         | result-rpc                                                                  |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| `initTRPC.context<Ctx>().create()`           | `serverRpc.context<Ctx>()`                                                  |
+| `t.procedure.input(z...).query(fn)`          | `server.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                       |
+| `t.middleware` + `ctx` spread                | `server.middleware<Added>().errors({...}).use(...)`                         |
+| `protectedProcedure`                         | `server.procedure().use(authenticated)` — same pattern                      |
+| `httpBatchLink`                              | `batchFetchTransport`                                                       |
+| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                              |
+| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                    |
+| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                       |
+| `createCaller`                               | `createServerClient`                                                        |
+| `ctx.resHeaders` / `responseMeta`            | `.headers()` on the procedure, then `context.headers`                       |
+| `queryClient.setDefaultOptions({ onError })` | a shell                                                                     |
 
 One row deserves a note, because it is a scar many tRPC codebases carry.
 `ctx.resHeaders` works under `httpBatchLink` and silently stops working under

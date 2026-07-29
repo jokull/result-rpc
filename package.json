@@ -67,8 +67,9 @@
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
     "test": "bun test src examples tests && npm --prefix demo test",
+    "test:package": "node scripts/package-smoke.mjs",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
-    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test && pnpm build",
+    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test && pnpm build && pnpm test:package",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run verify",
     "bench:types": "node bench/types.mjs"
@@ -92,7 +93,8 @@
     "react-dom": "^19.2.8",
     "react-test-renderer": "^19.2.8",
     "tsdown": "0.22.14",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "8.1.5"
   },
   "peerDependencies": {
     "react": ">=18.3"

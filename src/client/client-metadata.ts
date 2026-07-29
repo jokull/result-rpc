@@ -1,8 +1,13 @@
-import type { ClientProcedure, ClientRouter } from "./base-client.js";
+import type {
+  ClientProcedure,
+  ClientProcedureSource,
+  ClientRouter,
+  ProcedureClientTypeCarrier,
+} from "./base-client.js";
 
-export interface ProcedureClientMetadata {
+export interface ProcedureClientMetadata<TProcedure extends ClientProcedure = ClientProcedure> {
   readonly path: string;
-  readonly procedure: ClientProcedure;
+  readonly procedure: TProcedure;
   readonly clientIdentity: object;
 }
 
@@ -41,10 +46,18 @@ export const registerClientLike = (
 export const getClientRouter = (clientIdentity: object): ClientRouter | undefined =>
   clientRouters.get(clientIdentity);
 
-export const getProcedureClientMetadata = (value: Function): ProcedureClientMetadata | undefined =>
-  procedureClientMetadata.get(value);
+export function getProcedureClientMetadata<TClient extends Function & ProcedureClientTypeCarrier>(
+  value: TClient,
+): ProcedureClientMetadata<Extract<ClientProcedureSource<TClient>, ClientProcedure>> | undefined;
+export function getProcedureClientMetadata(value: Function): ProcedureClientMetadata | undefined;
+export function getProcedureClientMetadata(value: Function): ProcedureClientMetadata | undefined {
+  return procedureClientMetadata.get(value);
+}
 
-export const getClientIdentity = (value: object): object | undefined => clientIdentities.get(value);
+export const getClientIdentity = (value: unknown): object | undefined =>
+  (typeof value === "object" && value !== null) || typeof value === "function"
+    ? clientIdentities.get(value)
+    : undefined;
 
 /** Records the `model:id` keys the server declared touching for one result. */
 export const recordTouchedEntities = (result: object, keys: readonly string[]): void => {

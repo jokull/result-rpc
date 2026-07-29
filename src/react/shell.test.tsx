@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { Component, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, err, error, ok, transportErrors, wire } from "../index.js";
-import { createBrowserClient, type ClientEvent } from "../client/client.js";
+import type { ClientEvent } from "../client/client.js";
 import { fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
+import { createFixtureClient } from "../testing/index.js";
 import { ResultRpcProvider, defineShell, useResultQuery } from "./index.js";
 
 (
@@ -67,7 +68,7 @@ const offlineTransport: ClientTransport = {
   request: async () => ({ ok: false, reason: "offline" }),
 };
 
-const clientFor = (transport: ClientTransport) => createBrowserClient({ router, transport });
+const clientFor = (transport: ClientTransport) => createFixtureClient({ router, transport });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -105,6 +106,68 @@ class Boundary extends Component<
 }
 
 describe("shells", () => {
+  test("the public registry is the exact definition chain, not a tag predicate", () => {
+    const AuthShell = defineShell({
+      name: "auth",
+      from: DefectShell,
+      claims: authErrors,
+    });
+    const SameSignatureButDifferentDefinition = error({
+      tag: "auth/session-expired",
+      data: wire.object({}),
+    });
+
+    expect(AuthShell.$errors.definitions.get(SessionExpired.tag)).toBe(SessionExpired);
+    expect(AuthShell.$errors.definitions.get("client/offline")).toBe(transportErrors.ClientOffline);
+    expect(AuthShell.$errors.is(SessionExpired({}))).toBe(true);
+    expect(AuthShell.$errors.is(transportErrors.ClientOffline())).toBe(true);
+    expect(AuthShell.$errors.is(TripNotFound({ docId: "trip_1" }))).toBe(false);
+    expect(AuthShell.$errors.is(SameSignatureButDifferentDefinition({}))).toBe(false);
+  });
+
+  test("same-tag definitions cannot reach a shell's typed callback", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+    const RogueSessionExpired = error({
+      tag: "auth/session-expired",
+      data: wire.object({ count: wire.number }),
+    });
+    let callbackRan = false;
+    let caught: unknown;
+    const RogueShell = defineShell({
+      name: "rogue-auth",
+      claims: { RogueSessionExpired },
+      onError: (failure) => {
+        callbackRan = true;
+        failure.data.count.toFixed();
+      },
+    });
+
+    function Probe() {
+      RogueShell.useQuery(client.trip, { id: "expired" }, { retry: false });
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Boundary onCaught={(value) => (caught = value)}>
+            <RogueShell.Provider>
+              <Probe />
+            </RogueShell.Provider>
+          </Boundary>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(caught).toBeInstanceOf(TypeError);
+    expect((caught as Error).message).toContain("different error definition");
+    expect(callbackRan).toBe(false);
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
   test("a shell paginated hook claims failures and narrows its error union", async () => {
     const client = clientFor(httpTransport);
     const runtime = createQueryRuntime({ client });
@@ -425,7 +488,7 @@ describe("ambient claiming", () => {
 describe("claim breadcrumbs", () => {
   test("a claim emits into the client event stream with owner and effect", async () => {
     const events: ClientEvent[] = [];
-    const client = createBrowserClient({
+    const client = createFixtureClient({
       router,
       transport: httpTransport,
       onEvent: (event) => events.push(event),
@@ -492,7 +555,7 @@ describe("resume lifecycle", () => {
       );
     const router2 = r2.router({ guarded });
     const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
-    const client2 = createBrowserClient({
+    const client2 = createFixtureClient({
       router: router2,
       transport: fetchTransport({
         url: "https://example.test/rpc",

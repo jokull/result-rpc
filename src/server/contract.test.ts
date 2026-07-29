@@ -82,6 +82,7 @@ describe("procedure execution", () => {
   test("rejects middleware errors absent from a shared contract", () => {
     const contract = r.procedure().input(wire.object({})).output(wire.string).query();
 
+    // @ts-expect-error Middleware failures must be declared by a shared contract.
     expect(() => r.implement(contract).use(authenticated)).toThrow(
       "is not declared by the procedure contract",
     );
@@ -249,6 +250,7 @@ describe("procedure execution", () => {
       retry: "never",
       visibility: "public",
     });
+    // @ts-expect-error Same-tag definitions with incompatible data cannot compose.
     expect(() => r.procedure().errors({ Unauthorized }).errors({ OtherUnauthorized })).toThrow(
       "Conflicting definitions",
     );

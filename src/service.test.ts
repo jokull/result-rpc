@@ -48,4 +48,23 @@ describe("services", () => {
     B = defineService("b", { needs: { a: A }, create: () => "b" });
     await expect(resolveServices({ a: A })).rejects.toThrow(/cycle: a -> b -> a/);
   });
+
+  test("a memoized async sibling cannot hide a back-edge", async () => {
+    let A: AnyServiceDefinition;
+    const B = defineService("b", { create: async () => "b" });
+    const C = defineService("c", {
+      needs: {
+        get a() {
+          return A;
+        },
+      },
+      create: async () => "c",
+    });
+    A = defineService("a", {
+      needs: { b: B, c: C },
+      create: async () => "a",
+    });
+
+    await expect(resolveServices({ a: A })).rejects.toThrow(/cycle: a -> c -> a/);
+  });
 });

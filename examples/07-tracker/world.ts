@@ -3,7 +3,7 @@
  * one source of truth for the demo data.
  */
 import type { ActivityEvent } from "./models.js";
-import type { TrackerDb } from "./server.js";
+import type { IssueRow, TrackerDb } from "./server.js";
 
 export const CLOSED_AT = new Date("2026-07-01T12:00:00.000Z");
 
@@ -38,10 +38,10 @@ export function seedDb(): TrackerDb {
           id: "issue-1",
           projectId: "proj-main",
           title: "Fix login bug",
-          status: "open" as const,
+          status: "open",
           assigneeId: "user-bob",
           closedAt: null,
-        },
+        } satisfies IssueRow,
       ],
       [
         "issue-2",
@@ -49,10 +49,10 @@ export function seedDb(): TrackerDb {
           id: "issue-2",
           projectId: "proj-main",
           title: "Archive old docs",
-          status: "closed" as const,
+          status: "closed",
           assigneeId: "user-alice",
           closedAt: CLOSED_AT,
-        },
+        } satisfies IssueRow,
       ],
       [
         "issue-3",
@@ -60,10 +60,10 @@ export function seedDb(): TrackerDb {
           id: "issue-3",
           projectId: "proj-secret",
           title: "Top secret",
-          status: "open" as const,
+          status: "open",
           assigneeId: null,
           closedAt: null,
-        },
+        } satisfies IssueRow,
       ],
     ]),
     activity: new Map([["issue-1", activity]]),

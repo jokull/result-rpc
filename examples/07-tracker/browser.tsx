@@ -8,12 +8,11 @@ import { createRoot } from "react-dom/client";
 import { createBrowserClient, fetchTransport } from "../../src/client/index.js";
 import { appContract } from "./contract.js";
 import { App } from "./app.js";
-import type { AppClient } from "./client.js";
 
 const client = createBrowserClient({
   contract: appContract,
   transport: fetchTransport({ url: "/rpc" }),
   contractVersion: "07-tracker",
-}) as AppClient;
+});
 
 createRoot(document.getElementById("root")!).render(<App client={client} />);

@@ -5,13 +5,13 @@ import {
   type AnyTaggedError,
 } from "../error.js";
 import type { Result } from "../result.js";
+import type { EmptyObject, WireCodec, WireValue } from "../wire.js";
 import type {
   AnyProcedure,
   AnyProcedureContract,
   ContractRouterRecord,
   ErrorDefinitionMap,
   ErrorUnion,
-  ProcedureContractManifest,
   Router,
   RouterContract,
   RouterRecord,
@@ -35,10 +35,9 @@ export interface ClientErrorRegistry<E extends AnyPublicTaggedError> {
 }
 
 /** Zero-input procedures may be called with no argument. */
-export type ClientCallArgs<TInput, TOptions> =
-  Record<never, never> extends TInput
-    ? [input?: TInput, options?: TOptions]
-    : [input: TInput, options?: TOptions];
+export type ClientCallArgs<TInput, TOptions> = EmptyObject extends TInput
+  ? [input?: TInput, options?: TOptions]
+  : [input: TInput, options?: TOptions];
 
 type SubscriptionResult<
   TMode extends "managed" | "iterable",
@@ -47,6 +46,141 @@ type SubscriptionResult<
 > = TMode extends "managed"
   ? ResultSubscription<TOutput, TError>
   : AsyncIterable<Result<TOutput, TError>>;
+
+declare const procedureClientTypes: unique symbol;
+
+export interface ClientPaginationTypes<TListInput, TCursor, TItem> {
+  readonly listInput: TListInput;
+  readonly cursor: TCursor;
+  readonly item: TItem;
+}
+
+type InferClientPagination<TCapability> = TCapability extends {
+  readonly mode: "paginated";
+  readonly _types: {
+    readonly listInput: infer TListInput;
+    readonly cursor: infer TCursor;
+    readonly item: infer TItem;
+  };
+}
+  ? ClientPaginationTypes<TListInput, TCursor, TItem>
+  : never;
+
+/** The associated types of one generated procedure client. */
+export interface ProcedureClientTypes<
+  TInput = unknown,
+  TOutput = unknown,
+  TError extends AnyTaggedError = AnyTaggedError,
+  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
+  TProcedure extends ClientProcedure = ClientProcedure,
+  TPagination = never,
+  TPaginationMode extends "unary" | "paginated" = [TPagination] extends [never]
+    ? "unary"
+    : "paginated",
+> {
+  readonly input: TInput;
+  readonly output: TOutput;
+  readonly error: TError;
+  readonly kind: TKind;
+  readonly procedure: TProcedure;
+  readonly pagination: TPagination;
+  readonly paginationMode: TPaginationMode;
+}
+
+// `any` is intentional at this existential boundary: consumers recover the
+// concrete associated record through `ClientProcedureTypes<T>` before use.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyProcedureClientTypes = ProcedureClientTypes<
+  any,
+  any,
+  AnyTaggedError,
+  any,
+  any,
+  any,
+  any
+>;
+
+/** Associated types retained by every generated procedure client. */
+export interface ProcedureClientTypeCarrier<
+  TTypes extends AnyProcedureClientTypes = AnyProcedureClientTypes,
+> {
+  readonly [procedureClientTypes]: TTypes;
+}
+
+export type ClientProcedureTypes<TProcedureClient> =
+  TProcedureClient extends ProcedureClientTypeCarrier<infer TTypes> ? TTypes : never;
+
+export type ClientProcedureInput<TProcedureClient> =
+  ClientProcedureTypes<TProcedureClient>["input"];
+
+export type ClientProcedureOutput<TProcedureClient> =
+  ClientProcedureTypes<TProcedureClient>["output"];
+
+export type ClientProcedureError<TProcedureClient> =
+  ClientProcedureTypes<TProcedureClient>["error"];
+
+export type ClientProcedureKind<TProcedureClient> = ClientProcedureTypes<TProcedureClient>["kind"];
+
+export type ClientProcedureSource<TProcedureClient> =
+  ClientProcedureTypes<TProcedureClient>["procedure"];
+
+export type ClientProcedurePagination<TProcedureClient> =
+  ClientProcedureTypes<TProcedureClient>["pagination"];
+
+/**
+ * Projects a contract procedure and one client's reachable boundary failures
+ * into the single associated-type record carried by its callable.
+ */
+export type ProcedureClientTypesFor<
+  TProcedure,
+  TBoundaryError extends AnyPublicTaggedError,
+> = TProcedure extends {
+  readonly _def: {
+    readonly input: WireCodec<infer TInput, WireValue>;
+    readonly output: WireCodec<infer TOutput, WireValue>;
+    readonly definitions: infer TDefinitions;
+    readonly kind: infer TKind;
+    readonly capability: infer TCapability;
+  };
+}
+  ? TDefinitions extends ErrorDefinitionMap
+    ? TKind extends "query" | "mutation" | "subscription"
+      ? ProcedureClientTypes<
+          TInput,
+          TOutput,
+          ErrorUnion<TDefinitions> | TBoundaryError,
+          TKind,
+          Extract<TProcedure, ClientProcedure>,
+          InferClientPagination<TCapability>
+        >
+      : never
+    : never
+  : never;
+
+type ProcedureClientFromTypes<
+  TTypes extends AnyProcedureClientTypes,
+  TOptions,
+  TSubscriptionMode extends "managed" | "iterable",
+> =
+  TTypes extends ProcedureClientTypes<
+    infer TInput,
+    infer TOutput,
+    infer TError,
+    infer TKind,
+    any,
+    any,
+    any
+  >
+    ? TKind extends "subscription"
+      ? ((
+          ...args: ClientCallArgs<TInput, TOptions>
+        ) => SubscriptionResult<TSubscriptionMode, TOutput, TError>) & {
+          readonly $kind: TKind;
+        } & ProcedureClientTypeCarrier<TTypes>
+      : ((...args: ClientCallArgs<TInput, TOptions>) => Promise<Result<TOutput, TError>>) & {
+          readonly $kind: TKind;
+        } & ProcedureClientTypeCarrier<TTypes>
+    : never;
 
 /**
  * The shared callable algebra. Environments supply only their reachable
@@ -57,32 +191,11 @@ export type ProcedureClient<
   TBoundaryError extends AnyPublicTaggedError,
   TOptions,
   TSubscriptionMode extends "managed" | "iterable",
-> = TProcedure extends {
-  readonly _def: ProcedureContractManifest<
-    any,
-    infer TInput,
-    infer TOutput,
-    infer TDefinitions,
-    infer TKind
-  >;
-}
-  ? TDefinitions extends ErrorDefinitionMap
-    ? TKind extends "subscription"
-      ? ((
-          input: TInput,
-          options?: TOptions,
-        ) => SubscriptionResult<
-          TSubscriptionMode,
-          TOutput,
-          ErrorUnion<TDefinitions> | TBoundaryError
-        >) & { readonly $kind: "subscription" }
-      : ((
-          ...args: ClientCallArgs<TInput, TOptions>
-        ) => Promise<Result<TOutput, ErrorUnion<TDefinitions> | TBoundaryError>>) & {
-          readonly $kind: TKind;
-        }
-    : never
-  : never;
+> = ProcedureClientFromTypes<
+  ProcedureClientTypesFor<TProcedure, TBoundaryError>,
+  TOptions,
+  TSubscriptionMode
+>;
 
 export type ClientRecord<
   TRecord,

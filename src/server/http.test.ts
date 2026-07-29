@@ -286,6 +286,7 @@ describe("the .headers() declaration", () => {
       });
 
     const contract = h.procedure().output(wire.string).query();
+    // @ts-expect-error Header-writing middleware requires a header-capable contract.
     expect(() => h.implement(contract).use(rotate)).toThrow(/must declare \.headers\(\)/);
 
     // Declared, it composes — and the middleware's write lands.

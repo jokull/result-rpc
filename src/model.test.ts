@@ -53,13 +53,18 @@ describe("defineModel", () => {
     const summary = Doc.pick("id", "title");
     expect(summary.kind).toBe("model(doc):id,title");
     expect(summary.decode({ id: "d1", title: "T" }).ok).toBe(true);
-    expect(() => Doc.pick("title" as never)).toThrow("must include its key");
+    const unsafePick = Doc.pick as (...keys: string[]) => unknown;
+    expect(() => unsafePick("title")).toThrow("must include its key");
   });
 
   test("a missing key field in the shape is rejected at definition", () => {
-    expect(() =>
-      defineModel("broken", { key: "id" as never, shape: { name: wire.string } }),
-    ).toThrow('key "id"');
+    const unsafeDefineModel = defineModel as (
+      name: string,
+      options: { readonly key: string; readonly shape: Readonly<Record<string, unknown>> },
+    ) => unknown;
+    expect(() => unsafeDefineModel("broken", { key: "id", shape: { name: wire.string } })).toThrow(
+      'key "id"',
+    );
   });
 });
 
@@ -108,7 +113,7 @@ describe("patchEntity", () => {
 
   test("replaces every occurrence by identity and leaves unrelated subtrees by reference", () => {
     const root = decode();
-    const { value, changed } = patchEntity(root, User as never, "u1", (current) =>
+    const { value, changed } = patchEntity(root, User, "u1", (current) =>
       mergeByExistingKeys(current, { avatarUrl: "new.png" }),
     );
     expect(changed).toBe(true);
@@ -122,10 +127,10 @@ describe("patchEntity", () => {
 
   test("patched entity objects stay branded, so a second patch still finds them", () => {
     const root = decode();
-    const first = patchEntity(root, User as never, "u1", (current) =>
+    const first = patchEntity(root, User, "u1", (current) =>
       mergeByExistingKeys(current, { avatarUrl: "v2.png" }),
     );
-    const second = patchEntity(first.value, User as never, "u1", (current) =>
+    const second = patchEntity(first.value, User, "u1", (current) =>
       mergeByExistingKeys(current, { avatarUrl: "v3.png" }),
     );
     expect(second.changed).toBe(true);
@@ -135,12 +140,12 @@ describe("patchEntity", () => {
 
   test("no matching change returns the original root by reference", () => {
     const root = decode();
-    const unchanged = patchEntity(root, User as never, "u1", (current) =>
+    const unchanged = patchEntity(root, User, "u1", (current) =>
       mergeByExistingKeys(current, { avatarUrl: "old.png" }),
     );
     expect(unchanged.changed).toBe(false);
     expect(unchanged.value).toBe(root);
-    const missing = patchEntity(root, User as never, "nobody", (current) => current);
+    const missing = patchEntity(root, User, "nobody", (current) => current);
     expect(missing.changed).toBe(false);
     expect(missing.value).toBe(root);
   });
@@ -150,7 +155,7 @@ describe("patchEntity", () => {
     const decoded = summaryCodec.decode({ id: "d1", title: "A" });
     if (!decoded.ok) throw new Error("decode failed");
     const root = [decoded.value];
-    const { value } = patchEntity(root, Doc as never, "d1", (current) =>
+    const { value } = patchEntity(root, Doc, "d1", (current) =>
       mergeByExistingKeys(current, {
         title: "renamed",
         author: { id: "u9" }, // not in the projection: must not appear
@@ -173,7 +178,7 @@ describe("patchEntity", () => {
     node.self = node; // cycle through the entity itself
     const shared = { node };
     const root = { left: shared, right: shared };
-    const { value, changed } = patchEntity(root, Doc as never, "d1", (current) =>
+    const { value, changed } = patchEntity(root, Doc, "d1", (current) =>
       mergeByExistingKeys(current, { title: "B" }),
     );
     expect(changed).toBe(true);
@@ -213,7 +218,8 @@ describe("composite keys", () => {
   });
 
   test("pick must include every key field", () => {
-    expect(() => Content.pick("id", "title")).toThrow(/key "locale"/);
+    const unsafePick = Content.pick as (...keys: string[]) => unknown;
+    expect(() => unsafePick("id", "title")).toThrow(/key "locale"/);
     expect(() => Content.pick("id", "locale", "title")).not.toThrow();
   });
 
@@ -255,16 +261,18 @@ describe("scoped outputs", () => {
     // The narrow view cannot carry what it does not name.
     expect("lat" in (decoded.value as object)).toBe(false);
     // Identity survives at every level: root and nested are both branded.
-    expect(entityBrandOf(decoded.value as object)).toBe(Person as never);
-    expect(entityBrandOf((decoded.value as { friend: object }).friend)).toBe(Person as never);
+    expect(entityBrandOf(decoded.value as object)).toBe(Person);
+    expect(entityBrandOf((decoded.value as { friend: object }).friend)).toBe(Person);
   });
 
   test("a selection still demands the key — identity is not optional", () => {
-    expect(() => Person.select({ name: true })).toThrow(/must include its key/);
+    const unsafeSelect = Person.select as (selection: Readonly<Record<string, unknown>>) => unknown;
+    expect(() => unsafeSelect({ name: true })).toThrow(/must include its key/);
   });
 
   test("select rejects a true for a field the model does not have", () => {
-    expect(() => Person.select({ id: true, nope: true } as never)).toThrow(/has no field "nope"/);
+    const unsafeSelect = Person.select as (selection: Readonly<Record<string, unknown>>) => unknown;
+    expect(() => unsafeSelect({ id: true, nope: true })).toThrow(/has no field "nope"/);
   });
 
   test("a wide payload cannot widen a narrow cached row", () => {

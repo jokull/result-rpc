@@ -5,3 +5,4 @@ dist/
 .blume/
 website/dist/
 src/**/*.d.ts
+!PLAN.md

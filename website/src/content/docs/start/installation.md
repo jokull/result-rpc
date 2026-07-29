@@ -24,7 +24,7 @@ import {
   type RouterInputs,
   type RouterOutputs,
 } from "result-rpc";
-import { createFetchHandler } from "result-rpc/server";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
 import { batchFetchTransport, createBrowserClient } from "result-rpc/client";
 import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react";
 ```

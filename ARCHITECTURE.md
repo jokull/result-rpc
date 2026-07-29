@@ -47,9 +47,9 @@ These are requirements, not aspirations:
 9. Retry policy has one owner for any operation attempt.
 10. Local/server-side calls can be run with the same encode/decode semantics as
     remote calls.
-11. Narrowing is subtractive and never additive: a shell may only remove tags an
-    enclosing layer provably owns. The contract union is unchanged by it.
-12. A tag removed from an operation's union never surfaces as that operation's
+11. Narrowing is subtractive and never additive: a shell may only remove error
+    definitions an enclosing layer provably owns. The contract union is unchanged by it.
+12. An error removed from an operation's union never surfaces as that operation's
     terminal failure state.
 
 ## System shape
@@ -97,7 +97,7 @@ Suggested exports:
 ```ts
 import { ok, err, match, matchError, error, wire, rpc } from "result-rpc";
 
-import { createFetchHandler, createServerClient } from "result-rpc/server";
+import { createFetchHandler, createServerClient, serverRpc } from "result-rpc/server";
 
 import { createBrowserClient, fetchTransport, batchFetchTransport } from "result-rpc/client";
 
@@ -114,7 +114,9 @@ import { createParityClient } from "result-rpc/testing";
 ```
 
 The root entry is the contract language — everything safe on both sides of the
-wire (results, codecs, errors, layers, services, `rpc` builders). Each runtime
+wire (results, codecs, errors, layer declarations, services, and the contract-only
+`rpc` builder). Server middleware, implementations, and routers begin at
+`serverRpc`. Each runtime
 then has exactly one entry: `/server`, `/client`, `/react`, `/testing`.
 
 Subpath exports are organizational boundaries, not independently versioned
@@ -249,7 +251,8 @@ procedures, middleware, shells, layers, and catalogs. The router build is the
 registry: it collects every declared definition, rejects a tag bound to two
 different definitions (reference identity), and exposes the result as
 `router.errors`. Uniqueness at this level is required for ambient shell
-claiming, which is keyed by tag alone. `defineErrors(namespace, specs)` derives
+claiming: a tag locates a candidate definition, then that exact definition must
+recognize the reified instance. `defineErrors(namespace, specs)` derives
 tags from keys (template-literal typed), so a tag string is written once or
 never.
 
@@ -395,7 +398,7 @@ Middleware errors union with procedure errors. Collision rules are identical to
 router composition. Middleware cannot silently replace a procedure's definition.
 
 ```ts
-const authenticated = rpc
+const authenticated = serverRpc
   .middleware()
   .errors({ Unauthorized })
   .use(async ({ context, next, errors }) => {
@@ -414,7 +417,7 @@ Contract construction produces an immutable browser-safe manifest containing, pe
 - complete error registry;
 - error policies.
 
-`app.implement(contract)` attaches the server-only middleware chain and handler.
+`server.implement(contract)` attaches the server-only middleware chain and handler.
 The server router is therefore a separate runtime object and cannot accidentally
 pull repository, authentication, or database code into the browser bundle. The
 shared manifest drives client type inference, decoding, documentation, test
@@ -957,17 +960,17 @@ Claiming and narrowing are two halves with different carriers:
 **Claiming is ambient.** A mounted shell provider registers a claim entry in a
 scope context; every base hook (`useResultQuery`, `useResultMutation`,
 `useResultSubscription`, suspense) consults the mounted scope, innermost owner
-first. A claimed tag therefore never becomes a terminal failure anywhere
+first. A claimed definition therefore never becomes a terminal failure anywhere
 beneath its owner, regardless of which hook observed it — the shell is a
-monitor on all procedure activity below it, keyed purely by the wire contract's
-tags, with no knowledge of the procedures involved. `useHeld()` aggregates
+monitor on all procedure activity below it. Tags index the registry; exact
+definition predicates establish ownership. `useHeld()` aggregates
 everything absorbed, not just shell-hook traffic.
 
 **Narrowing is carried by the shell _value_, not by tree position:**
 
-- the accumulated handled set is computed at the type level by walking `from:`,
-  so `Shell.useQuery` returns `ExcludeTags<ProcedureError, Handled>` without any
-  hand-written union;
+- the exact definition chain is retained by walking `from:`; shell hooks
+  distribute over the procedure union and remove only members whose full
+  tag/data/visibility signature is claimed, without any hand-written union;
 - a shell hook cannot be reached without importing the module that declares the
   layer's handler, so the subtraction is not a claim the type system takes on
   faith from context;

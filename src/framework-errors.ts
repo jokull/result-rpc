@@ -70,7 +70,7 @@ export const ClientProtocolViolation = error({
       wire.literal("version"),
       wire.literal("envelope"),
       wire.literal("unknown-tag"),
-    ] as const),
+    ]),
   }),
   httpStatus: 502,
   retry: "never",
@@ -81,7 +81,7 @@ export const ClientProtocolViolation = error({
 export const ClientDecodeFailure = error({
   tag: "client/decode-failure",
   data: wire.object({
-    target: wire.union([wire.literal("success"), wire.literal("error")] as const),
+    target: wire.union([wire.literal("success"), wire.literal("error")]),
   }),
   httpStatus: 502,
   retry: "never",

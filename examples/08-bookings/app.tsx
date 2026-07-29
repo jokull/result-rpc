@@ -9,9 +9,11 @@
  */
 import { useState } from "react";
 import { matchError } from "../../src/index.js";
-import { boundaryShells, ResultRpcProvider, useResultClient } from "../../src/react/index.js";
+import { boundaryShells, createResultRpcReact } from "../../src/react/index.js";
 import type { AppClient } from "./client.js";
 import { TourContent, type Locale, type OrderTree } from "./models.js";
+
+export const { ResultRpcProvider, useResultClient } = createResultRpcReact<AppClient>();
 
 export const { TransportShell, DefectShell, StaleShell, BoundaryProvider, useConnectivity } =
   boundaryShells({ name: "bookings" });
@@ -61,7 +63,7 @@ function LineItemCard({ item }: { item: LineItemView }) {
 }
 
 export function OrdersTree() {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const list = StaleShell.useQuery(client.orders.list, {});
 
   switch (list.state) {
@@ -93,7 +95,7 @@ export function OrdersTree() {
 }
 
 export function NoteEditor({ orderId }: { orderId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [note, setNote] = useState("");
   const setNoteMutation = StaleShell.useMutation(client.orders.setNote);
 
@@ -129,7 +131,7 @@ export function NoteEditor({ orderId }: { orderId: string }) {
 // -- hotel front desk ------------------------------------------------------------------
 
 export function HotelDesk({ hotelId }: { hotelId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const hotel = StaleShell.useQuery(client.hotels.byId, { id: hotelId });
   const updatePhone = StaleShell.useMutation(client.hotels.updatePhone);
 
@@ -175,7 +177,7 @@ function ReviewsPage({
   isLast: boolean;
   onMore: () => void;
 }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const pageQuery = StaleShell.useQuery(client.hotels.reviews, { hotelId, page });
 
   switch (pageQuery.state) {
@@ -227,7 +229,7 @@ export function ReviewsPanel({ hotelId }: { hotelId: string }) {
 }
 
 export function ReviewStats({ hotelId }: { hotelId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const stats = StaleShell.useQuery(client.hotels.reviewStats, { hotelId });
 
   switch (stats.state) {
@@ -247,7 +249,7 @@ export function ReviewStats({ hotelId }: { hotelId: string }) {
 }
 
 export function TopReviewerCard({ userId }: { userId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const user = StaleShell.useQuery(client.users.byId, { id: userId });
   const rename = StaleShell.useMutation(client.users.rename);
 
@@ -279,7 +281,7 @@ export function TopReviewerCard({ userId }: { userId: string }) {
 }
 
 export function AddReviewForm({ hotelId }: { hotelId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [body, setBody] = useState("");
   const [rating, setRating] = useState("5");
   const addReview = StaleShell.useMutation(client.reviews.add);
@@ -330,7 +332,7 @@ export function AddReviewForm({ hotelId }: { hotelId: string }) {
 // -- tour content (composite key: id + locale) ---------------------------------------------
 
 export function TourDetail({ id, locale }: { id: string; locale: Locale }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const tour = StaleShell.useQuery(client.tours.byId, { id, locale });
 
   switch (tour.state) {
@@ -355,7 +357,7 @@ export function TourDetail({ id, locale }: { id: string; locale: Locale }) {
 }
 
 export function FeaturedTours({ locale }: { locale: Locale }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const featured = StaleShell.useQuery(client.tours.featured, { locale });
 
   switch (featured.state) {
@@ -375,7 +377,7 @@ export function FeaturedTours({ locale }: { locale: Locale }) {
 }
 
 export function RenameTourForm({ id, locale }: { id: string; locale: Locale }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [title, setTitle] = useState("");
 
   const rename = StaleShell.useMutation(client.tours.editTitle, {
@@ -420,7 +422,7 @@ export function RenameTourForm({ id, locale }: { id: string; locale: Locale }) {
 }
 
 export function RetireTourButton({ id }: { id: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const retire = StaleShell.useMutation(client.tours.retire);
   return (
     <button onClick={() => void retire.mutate({ id }).catch(() => undefined)}>
@@ -442,7 +444,7 @@ export function AvailabilityPanel({
   to: string;
   locale: Locale;
 }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const search = StaleShell.useQuery(client.availability.search, { from, to, locale });
 
   switch (search.state) {
@@ -466,7 +468,7 @@ export function AvailabilityPanel({
 // -- next departure (derived summary) ------------------------------------------------------------
 
 export function NextDeparture() {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const summary = StaleShell.useQuery(client.profile.nextDeparture, {});
   const reschedule = StaleShell.useMutation(client.orders.reschedule);
 

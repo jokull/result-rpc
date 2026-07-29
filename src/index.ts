@@ -19,6 +19,7 @@ export {
   tryPromise,
 } from "./result.js";
 export type { Err, Ok, Result } from "./result.js";
+export type { RpcConstraintError } from "./type-diagnostics.js";
 
 export {
   TaggedError,
@@ -34,6 +35,7 @@ export type {
   AnyPublicTaggedError,
   AnyTaggedError,
   EncodedTaggedError,
+  ErrorCatalog,
   ErrorSpec,
   HttpStatusName,
   NamespacedErrors,
@@ -67,9 +69,11 @@ export type {
   RequiredLayer,
 } from "./layer.js";
 
-export { rpc } from "./server/contract.js";
+export { rpc } from "./contract.js";
+export type { ContractFactory } from "./contract.js";
 export type {
   AnyProcedure,
+  AnyPaginatedProcedure,
   AnyProcedureContract,
   AnySubscriptionProcedure,
   AnyUnaryProcedure,
@@ -94,18 +98,20 @@ export type {
   RouterInputs,
   RouterOutputs,
   RouterRecord,
-  RpcFactory,
   SubscriptionProcedure,
   SubscriptionProcedureManifest,
 } from "./server/contract.js";
 
 export { wire } from "./wire.js";
 export type {
+  AnyWireCodec,
   CodecIssue,
   DecodeResult,
+  EmptyObject,
   EncodedOf,
   InputOf,
   WireCodec,
+  WireGuard,
   WireScalar,
   WireValue,
 } from "./wire.js";
@@ -132,12 +138,13 @@ export type { ClientBoundaryError } from "./framework-errors.js";
 
 export { contractDigest } from "./contract-digest.js";
 
-export { defineModel } from "./model.js";
+export { defineModel, entityIdFor } from "./model.js";
 export type {
   AnyModel,
   DefineModelOptions,
   ModelDefinition,
   ModelKeyInput,
+  ModelProjection,
   ModelValue,
 } from "./model.js";
 

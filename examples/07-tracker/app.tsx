@@ -9,17 +9,14 @@
  */
 import { useState } from "react";
 import { errorCatalog, matchError, validateStandard, type ModelValue } from "../../src/index.js";
-import {
-  boundaryShells,
-  layerShell,
-  ResultRpcProvider,
-  useResultClient,
-} from "../../src/react/index.js";
+import { boundaryShells, createResultRpcReact } from "../../src/react/index.js";
 import type { AppClient } from "./client.js";
 import { SessionLayer } from "./contract.js";
 import { issueErrors, projectErrors } from "./errors.js";
 import { Issue } from "./models.js";
 import { createIssueSchema } from "./schema.js";
+
+export const { layerShell, ResultRpcProvider, useResultClient } = createResultRpcReact<AppClient>();
 
 type IssueView = ModelValue<typeof Issue>;
 
@@ -33,7 +30,7 @@ export const signInReactions = { count: 0 };
 
 export const ViewerShell = layerShell(SessionLayer, {
   from: StaleShell,
-  procedure: (client: AppClient) => client.session.me,
+  select: (client) => client.session.me,
   onError: () => {
     signInReactions.count += 1;
   },
@@ -67,7 +64,7 @@ export function Header() {
 
 /** Resolves an assignee id to a display name through the cached people query. */
 function useUserName(id: string | null): string {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const people = ViewerShell.useQuery(client.users.list, {});
   if (id === null) return "unassigned";
   if (people.state !== "success") return id;
@@ -77,7 +74,7 @@ function useUserName(id: string | null): string {
 // -- issue list --------------------------------------------------------------------
 
 export function IssueList() {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const issues = ViewerShell.useQuery(client.issues.list, {});
 
   switch (issues.state) {
@@ -118,7 +115,7 @@ const issueFailureMessage = errorCatalog(
 );
 
 export function IssueDetail({ id }: { id: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const issue = ViewerShell.useQuery(client.issues.byId, { id });
   const assignee = useUserName(issue.state === "success" ? issue.value.assigneeId : null);
 
@@ -151,7 +148,7 @@ const assignMessages = errorCatalog(
 );
 
 export function AssignControls({ issue }: { issue: IssueView }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const people = ViewerShell.useQuery(client.users.list, {});
   const assign = ViewerShell.useMutation(client.issues.assign);
 
@@ -198,7 +195,7 @@ export function AssignControls({ issue }: { issue: IssueView }) {
 }
 
 export function CloseButton({ issueId }: { issueId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const close = ViewerShell.useMutation(client.issues.close);
   return (
     <div>
@@ -221,7 +218,7 @@ export function CloseButton({ issueId }: { issueId: string }) {
 // -- projects panel (updated by the create/close cascades' touch) ---------------------
 
 export function ProjectsPanel() {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const projects = ViewerShell.useQuery(client.projects.list, {});
 
   switch (projects.state) {
@@ -245,7 +242,7 @@ export function ProjectsPanel() {
 // -- activity feed (subscription) -----------------------------------------------------
 
 export function ActivityFeed({ issueId }: { issueId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const feed = ViewerShell.useSubscription(client.issues.activity, { issueId });
   const ended = feed.connection === "closed" ? <p>Activity feed ended.</p> : null;
 
@@ -295,7 +292,7 @@ let issueCounter = 0;
 export const mintIssueId = () => `iss_${++issueCounter}`;
 
 export function NewIssueForm({ projectId }: { projectId: string }) {
-  const client = useResultClient<AppClient>();
+  const client = useResultClient();
   const [title, setTitle] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, readonly string[]>>>({});
 
@@ -311,10 +308,10 @@ export function NewIssueForm({ projectId }: { projectId: string }) {
               id: input.id,
               projectId: input.projectId,
               title: input.title,
-              status: "open" as const,
+              status: "open",
               assigneeId: null,
               closedAt: null,
-            },
+            } satisfies IssueView,
           ],
       ),
     }),

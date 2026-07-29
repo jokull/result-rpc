@@ -127,7 +127,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
           <p class="eyebrow">03 · The client boundary</p>
           <h3>The contract exists at runtime.</h3>
           <p>The client consumes a runtime contract containing codecs, error definitions, and policies. That runtime value is what validates and reconstructs rich values and tagged errors after they cross the wire.</p>
-          <p>Shared contract modules must remain free of server implementation code. Build the client from the contract, not the router; importing the router into a browser entry can retain handlers and server-only dependencies, and result-rpc warns about it in development.</p>
+          <p>Shared contract modules remain free of server implementation code. The browser client imports that contract; handlers, database drivers, and environment access stay behind the server entry.</p>
           <a class="pillar-link" href="/concepts/client-boundary/">The client boundary rule <span>→</span></a>
         </div>
         <figure class="pillar-code">

@@ -4,9 +4,8 @@
  * factory the tests use.
  */
 import { err, gen, mapError, ok, type ModelValue } from "../../src/index.js";
-import { createFetchHandler } from "../../src/server/index.js";
+import { createFetchHandler, serverRpc } from "../../src/server/index.js";
 import {
-  app,
   appContract,
   assignIssueContract,
   closeIssueContract,
@@ -47,21 +46,23 @@ export interface AppContext {
   gate?: () => Promise<void>;
 }
 
+const server = serverRpc.context<AppContext>();
+
 // -- session ------------------------------------------------------------------
 
-const sessionMiddleware = SessionLayer.middleware(app, ({ context, errors }) => {
+const sessionMiddleware = SessionLayer.middleware(server, ({ context, errors }) => {
   const user = context.userId ? context.db.users.get(context.userId) : undefined;
   return user ? ok(user) : err(errors.unauthorized());
 });
 
 // -- issues -------------------------------------------------------------------
 
-const listIssues = app
+const listIssues = server
   .implement(listIssuesContract)
   .use(sessionMiddleware)
   .handler(({ context }) => ok([...context.db.issues.values()]));
 
-const issueById = app
+const issueById = server
   .implement(issueByIdContract)
   .use(sessionMiddleware)
   .handler(({ input, errors, context }) => {
@@ -73,7 +74,7 @@ const issueById = app
     return ok(issue);
   });
 
-const createIssue = app
+const createIssue = server
   .implement(createIssueContract)
   .use(sessionMiddleware)
   .handler(async ({ input, errors, context, touch }) => {
@@ -87,10 +88,10 @@ const createIssue = app
       id: input.id,
       projectId: input.projectId,
       title: input.title,
-      status: "open" as const,
+      status: "open",
       assigneeId: null,
       closedAt: null,
-    };
+    } satisfies IssueRow;
     context.db.issues.set(issue.id, issue);
     const project = context.db.projects.get(issue.projectId);
     if (project) {
@@ -102,7 +103,7 @@ const createIssue = app
     return ok(issue);
   });
 
-const assignIssue = app
+const assignIssue = server
   .implement(assignIssueContract)
   .use(sessionMiddleware)
   .handler(({ input, errors, context }) => {
@@ -115,7 +116,7 @@ const assignIssue = app
     return ok(issue);
   });
 
-const closeIssue = app
+const closeIssue = server
   .implement(closeIssueContract)
   .use(sessionMiddleware)
   .handler(({ input, errors, context, touch }) => {
@@ -133,7 +134,7 @@ const closeIssue = app
     return ok(issue);
   });
 
-const issueActivity = app
+const issueActivity = server
   .implement(issueActivityContract)
   .use(sessionMiddleware)
   .stream(async function* ({ input, errors, context }) {
@@ -149,7 +150,7 @@ const issueActivity = app
 
 // -- users and projects ---------------------------------------------------------
 
-const listUsers = app
+const listUsers = server
   .implement(listUsersContract)
   .use(sessionMiddleware)
   .handler(({ errors, context }) =>
@@ -165,15 +166,15 @@ const listUsers = app
     }),
   );
 
-const listProjects = app
+const listProjects = server
   .implement(listProjectsContract)
   .use(sessionMiddleware)
   .handler(({ context }) => ok([...context.db.projects.values()]));
 
 // -- router and handler ---------------------------------------------------------
 
-export const router = app.router({
-  session: { me: SessionLayer.procedure(app, sessionMeContract, sessionMiddleware) },
+export const router = server.router({
+  session: { me: SessionLayer.procedure(server, sessionMeContract, sessionMiddleware) },
   issues: {
     list: listIssues,
     byId: issueById,

@@ -9,7 +9,7 @@ export const ticketListContract = app
   .procedure()
   .input(
     wire.object({
-      status: wire.union([wire.literal("all"), TicketStatus] as const),
+      status: wire.union([wire.literal("all"), TicketStatus]),
       search: wire.string,
     }),
   )
@@ -52,7 +52,7 @@ export const editTicketContract = app
       title: wire.string,
       description: wire.string,
       priority: TicketPriority,
-      assignee: wire.union([wire.string, wire.null] as const),
+      assignee: wire.union([wire.string, wire.null]),
     }),
   )
   .output(Ticket.all("one entity response patches every cached projection"))

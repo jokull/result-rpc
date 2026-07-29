@@ -63,13 +63,16 @@ join the union, and any `.use()` site pulls the whole chain in dependency
 order:
 
 ```ts
-const session = app
+import { serverRpc } from "result-rpc/server";
+
+const server = serverRpc.context<AppContext>();
+const session = server
   .middleware<{ viewer: User | null }>()
   .use(async ({ context, next }) =>
     next({ context: { ...context, viewer: await userFromCookie(context) } }),
   );
 
-const requireViewer = app
+const requireViewer = server
   .middleware<{ viewer: User }>()
   .after(session) // handler sees viewer: User | null
   .errors({ Unauthorized })
@@ -83,7 +86,7 @@ const requireViewer = app
 A mutation then demands exactly one thing:
 
 ```ts
-export const renameDoc = app
+export const renameDoc = server
   .procedure()
   .input(RenameInput)
   .output(DocCodec)
@@ -108,7 +111,7 @@ session cookie on login, a `cache-control`, a rate-limit hint. A procedure that
 does not declare it has no `context.headers` at all.
 
 ```ts
-const login = app
+const login = server
   .procedure()
   .headers()
   .input(wire.object({ email: wire.string, password: wire.string }))
@@ -143,7 +146,7 @@ every procedure using it must declare `.headers()` too — the same rule that
 makes a middleware's errors part of its procedures' declared unions:
 
 ```ts
-const rotateSession = app
+const rotateSession = server
   .middleware()
   .headers()
   .use(({ context, next }) => {

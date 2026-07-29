@@ -15,11 +15,12 @@ properties made that design stick:
 3. **Unclaimed errors fail loudly** rather than vanish.
 
 A shell is the same contract, transplanted from thrown render errors to
-failure _values_. A shell is a provider that claims a set of error tags. Any
-operation rendered beneath it — no matter which hook issued it — that fails
-with a claimed tag is routed to the shell instead of surfacing as component
-state. The 401 interceptor becomes a typed declaration with a position in the
-tree, and the tags it owns disappear from the unions below it.
+failure _values_. A shell is a provider that claims a map of error definitions.
+Any operation rendered beneath it — no matter which hook issued it — that fails
+with an instance recognized by one of those definitions is routed to the shell
+instead of surfacing as component state. The 401 interceptor becomes a typed
+declaration with a position in the tree, and the errors it owns disappear from
+the unions below it.
 
 ## Three tiers of failure, three built-in owners
 
@@ -167,23 +168,24 @@ No test can make that claim. The type checker makes it on every build.
 ## How claiming actually works
 
 Claiming is **per observer and tree-positional**. Each hook, at its render
-position, checks whether an enclosing shell claims the failure's tag. The
+position, uses the failure tag to find a candidate definition in an enclosing
+shell, then asks that exact definition to recognize the instance. The
 cache is never rewritten: the entry still holds the real `Err`, refetch
 bookkeeping continues underneath, and an observer of the same cache entry
 rendered _outside_ the shell still sees `state: "failure"`. A shell changes
 how a failure presents where it presents — nothing else. The innermost shell
-claiming a tag owns it.
+claiming the definition owns it.
 
 The type story has two halves:
 
-- **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's claimed
-  tags from the union — and eagerly asserts, at mount, that every shell in
+- **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's exact
+  claimed error signatures from the union — and eagerly asserts, at mount, that every shell in
   the chain is actually mounted above it. The subtraction is only honest if
   the owners exist, so a missing provider throws on _first render_, the same
   contract as any context hook without its provider. You find out on the
   happy path in development, not on the error path in production.
 - **Plain hooks over-approximate.** `useResultQuery` keeps the full union.
-  Under a mounted shell, the claimed tags in that type are unreachable —
+  Under a mounted shell, the claimed errors in that type are unreachable —
   the shell routes them — exactly the way a `try/catch` inside an error
   boundary lists exceptions the boundary would have caught anyway.
   Unreachable, not untrue; and outside any shell, the same type is exact.
@@ -193,7 +195,7 @@ if a plain hook under `AuthShell` could surface `auth/session-expired` as
 component state, the shell's guarantee — and every narrowed union derived from
 it — would be a lie. Ownership is positional or it is nothing.
 
-To genuinely own a claimed tag yourself, render outside the shell that owns
+To genuinely own a claimed error yourself, render outside the shell that owns
 it. The login page lives outside `AuthShell` and handles
 `auth/session-expired` as an ordinary failure, because there is no session to
 guarantee there.
@@ -321,7 +323,7 @@ procedure and middleware failures
 export const authErrors = { Unauthorized, SessionExpired };
 
 // server
-const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
+const authenticated = server.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
 
 // client
 const AuthShell = defineShell({ name: "auth", claims: authErrors /* ... */ });

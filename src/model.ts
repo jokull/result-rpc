@@ -1,11 +1,13 @@
 import {
   wire,
+  type AnyWireCodec,
   type CodecShape,
   type InputOf,
   type ShapeInput,
   type WireCodec,
   type WireValue,
 } from "./wire.js";
+import type { RpcConstraintError } from "./type-diagnostics.js";
 
 /**
  * Entity identities: the graph over the denormalized cache.
@@ -22,16 +24,25 @@ import {
  * shared references, cycles, and Map/Set members behave uniformly.
  */
 
+/** Runtime-erased model metadata; use ModelDefinition to retain shape and key inference. */
+export interface AnyModel {
+  readonly $model: true;
+  readonly name: string;
+  readonly key: string | readonly string[];
+  readonly keyFields: readonly string[];
+}
+
 export interface ModelDefinition<
   TName extends string = string,
   TShape extends CodecShape = CodecShape,
-> {
+  TKey extends ShapeKeySpec<TShape> = ShapeKeySpec<TShape>,
+> extends AnyModel {
   readonly $model: true;
   readonly name: TName;
   /** The identity field(s) as declared; present in the canonical shape and every pick. */
-  readonly key: string | readonly string[];
+  readonly key: TKey;
   /** The identity fields, normalized. Composite keys join values in this order. */
-  readonly keyFields: readonly string[];
+  readonly keyFields: readonly KeyField<TKey>[];
   /**
    * Prove that this model is an exact projection of an upstream row or
    * domain type. Extra source fields are allowed; every model field must
@@ -49,7 +60,7 @@ export interface ModelDefinition<
     ...mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource> extends never
       ? []
       : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]
-  ): ModelDefinition<TName, TShape>;
+  ): ModelDefinition<TName, TShape, TKey>;
   /**
    * A strict projection codec — a subset of the shape, still
    * identity-collecting. It validates an exact view; it does not strip fields
@@ -57,7 +68,13 @@ export interface ModelDefinition<
    * The key field is mandatory: an entity without its identity is just data.
    */
   pick<const TKeys extends readonly (keyof TShape & string)[]>(
-    ...keys: TKeys
+    ...keys: Exclude<KeyField<TKey>, TKeys[number]> extends never
+      ? TKeys
+      : TKeys &
+          RpcConstraintError<
+            "model-selection-missing-identity-fields",
+            Exclude<KeyField<TKey>, TKeys[number]>
+          >
   ): WireCodec<ShapeInput<Pick<TShape, TKeys[number]>>, WireValue>;
   /**
    * A structured projection: `true` for the model's own fields, a codec for
@@ -78,7 +95,13 @@ export interface ModelDefinition<
       readonly [TKey in keyof TSelection]: SelectionValue<TShape, TKey>;
     },
   >(
-    selection: TSelection,
+    selection: Exclude<KeyField<TKey>, SelectedOwnFields<TSelection>> extends never
+      ? TSelection
+      : TSelection &
+          RpcConstraintError<
+            "model-selection-missing-identity-fields",
+            Exclude<KeyField<TKey>, SelectedOwnFields<TSelection>>
+          >,
   ): WireCodec<SelectionInput<TShape, TSelection>, WireValue>;
   /**
    * Every field of the model, which means this output widens whenever the
@@ -106,7 +129,15 @@ export type SelectionInput<TShape extends CodecShape, TSelection> = {
       : never;
 };
 
-export type AnyModel = ModelDefinition<string, CodecShape>;
+type ShapeKeySpec<TShape extends CodecShape> =
+  | (keyof TShape & string)
+  | readonly (keyof TShape & string)[];
+
+type KeyField<TKey> = TKey extends readonly (infer TField extends string)[] ? TField : TKey;
+
+type SelectedOwnFields<TSelection> = {
+  [TKey in keyof TSelection]: TSelection[TKey] extends true ? TKey : never;
+}[keyof TSelection];
 
 type Equal<TLeft, TRight> =
   (<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
@@ -133,22 +164,66 @@ type ModelSourceMismatch<TModel extends object, TSource extends object> =
         >;
       };
 
-export type ModelValue<TModel> =
+export type ModelValue<TModel extends AnyModel> =
   TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
 
-export interface DefineModelOptions<TShape extends CodecShape> {
+type ModelIdentityField<TModel extends AnyModel> =
+  TModel["key"] extends readonly (infer TField extends string)[] ? TField : TModel["key"];
+
+/**
+ * The most a cache updater may know about one occurrence of an entity.
+ * Identity is always present; every other canonical field is projection-dependent.
+ */
+export type ModelProjection<TModel extends AnyModel> = Readonly<
+  Pick<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>> &
+    Partial<Omit<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>>>
+>;
+
+type ScalarKeyField<TShape extends CodecShape> = {
+  [TKey in keyof TShape & string]: [InputOf<TShape[TKey]>] extends [never]
+    ? never
+    : [InputOf<TShape[TKey]>] extends [string | number]
+      ? TKey
+      : never;
+}[keyof TShape & string];
+
+type ModelKeySpec<TShape extends CodecShape> =
+  | ScalarKeyField<TShape>
+  | readonly ScalarKeyField<TShape>[];
+
+export interface DefineModelOptions<
+  TShape extends CodecShape,
+  TKey extends ModelKeySpec<TShape> = ModelKeySpec<TShape>,
+> {
   /**
    * The field(s) carrying the identity (string or number values). A composite
    * key — e.g. `["id", "locale"]` for content that varies per locale under
    * one id — makes each combination its OWN entity: patching the `en`
    * variant never touches the `ja` variant.
    */
-  readonly key: (keyof TShape & string) | readonly (keyof TShape & string)[];
+  readonly key: TKey;
   readonly shape: TShape;
 }
 
 /** How callers address an entity: a plain id, a pre-joined composite id, or the key fields. */
-export type ModelKeyInput = string | number | Readonly<Record<string, string | number>>;
+type ModelKeyRecord<TModel extends AnyModel> = Readonly<{
+  [TField in KeyField<TModel["key"]>]: TField extends keyof ModelValue<TModel>
+    ? Extract<ModelValue<TModel>[TField], string | number>
+    : never;
+}>;
+
+type SpecificModelKeyInput<
+  TModel extends AnyModel,
+  TKey = TModel["key"],
+> = TKey extends readonly string[]
+  ? string | ModelKeyRecord<TModel>
+  : TKey extends keyof ModelValue<TModel>
+    ? Extract<ModelValue<TModel>[TKey], string | number> | ModelKeyRecord<TModel>
+    : never;
+
+export type ModelKeyInput<TModel extends AnyModel = AnyModel> = string extends TModel["name"]
+  ? string | number | Readonly<Record<string, string | number>>
+  : SpecificModelKeyInput<TModel>;
 
 /** Decoded-entity brands: object identity → its model. Global and inert. */
 const entityBrands = new WeakMap<object, AnyModel>();
@@ -161,7 +236,8 @@ export const brandEntity = (value: object, model: AnyModel): void => {
   entityBrands.set(value, model);
 };
 
-const entityIdOf = (value: object, model: AnyModel): string | undefined => {
+/** @internal Reads a canonical entity id from a decoded, branded object. */
+export const entityIdOf = (value: object, model: AnyModel): string | undefined => {
   const parts: string[] = [];
   for (const field of model.keyFields) {
     const raw = (value as Record<string, unknown>)[field];
@@ -173,10 +249,13 @@ const entityIdOf = (value: object, model: AnyModel): string | undefined => {
 
 /**
  * Resolves a caller-supplied key to the entity's id string. Records must
- * carry every key field; a bare string/number addresses single-field keys
- * (or is taken as a pre-joined composite id).
+ * carry every key field. A bare scalar addresses a single-field key; a string
+ * may also carry the canonical pre-joined form of a composite key.
  */
-export const entityIdFor = (model: AnyModel, id: ModelKeyInput): string | undefined => {
+export const entityIdFor = <TModel extends AnyModel>(
+  model: TModel,
+  id: ModelKeyInput<TModel>,
+): string | undefined => {
   if (typeof id === "string" || typeof id === "number") return String(id);
   return entityIdOf(id as object, model);
 };
@@ -199,12 +278,19 @@ const brandingCodec = <TValue>(
   },
 });
 
-export const defineModel = <const TName extends string, const TShape extends CodecShape>(
+export const defineModel = <
+  const TName extends string,
+  const TShape extends CodecShape,
+  const TKey extends ModelKeySpec<TShape>,
+>(
   name: TName,
-  options: DefineModelOptions<TShape>,
-): ModelDefinition<TName, TShape> => {
-  const keyFields: readonly string[] =
-    typeof options.key === "string" ? [options.key] : options.key;
+  options: DefineModelOptions<TShape, TKey>,
+): ModelDefinition<TName, TShape, TKey> => {
+  // `TKey` is either the scalar field or its readonly tuple form; normalization
+  // preserves exactly their element union.
+  const keyFields = (
+    typeof options.key === "string" ? [options.key] : options.key
+  ) as readonly KeyField<TKey>[];
   if (keyFields.length === 0) {
     throw new TypeError(`Model ${name} declares an empty key`);
   }
@@ -213,7 +299,7 @@ export const defineModel = <const TName extends string, const TShape extends Cod
       throw new TypeError(`Model ${name} declares key "${field}" but the shape has no such field`);
     }
   }
-  let self: ModelDefinition<TName, TShape>;
+  let self: ModelDefinition<TName, TShape, TKey>;
   const requireKeyFields = (selected: readonly string[], what: string) => {
     for (const field of keyFields) {
       if (!selected.includes(field)) {
@@ -223,7 +309,53 @@ export const defineModel = <const TName extends string, const TShape extends Cod
       }
     }
   };
-  const definition: ModelDefinition<TName, TShape> = {
+  const select = <
+    const TSelection extends {
+      readonly [TSelectionKey in keyof TSelection]: SelectionValue<TShape, TSelectionKey>;
+    },
+  >(
+    selection: Exclude<KeyField<TKey>, SelectedOwnFields<TSelection>> extends never
+      ? TSelection
+      : never,
+  ): WireCodec<SelectionInput<TShape, TSelection>, WireValue> => {
+    const entries = selection as Readonly<Record<string, unknown>>;
+    const keys = Object.keys(entries);
+    const own = keys.filter((key) => entries[key] === true);
+    requireKeyFields(own, "selection");
+    const subset: Record<string, AnyWireCodec> = {};
+    for (const key of keys) {
+      const value = entries[key];
+      if (value === true) {
+        const codec = options.shape[key];
+        if (!codec) {
+          throw new TypeError(
+            `Model ${name} has no field "${key}" — select true only for the model's own fields, or give a codec`,
+          );
+        }
+        subset[key] = codec as AnyWireCodec;
+      } else {
+        subset[key] = value as AnyWireCodec;
+      }
+    }
+    return brandingCodec(
+      wire.object(subset),
+      `model(${name}):{${[...keys].sort().join(",")}}`,
+      () => self,
+    ) as WireCodec<SelectionInput<TShape, TSelection>, WireValue>;
+  };
+  const pick = <const TKeys extends readonly (keyof TShape & string)[]>(
+    ...keys: Exclude<KeyField<TKey>, TKeys[number]> extends never ? TKeys : never
+  ): WireCodec<ShapeInput<Pick<TShape, TKeys[number]>>, WireValue> => {
+    requireKeyFields(keys, "projection");
+    const subset: Record<string, AnyWireCodec> = {};
+    for (const key of keys) subset[key] = options.shape[key]!;
+    return brandingCodec(
+      wire.object(subset),
+      `model(${name}):${[...keys].sort().join(",")}`,
+      () => self,
+    ) as WireCodec<ShapeInput<Pick<TShape, TKeys[number]>>, WireValue>;
+  };
+  const definition: ModelDefinition<TName, TShape, TKey> = {
     $model: true,
     name,
     key: options.key,
@@ -238,48 +370,11 @@ export const defineModel = <const TName extends string, const TShape extends Cod
       return brandingCodec(
         wire.object(options.shape) as WireCodec<ShapeInput<TShape>, WireValue>,
         `model(${name}):all`,
-        () => self as AnyModel,
+        () => self,
       );
     },
-    select: (selection) => {
-      const entries = selection as Readonly<Record<string, unknown>>;
-      const keys = Object.keys(entries);
-      const own = keys.filter((key) => entries[key] === true);
-      requireKeyFields(own, "selection");
-      const subset: Record<string, WireCodec<unknown, WireValue>> = {};
-      for (const key of keys) {
-        const value = entries[key];
-        if (value === true) {
-          const codec = options.shape[key];
-          if (!codec) {
-            throw new TypeError(
-              `Model ${name} has no field "${key}" — select true only for the model's own fields, or give a codec`,
-            );
-          }
-          subset[key] = codec as WireCodec<unknown, WireValue>;
-        } else {
-          subset[key] = value as WireCodec<unknown, WireValue>;
-        }
-      }
-      return brandingCodec(
-        wire.object(subset) as WireCodec<never, WireValue>,
-        `model(${name}):{${[...keys].sort().join(",")}}`,
-        () => self as AnyModel,
-      ) as never;
-    },
-    pick: (...keys) => {
-      requireKeyFields(keys as readonly string[], "projection");
-      const subset: Record<string, WireCodec<unknown, WireValue>> = {};
-      for (const key of keys) subset[key] = options.shape[key]!;
-      return brandingCodec(
-        wire.object(subset) as WireCodec<
-          ShapeInput<Pick<TShape, (typeof keys)[number]>>,
-          WireValue
-        >,
-        `model(${name}):${[...keys].sort().join(",")}`,
-        () => self as AnyModel,
-      );
-    },
+    select,
+    pick,
   };
   self = definition;
   return Object.freeze(definition);

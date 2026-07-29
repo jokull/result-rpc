@@ -32,7 +32,7 @@ const client = createBrowserClient({
 // 2. Ownership: a shell's reaction is a reporting moment.
 const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
-  procedure: (client: AppClient) => client.auth.me,
+  select: (client: AppClient) => client.auth.me,
   onError: (error) => {
     Sentry.captureMessage(`signed out: ${error._tag}`, "info");
     redirect("/login");

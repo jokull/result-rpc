@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { StrictMode, Suspense, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { err, error, ok, wire } from "../index.js";
-import { createBrowserClient } from "../client/client.js";
+import { err, error, ok, wire, type Result } from "../index.js";
+import { createFixtureClient } from "../testing/index.js";
 import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
 import { type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
@@ -47,7 +47,7 @@ const router = r.router({ demo: { value, rename, events } });
 const handler = createFetchHandler({ router, createContext: () => ({}) });
 const localFetch = ((input: string | URL | Request, init?: RequestInit) =>
   handler(new Request(input, init))) as typeof globalThis.fetch;
-const client = createBrowserClient({
+const client = createFixtureClient({
   router,
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });
@@ -90,10 +90,17 @@ describe("React bindings", () => {
   test("a shell-claimed mutation rejects with the claimed signal, not cancellation", async () => {
     const SessionShell = defineShell({ name: "session-owner", claims: { SessionExpired } });
     const runtime = createQueryRuntime({ client });
-    let mutationState: MutationState<{ readonly title: string }, string, RenameFailure> | undefined;
+    const failures: RenameFailure[] = [];
+    const settled: Result<string, RenameFailure>[] = [];
+    let mutationState:
+      | MutationState<{ readonly title: string }, string, FrameworkFailure>
+      | undefined;
 
     function Probe() {
-      mutationState = SessionShell.useMutation(client.demo.rename) as typeof mutationState;
+      mutationState = SessionShell.useMutation(client.demo.rename, {
+        onFailure: (failure) => void failures.push(failure),
+        onSettled: (result) => void settled.push(result),
+      });
       return null;
     }
 
@@ -119,6 +126,12 @@ describe("React bindings", () => {
     expect(isCancelled(rejection)).toBe(false);
     if (!isClaimed(rejection)) throw new Error("unreachable");
     expect(rejection.data).toEqual({ tag: "session/expired", owner: "session-owner" });
+    // Runtime callbacks run before React projects the claimed error away. They
+    // receive the procedure's complete error union and the original Result.
+    expect(failures.map((failure) => failure._tag)).toEqual(["session/expired"]);
+    expect(settled).toHaveLength(1);
+    expect(settled[0]?.ok).toBe(false);
+    if (settled[0]?.ok === false) expect(settled[0].error._tag).toBe("session/expired");
     // the outcome is owned above: the mutation projects idle, not failure
     expect(mutationState?.state).toBe("idle");
     await act(async () => renderer?.unmount());

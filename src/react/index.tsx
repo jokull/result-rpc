@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AnyTaggedError } from "../error.js";
-import type { Result } from "../result.js";
+import type { EmptyObject } from "../wire.js";
 import { claimed } from "../client/transport.js";
 import {
   getClientEventListener,
@@ -27,10 +27,9 @@ import {
   useClaimScope,
   type AmbientClaim,
 } from "./claims.js";
-import type { ResultSubscription } from "../client/client.js";
 import { serialize } from "../serializer.js";
+import { bindLayerShell } from "./shell.js";
 import type {
-  PaginatedClientCursor,
   PaginatedClientItem,
   PaginatedClientListInput,
   PaginatedProcedureClientLike,
@@ -39,28 +38,20 @@ import type {
   ProcedureClientInput,
   ProcedureClientOutput,
   MutationOptions,
+  MutationProcedureClientLike,
   MutationState,
   QueryOptions,
+  QueryProcedureClientLike,
   QueryRuntime,
   QueryState,
   SubscriptionClientError,
   SubscriptionClientInput,
   SubscriptionClientOutput,
+  SubscriptionProcedureClientLike,
   SubscriptionState,
   SubscriptionOptions,
   DehydratedQueryRuntime,
 } from "../query/runtime.js";
-
-type ProcedureClientLike = (
-  input: any,
-  options?: { readonly signal?: AbortSignal },
-) => Promise<Result<any, AnyTaggedError>>;
-export type QueryProcedureClientLike = ProcedureClientLike & { readonly $kind: "query" };
-export type MutationProcedureClientLike = ProcedureClientLike & { readonly $kind: "mutation" };
-export type SubscriptionProcedureClientLike = ((
-  input: any,
-  options?: { readonly signal?: AbortSignal },
-) => ResultSubscription<any, AnyTaggedError>) & { readonly $kind: "subscription" };
 
 import { createQueryRuntime } from "../query/runtime.js";
 export { toResult } from "../query/runtime.js";
@@ -69,21 +60,29 @@ export type {
   DehydratedQueryRuntime,
   FetchState,
   MutationOptions,
+  MutationProcedureClientLike,
   MutationState,
+  MutationStateOf,
   PaginatedClientCursor,
   PaginatedClientItem,
   PaginatedClientListInput,
   PaginatedProcedureClientLike,
   PaginatedState,
+  PaginatedStateOf,
+  ProcedureClientLike,
+  QueryProcedureClientLike,
   QueryCache,
   QueryOptions,
   QueryRuntime,
   QueryState,
+  QueryStateOf,
   SubscriptionConnection,
   SubscriptionOptions,
+  SubscriptionProcedureClientLike,
   SubscriptionState,
+  SubscriptionStateOf,
 } from "../query/runtime.js";
-export { defineShell, getLayerProcedureResolver, layerShell } from "./shell.js";
+export { defineShell, getLayerProcedureResolver, layerShell, prefetchLayer } from "./shell.js";
 export { boundaryShells } from "./boundary.js";
 export type {
   BoundaryShells,
@@ -94,7 +93,7 @@ export type {
 
 /** Zero-input procedures may omit the input argument entirely. */
 export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =
-  undefined extends ProcedureClientInput<TProcedureClient>
+  EmptyObject extends ProcedureClientInput<TProcedureClient>
     ? [
         input?: ProcedureClientInput<TProcedureClient>,
         options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
@@ -103,25 +102,55 @@ export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =
         input: ProcedureClientInput<TProcedureClient>,
         options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
       ];
+
+/** Zero-input subscriptions may omit the input argument entirely. */
+export type SubscriptionHookArgs<TProcedureClient extends SubscriptionProcedureClientLike> =
+  EmptyObject extends SubscriptionClientInput<TProcedureClient>
+    ? [
+        input?: SubscriptionClientInput<TProcedureClient>,
+        options?: SubscriptionOptions<SubscriptionClientError<TProcedureClient>>,
+      ]
+    : [
+        input: SubscriptionClientInput<TProcedureClient>,
+        options?: SubscriptionOptions<SubscriptionClientError<TProcedureClient>>,
+      ];
 export type {
   AnyShell,
+  AnyLayerShell,
   DefineShellOptions,
-  ExcludeTags,
+  SubtractClaimedErrors,
   ClaimedBy,
+  ClaimedErrorsBy,
   Shell,
   ShellHoldings,
   ShellEffect,
   LayerShellOptions,
+  LayerShellClient,
+  LayerShellMetadata,
+  LayerShellProcedure,
   LayerShellProviderProps,
   TagsOf,
   ValueOf,
 } from "./shell.js";
 
-const RuntimeContext = createContext<QueryRuntime | undefined>(undefined);
+/**
+ * Application-wide type registration, following TanStack's framework pattern.
+ * Augment this interface once in an application to make `useResultClient()`
+ * return its concrete client without a call-site type argument.
+ */
+export interface Register {}
 
-export type ResultRpcProviderProps = (
-  | { readonly runtime: QueryRuntime; readonly client?: undefined }
-  | { readonly client: object; readonly runtime?: undefined }
+export type RegisteredClient = Register extends { readonly client: infer TClient }
+  ? TClient
+  : unknown;
+
+type RegisteredProviderClient = RegisteredClient extends object ? RegisteredClient : object;
+
+const RuntimeContext = createContext<QueryRuntime<unknown> | undefined>(undefined);
+
+export type ResultRpcProviderProps<TClient extends object = object> = (
+  | { readonly runtime: QueryRuntime<TClient>; readonly client?: undefined }
+  | { readonly client: TClient; readonly runtime?: undefined }
 ) & {
   /** SSR-dehydrated cache state, applied once per distinct value. */
   readonly hydrate?: DehydratedQueryRuntime;
@@ -133,7 +162,9 @@ export type ResultRpcProviderProps = (
  * for the component's lifetime — the common case. Pass `runtime` when the app
  * needs the instance elsewhere (SSR prefetch, imperative cache access).
  */
-export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
+const useProvidedRuntime = <TClient extends object>(
+  props: ResultRpcProviderProps<TClient>,
+): QueryRuntime<TClient> => {
   const [owned] = useState(() => props.runtime ?? createQueryRuntime({ client: props.client }));
   const runtime = props.runtime ?? owned;
   const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
@@ -145,10 +176,20 @@ export const ResultRpcProvider = (props: ResultRpcProviderProps) => {
       warnHydrationSkew(cause);
     }
   }
+  return runtime;
+};
+
+const ResultRpcProviderImpl = <TClient extends object>(props: ResultRpcProviderProps<TClient>) => {
+  const runtime = useProvidedRuntime(props);
   return createElement(RuntimeContext.Provider, { value: runtime }, props.children);
 };
 
-const useRuntime = (): QueryRuntime => {
+/** Provider constrained to the globally registered client, when one exists. */
+export const ResultRpcProvider = (
+  props: ResultRpcProviderProps<RegisteredProviderClient>,
+): ReactNode => ResultRpcProviderImpl(props);
+
+const useRuntime = (): QueryRuntime<unknown> => {
   const runtime = useContext(RuntimeContext);
   if (!runtime) throw new TypeError("useResultQuery requires ResultRpcProvider");
   return runtime;
@@ -210,17 +251,49 @@ export const ResultRpcHydrationBoundary = (props: ResultRpcHydrationBoundaryProp
 };
 
 /**
- * The client the enclosing ResultRpcProvider was created with. Annotate the
- * type parameter with your app's client type:
+ * The client registered by the application and supplied to the enclosing
+ * ResultRpcProvider.
  *
- *     const client = useResultClient<AppClient>()
+ *     declare module "result-rpc/react" {
+ *       interface Register { client: AppClient }
+ *     }
+ *
+ *     const client = useResultClient()
  */
-export const useResultClient = <TClient,>(): TClient => useRuntime().client as TClient;
+export const useResultClient = (): RegisteredClient => useRuntime().client as RegisteredClient;
+
+/**
+ * A scoped binding for repositories that compile several independent apps in
+ * one TypeScript program. Normal applications can use `Register`; this binds
+ * the same guarantees without global declaration merging.
+ */
+export const createResultRpcReact = <TClient extends object>() => {
+  const ScopedRuntimeContext = createContext<QueryRuntime<TClient> | undefined>(undefined);
+  const useScopedRuntime = (): QueryRuntime<TClient> => {
+    const runtime = useContext(ScopedRuntimeContext);
+    if (!runtime) throw new TypeError("Scoped result-rpc hook requires its matching provider");
+    return runtime;
+  };
+  const useClient = (): TClient => useScopedRuntime().client;
+  const Provider = (props: ResultRpcProviderProps<TClient>): ReactNode => {
+    const runtime = useProvidedRuntime(props);
+    return createElement(
+      RuntimeContext.Provider,
+      { value: runtime },
+      createElement(ScopedRuntimeContext.Provider, { value: runtime }, props.children),
+    );
+  };
+  return Object.freeze({
+    ResultRpcProvider: Provider,
+    useResultClient: useClient,
+    layerShell: bindLayerShell(useClient),
+  });
+};
 
 /** Builds the claim breadcrumb notifier for a procedure, if a listener exists. */
 const useClaimNotifier = (procedure: Function) => {
   const runtime = useRuntime();
-  const identity = getClientIdentity(runtime.client as object);
+  const identity = getClientIdentity(runtime.client);
   const listener = identity ? getClientEventListener(identity) : undefined;
   const path = getProcedureClientMetadata(procedure)?.path;
   return useMemo(() => {
@@ -246,8 +319,8 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>,
   AmbientClaim | undefined,
 ] => {
-  const [input, options = {}] = rest as [
-    ProcedureClientInput<TProcedureClient>,
+  const [input = {} as ProcedureClientInput<TProcedureClient>, options = {}] = rest as [
+    ProcedureClientInput<TProcedureClient>?,
     QueryOptions<ProcedureClientError<TProcedureClient>>?,
   ];
   const runtime = useRuntime();
@@ -257,15 +330,17 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
   const queryOptionsRef = useRef(options);
   queryOptionsRef.current = options;
   const observer = useMemo(
-    () =>
-      runtime.observe(procedure, input, {
+    () => {
+      const dynamicOptions: QueryOptions<ProcedureClientError<TProcedureClient>> = {
         ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
         ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
         ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
         get retry() {
           return queryOptionsRef.current.retry;
         },
-      } as QueryOptions<ProcedureClientError<TProcedureClient>>),
+      };
+      return runtime.observe(procedure, input, dynamicOptions);
+    },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
     [runtime, procedure, inputKey, options.enabled, options.staleTime, options.gcTime],
   );
@@ -286,15 +361,7 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
     notifyClaim,
     retryHeld,
   );
-  return [
-    claim
-      ? (pauseQueryProjection(state) as QueryState<
-          ProcedureClientOutput<TProcedureClient>,
-          ProcedureClientError<TProcedureClient>
-        >)
-      : state,
-    claim,
-  ];
+  return [claim ? pauseQueryProjection(state) : state, claim];
 };
 
 export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
@@ -308,9 +375,9 @@ export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike
  * so this hook shows the previous rows (or pending) while the shell decides.
  * Same doctrine as `pauseQueryProjection` for unary queries.
  */
-const pausePaginatedProjection = <TItem, TCursor, E extends AnyTaggedError>(
-  state: PaginatedState<TItem, TCursor, E>,
-): PaginatedState<TItem, TCursor, never> => {
+const pausePaginatedProjection = <TItem, E extends AnyTaggedError>(
+  state: PaginatedState<TItem, E>,
+): PaginatedState<TItem, never> => {
   const controls = {
     fetch: "paused" as const,
     failureCount: state.failureCount,
@@ -319,8 +386,8 @@ const pausePaginatedProjection = <TItem, TCursor, E extends AnyTaggedError>(
     pageCount: state.pageCount,
     hasNext: state.hasNext,
     fetchingNext: state.fetchingNext,
-    refetch: state.refetch as unknown as () => Promise<PaginatedState<TItem, TCursor, never>>,
-    fetchNext: state.fetchNext as unknown as () => Promise<PaginatedState<TItem, TCursor, never>>,
+    refetch: state.refetch,
+    fetchNext: state.fetchNext,
   };
   const previous = state.state === "failure" ? state.previous : undefined;
   return previous === undefined
@@ -341,28 +408,27 @@ export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProced
   options: QueryOptions<ProcedureClientError<TProcedureClient>> = {},
 ): PaginatedState<
   PaginatedClientItem<TProcedureClient>,
-  PaginatedClientCursor<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => {
   const runtime = useRuntime();
-  const inputKey = runtime.cache.key(
-    procedure as unknown as QueryProcedureClientLike,
-    input as never,
-  )[1];
+  const inputKey = serialize(input);
+  if (!inputKey.ok) throw new TypeError("Paginated query input is not wire-serializable");
   const queryOptionsRef = useRef(options);
   queryOptionsRef.current = options;
   const observer = useMemo(
-    () =>
-      runtime.observePaginated(procedure, input, {
+    () => {
+      const dynamicOptions: QueryOptions<ProcedureClientError<TProcedureClient>> = {
         ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
         ...(options.staleTime === undefined ? {} : { staleTime: options.staleTime }),
         ...(options.gcTime === undefined ? {} : { gcTime: options.gcTime }),
         get retry() {
           return queryOptionsRef.current.retry;
         },
-      } as QueryOptions<ProcedureClientError<TProcedureClient>>),
+      };
+      return runtime.observePaginated(procedure, input, dynamicOptions);
+    },
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
-    [runtime, procedure, inputKey, options.enabled, options.staleTime, options.gcTime],
+    [runtime, procedure, inputKey.value, options.enabled, options.staleTime, options.gcTime],
   );
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(
@@ -379,13 +445,7 @@ export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProced
     notifyClaim,
     retryHeld,
   );
-  return claim
-    ? (pausePaginatedProjection(state) as PaginatedState<
-        PaginatedClientItem<TProcedureClient>,
-        PaginatedClientCursor<TProcedureClient>,
-        ProcedureClientError<TProcedureClient>
-      >)
-    : state;
+  return claim ? pausePaginatedProjection(state) : state;
 };
 
 export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
@@ -400,8 +460,8 @@ export const useResultSuspenseQuery = <TProcedureClient extends QueryProcedureCl
   ProcedureClientOutput<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => {
-  const [input, options = {}] = rest as [
-    ProcedureClientInput<TProcedureClient>,
+  const [input = {} as ProcedureClientInput<TProcedureClient>, options = {}] = rest as [
+    ProcedureClientInput<TProcedureClient>?,
     QueryOptions<ProcedureClientError<TProcedureClient>>?,
   ];
   const [state, claim] = useResultQueryWithClaim(
@@ -438,30 +498,26 @@ export const useResultMutation = <
   // codebases naturally write them — must never resubscribe or loop.
   const optionsRef = useRef(options);
   optionsRef.current = options;
-  const observer = useMemo(
-    () =>
-      runtime.mutation(procedure, {
-        get retry() {
-          return optionsRef.current.retry;
-        },
-        optimistic: (input, cache) =>
-          (optionsRef.current.optimistic
-            ? optionsRef.current.optimistic(input, cache)
-            : undefined) as TContext,
-        onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
-        onFailure: (error, input, context, cache) =>
-          optionsRef.current.onFailure?.(error, input, context, cache),
-        onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
-        onSettled: (result, input, context, cache) =>
-          optionsRef.current.onSettled?.(result, input, context, cache),
-      } as MutationOptions<
-        ProcedureClientInput<TProcedureClient>,
-        ProcedureClientOutput<TProcedureClient>,
-        ProcedureClientError<TProcedureClient>,
-        TContext
-      >),
-    [runtime, procedure],
-  );
+  const observer = useMemo(() => {
+    const dynamicOptions: MutationOptions<
+      ProcedureClientInput<TProcedureClient>,
+      ProcedureClientOutput<TProcedureClient>,
+      ProcedureClientError<TProcedureClient>,
+      TContext
+    > = {
+      get retry() {
+        return optionsRef.current.retry;
+      },
+      optimistic: (input, cache) => optionsRef.current.optimistic?.(input, cache),
+      onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
+      onFailure: (error, input, context, cache) =>
+        optionsRef.current.onFailure?.(error, input, context, cache),
+      onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
+      onSettled: (result, input, context, cache) =>
+        optionsRef.current.onSettled?.(result, input, context, cache),
+    };
+    return runtime.mutation(procedure, dynamicOptions);
+  }, [runtime, procedure]);
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(
     observer.subscribe,
@@ -479,8 +535,8 @@ export const useResultMutation = <
     // owns. Cancellation semantics, but a distinguishable signal: "you
     // cancelled" and "a shell owns this outcome" are different events.
     if (!result.ok) {
-      const tag = (result.error as AnyTaggedError)._tag;
-      const owner = claimOwner(scopeRef.current, tag);
+      const tag = result.error._tag;
+      const owner = claimOwner(scopeRef.current, result.error);
       if (owner) throw claimed({ tag, owner: owner.name });
     }
     return result;
@@ -492,7 +548,7 @@ export const useResultMutation = <
   // arc so holdings (and the connection banner) drain on reconnect.
   const [resetHeld] = useState(() => () => stateRef.current.reset());
   const claim = useAmbientClaim(
-    state.state === "failure" ? (state.error as AnyTaggedError) : undefined,
+    state.state === "failure" ? state.error : undefined,
     notifyClaim,
     resetHeld,
   );
@@ -508,12 +564,15 @@ export const useResultMutation = <
 
 export const useResultSubscription = <TProcedureClient extends SubscriptionProcedureClientLike>(
   procedure: TProcedureClient,
-  input: SubscriptionClientInput<TProcedureClient>,
-  options: SubscriptionOptions<SubscriptionClientError<TProcedureClient>> = {},
+  ...rest: SubscriptionHookArgs<TProcedureClient>
 ): SubscriptionState<
   SubscriptionClientOutput<TProcedureClient>,
   SubscriptionClientError<TProcedureClient>
 > => {
+  const [input = {} as SubscriptionClientInput<TProcedureClient>, options = {}] = rest as [
+    SubscriptionClientInput<TProcedureClient>?,
+    SubscriptionOptions<SubscriptionClientError<TProcedureClient>>?,
+  ];
   const runtime = useRuntime();
   const encodedInput = serialize(input);
   if (!encodedInput.ok) throw new TypeError("Subscription input is not wire-serializable");
@@ -527,8 +586,7 @@ export const useResultSubscription = <TProcedureClient extends SubscriptionProce
     observer.getCurrentState,
     observer.getCurrentState,
   );
-  const failure =
-    state.result && !state.result.ok ? (state.result.error as AnyTaggedError) : undefined;
+  const failure = state.result && !state.result.ok ? state.result.error : undefined;
   const notifyClaim = useClaimNotifier(procedure);
   const reconnectRef = useRef(state.reconnect);
   reconnectRef.current = state.reconnect;

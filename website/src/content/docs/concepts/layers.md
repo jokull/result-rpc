@@ -29,20 +29,23 @@ The server half derives from it:
 
 ```ts
 // server
-const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
+import { serverRpc } from "result-rpc/server";
+
+const server = serverRpc.context<AppContext>();
+const authenticated = AuthLayer.middleware(server, async ({ context, errors }) => {
   const user = await context.auth.user();
   return user ? ok(user) : err(errors.Unauthorized());
 });
 // Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
 
-export const whoami = AuthLayer.procedure(app, authenticated);
+export const whoami = AuthLayer.procedure(server, authenticated);
 // the context procedure: {} -> User with the layer union. Its handler is
 // derived — it returns the user the middleware placed in context — so the
 // endpoint *cannot* disagree with the middleware. That is the drift, deleted.
 ```
 
 (Contract-first codebases put `AuthLayer.contract(app)` in the shared contract
-and pass it as `AuthLayer.procedure(app, contract, authenticated)`.)
+and pass it as `AuthLayer.procedure(server, contract, authenticated)`.)
 
 And the React half is its sibling:
 
@@ -52,10 +55,15 @@ import { layerShell } from "result-rpc/react";
 
 export const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
-  procedure: client.auth.whoami,
+  select: (client) => client.auth.whoami,
   onError: () => redirect("/login"),
 });
 ```
+
+`select` is the deferred form: it receives the client registered with
+`result-rpc/react` when the provider mounts. If a module already owns a concrete
+client value, `procedure: client.auth.whoami` is also valid; a function belongs
+under `select`, never `procedure`.
 
 This **replaces** the hand-declared `AuthShell` from the shells section — same
 name, same claims, drop-in for every `AuthShell.useQuery` call site — and adds
@@ -82,7 +90,7 @@ by refinement:
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: wire.union([UserCodec, wire.null] as const),
+  provides: wire.union([UserCodec, wire.null]),
   errors: {}, // optional: cannot fail
 });
 
@@ -97,31 +105,42 @@ export const ViewerLayer = SessionLayer.require({
 On the server, context grows and narrows monotonically through the chain:
 
 ```ts
-const session = SessionLayer.middleware(app, ({ context }) => ok(await userFromCookie(context))); // User | null — never fails
+const session = SessionLayer.middleware(server, ({ context }) => ok(await userFromCookie(context))); // User | null — never fails
 
 // No resolver: the refinement is derived. Passing `session` bundles the
 // parent, so one `.use(requireViewer)` pulls the whole chain in order.
-const requireViewer = ViewerLayer.middleware(app, session);
+const requireViewer = ViewerLayer.middleware(server, session);
 
-app
+server
   .procedure()
   .use(requireViewer) // session runs first: viewer is User
   .query(({ context }) => ok(greet(context.viewer)));
 ```
 
-(`ViewerLayer.middleware(app)` without the parent also works when the input
-context already carries the session value — the bundled form is the usual
-one.)
+Required layers always receive their parent middleware. Internally the
+refinement composes it with `.after()`, so `requireViewer` is the **one composed
+middleware** a procedure accepts:
+
+```ts
+export const viewer = ViewerLayer.procedure(server, requireViewer);
+```
+
+There is no parentless required-layer shortcut and no loose middleware array;
+the input/output context relationship and the accumulated error map stay in
+one inferred value.
 
 On the client the same shape appears as nested providers — the optional shell
 claims nothing and provides the nullable value; the required shell claims
 `Unauthorized` and provides the narrowed one:
 
 ```tsx
-const SessionShell = layerShell(SessionLayer, { from: DefectShell, procedure: client.session });
+const SessionShell = layerShell(SessionLayer, {
+  from: DefectShell,
+  select: (client) => client.session,
+});
 const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: client.viewer,
+  select: (client) => client.viewer,
   onError: () => redirect("/login"),
 });
 

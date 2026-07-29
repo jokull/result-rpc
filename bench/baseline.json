@@ -1,15 +1,32 @@
 {
-  "25": {
-    "types": 29515,
-    "instantiations": 64527
+  "contract": {
+    "25": {
+      "types": 40590,
+      "instantiations": 115598
+    },
+    "50": {
+      "types": 47515,
+      "instantiations": 152798
+    },
+    "100": {
+      "types": 61365,
+      "instantiations": 227198
+    },
+    "marginalInstantiationsPerUnit": 1488
   },
-  "50": {
-    "types": 34040,
-    "instantiations": 88027
-  },
-  "100": {
-    "types": 43090,
-    "instantiations": 135027
-  },
-  "marginalInstantiationsPerProcedure": 940
+  "shell": {
+    "25": {
+      "types": 51896,
+      "instantiations": 144836
+    },
+    "50": {
+      "types": 57596,
+      "instantiations": 184611
+    },
+    "100": {
+      "types": 68996,
+      "instantiations": 264161
+    },
+    "marginalInstantiationsPerUnit": 1591
+  }
 }

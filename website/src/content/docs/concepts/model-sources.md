@@ -20,7 +20,7 @@ export const User = defineModel("user", {
   shape: {
     id: wire.string,
     name: wire.string,
-    avatarUrl: wire.union([wire.string, wire.null] as const),
+    avatarUrl: wire.union([wire.string, wire.null]),
   },
 }).$satisfies<UserRow>();
 ```
@@ -65,13 +65,18 @@ generated API type, or ordinary interface.
 validate:
 
 - Runtime codecs or refinements
-- Entity identity or database primary keys
+- That the model's declared identity matches a database primary key
 - Length, uniqueness, foreign-key, or check constraints
 - Mapping logic between differently shaped fields
 
 Those remain explicit contract decisions. If the source uses `created_at`
 and the public model uses `createdAt`, map the row in the handler and check
 the model against the mapped domain type instead.
+
+`defineModel` itself still enforces the local identity contract: key codecs
+must decode to `string` or `number`, and every `pick`/`select` must include all
+key fields. `$satisfies<Source>()` does not infer that those fields are the
+source system's primary key; it only checks their TypeScript types.
 
 This separation is deliberate: runtime reflection would require importing
 and executing the source module in the browser, while type-only compatibility

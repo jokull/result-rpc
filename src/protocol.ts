@@ -1,7 +1,7 @@
 import type { EncodedTaggedError } from "./error.js";
-import type { WireValue } from "./wire.js";
+import { isWireValue, type WireValue } from "./wire.js";
 
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 1;
 export const PROTOCOL_CONTENT_TYPE = "application/result-rpc+devalue; sv=1";
 export const STREAM_CONTENT_TYPE = "application/result-rpc-stream+devalue; sv=1";
 /** Response header carrying the server's contract digest, for skew detection. */
@@ -74,12 +74,19 @@ export type StreamFrame =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
+const touchedOf = (value: Record<string, unknown>): readonly string[] | undefined | false => {
+  if (!("touched" in value)) return undefined;
+  return Array.isArray(value.touched) && value.touched.every((entry) => typeof entry === "string")
+    ? value.touched
+    : false;
+};
+
 export const decodeRequestEnvelope = (value: unknown): RequestEnvelope | undefined => {
   if (!isRecord(value) || value.v !== PROTOCOL_VERSION || typeof value.path !== "string") {
     return undefined;
   }
-  if (!("input" in value)) return undefined;
-  return value as unknown as RequestEnvelope;
+  if (!("input" in value) || !isWireValue(value.input)) return undefined;
+  return { v: PROTOCOL_VERSION, path: value.path, input: value.input };
 };
 
 export const decodeBatchRequestEnvelope = (value: unknown): BatchRequestEnvelope | undefined => {
@@ -99,14 +106,29 @@ export const decodeResponseEnvelope = (value: unknown): ResponseEnvelope | undef
   if (!isRecord(value) || value.v !== PROTOCOL_VERSION || typeof value.ok !== "boolean") {
     return undefined;
   }
-  if (value.ok === true && "value" in value) return value as unknown as SuccessEnvelope;
+  const touched = touchedOf(value);
+  if (touched === false) return undefined;
+  if (value.ok === true && "value" in value && isWireValue(value.value)) {
+    return {
+      v: PROTOCOL_VERSION,
+      ok: true,
+      value: value.value,
+      ...(touched === undefined ? {} : { touched }),
+    };
+  }
   if (
     value.ok === false &&
     isRecord(value.error) &&
     typeof value.error._tag === "string" &&
-    "data" in value.error
+    "data" in value.error &&
+    isWireValue(value.error.data)
   ) {
-    return value as unknown as FailureEnvelope;
+    return {
+      v: PROTOCOL_VERSION,
+      ok: false,
+      error: { _tag: value.error._tag, data: value.error.data },
+      ...(touched === undefined ? {} : { touched }),
+    };
   }
   return undefined;
 };
@@ -131,13 +153,14 @@ export const decodeStreamFrame = (value: unknown): StreamFrame | undefined => {
   if (
     !isRecord(value) ||
     value.v !== PROTOCOL_VERSION ||
+    typeof value.seq !== "number" ||
     !Number.isSafeInteger(value.seq) ||
     typeof value.done !== "boolean"
   )
     return undefined;
-  if (value.done) return { v: PROTOCOL_VERSION, seq: value.seq as number, done: true };
+  if (value.done) return { v: PROTOCOL_VERSION, seq: value.seq, done: true };
   const response = decodeResponseEnvelope(value.response);
   return response === undefined
     ? undefined
-    : { v: PROTOCOL_VERSION, seq: value.seq as number, done: false, response };
+    : { v: PROTOCOL_VERSION, seq: value.seq, done: false, response };
 };

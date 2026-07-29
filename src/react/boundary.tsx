@@ -9,7 +9,7 @@ import {
 } from "../framework-errors.js";
 import type { ErrorUnion } from "../server/contract.js";
 import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
-import { defineShell, type Shell, type TagsOf } from "./shell.js";
+import { defineShell, type Shell } from "./shell.js";
 
 /**
  * The built-in owners for every failure the framework itself contributes.
@@ -66,25 +66,24 @@ export interface Connectivity {
   readonly resume: () => void;
 }
 
+type TransportBoundaryShell = Shell<typeof transportErrors, undefined, Record<never, never>, void>;
+type DefectBoundaryShell = Shell<
+  typeof defectErrors,
+  TransportBoundaryShell,
+  Record<never, never>,
+  void
+>;
+type StaleBoundaryShell = Shell<
+  typeof staleErrors,
+  DefectBoundaryShell,
+  Record<never, never>,
+  void
+>;
+
 export interface BoundaryShells {
-  readonly TransportShell: Shell<
-    TagsOf<typeof transportErrors>,
-    Record<never, never>,
-    void,
-    ErrorUnion<typeof transportErrors>
-  >;
-  readonly DefectShell: Shell<
-    TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors>,
-    Record<never, never>,
-    void,
-    ErrorUnion<typeof defectErrors>
-  >;
-  readonly StaleShell: Shell<
-    TagsOf<typeof transportErrors> | TagsOf<typeof defectErrors> | TagsOf<typeof staleErrors>,
-    Record<never, never>,
-    void,
-    ErrorUnion<typeof staleErrors>
-  >;
+  readonly TransportShell: TransportBoundaryShell;
+  readonly DefectShell: DefectBoundaryShell;
+  readonly StaleShell: StaleBoundaryShell;
   /** Mounts all three in order. Place the React error boundary just inside it. */
   readonly BoundaryProvider: (props: { readonly children?: ReactNode }) => ReactNode;
   /** The offline-banner signal. Must be used under `BoundaryProvider`. */

@@ -230,7 +230,7 @@ import {
   type RouterInputs,
   type RouterOutputs,
 } from "result-rpc";
-import { createFetchHandler } from "result-rpc/server";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
 import { batchFetchTransport, createBrowserClient } from "result-rpc/client";
 import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react";
 ```
@@ -326,9 +326,10 @@ the browser even though its errors cannot enter `.errors(...)`.
 
 One tag maps to exactly one definition across the whole application. Two
 procedures reusing a tag must share the definition — the same reference — and
-`app.router(...)` rejects a tag redeclared with a different definition at
-build time. This is what makes tags safe as global identities: shells claim by
-tag alone, so a tag can never mean two different things in one app. The
+`server.router(...)` rejects a tag redeclared with a different definition at
+build time. This is what makes tags safe as global registry keys: a shell uses
+the tag to find a candidate and the exact definition to prove ownership, so a
+tag can never mean two different things in one app. The
 registry is inspectable at runtime:
 
 ```ts
@@ -380,7 +381,7 @@ type. If a field can be independently unavailable, say so in the schema —
   author: wire.union([
     User.pick("id", "name", "avatarUrl"),
     wire.object({ unavailable: wire.literal(true) }),
-  ] as const),
+  ]),
 }))
 ```
 
@@ -432,18 +433,19 @@ codecs, tags, and policies, no middleware or handler code, safe in any browser
 bundle. It is the one place this library costs you a file tRPC doesn't, and it
 is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
 
-(When client and server share a process — SSR, tests, server components — you
-can skip the split and hand `createBrowserClient` the router directly. Code-first
-procedures with inline handlers work the same way; the contract split is for
-the browser boundary, not a required style.)
+Browser clients are built from this contract. Implemented routers belong to
+`createFetchHandler` and `createServerClient`.
 
 ## Implement the contract on the server
 
 ```ts
 import { err, ok } from "result-rpc";
-import { app, getDocContract } from "./contract";
+import { serverRpc } from "result-rpc/server";
+import { getDocContract, type AppContext } from "./contract";
 
-export const getDoc = app
+const server = serverRpc.context<AppContext>();
+
+export const getDoc = server
   .implement(getDocContract)
   .use(authenticated)
   .handler(async ({ input, errors, context }) => {
@@ -474,10 +476,12 @@ the union:
 
 ```ts
 import { err } from "result-rpc";
-import { app } from "./doc";
+import { serverRpc } from "result-rpc/server";
+import type { AppContext } from "./contract";
 import { Unauthorized } from "./errors";
 
-const authenticated = app
+const server = serverRpc.context<AppContext>();
+const authenticated = server
   .middleware<{ user: User }>()
   .errors({ Unauthorized })
   .use(async ({ context, errors, next }) => {
@@ -492,7 +496,7 @@ const authenticated = app
     });
   });
 
-export const getDoc = app.implement(getDocContract).use(authenticated).handler(/* ... */);
+export const getDoc = server.implement(getDocContract).use(authenticated).handler(/* ... */);
 ```
 
 The procedure now returns:
@@ -505,7 +509,7 @@ Builders are immutable, so a base forks freely — the `protectedProcedure`
 pattern is one line:
 
 ```ts
-const protectedProcedure = app.procedure().use(authenticated);
+const protectedProcedure = server.procedure().use(authenticated);
 
 const renameDoc = protectedProcedure
   .input(RenameInput)
@@ -521,7 +525,7 @@ a 403-shaped outcome to whatever shell owns the auth union (whose reaction is
 a sign-in redirect). Not-the-owner is its own domain error.
 
 In contract-first code, middleware errors must already be present in the
-shared contract; `app.implement(...).use(...)` rejects an undeclared
+shared contract; `server.implement(...).use(...)` rejects an undeclared
 contribution. The code-first convenience form unions middleware definitions
 automatically. Duplicate tags with different definitions are rejected rather
 than silently overridden.
@@ -588,13 +592,13 @@ join the union, and any `.use()` site pulls the whole chain in dependency
 order:
 
 ```ts
-const session = app
+const session = server
   .middleware<{ viewer: User | null }>()
   .use(async ({ context, next }) =>
     next({ context: { ...context, viewer: await userFromCookie(context) } }),
   );
 
-const requireViewer = app
+const requireViewer = server
   .middleware<{ viewer: User }>()
   .after(session) // handler sees viewer: User | null
   .errors({ Unauthorized })
@@ -608,7 +612,7 @@ const requireViewer = app
 A mutation then demands exactly one thing:
 
 ```ts
-export const renameDoc = app
+export const renameDoc = server
   .procedure()
   .input(RenameInput)
   .output(DocCodec)
@@ -628,10 +632,12 @@ checked, not hoped for.
 ## Create the router and server
 
 ```ts
-import { createFetchHandler } from "result-rpc/server";
-import { app, getDoc } from "./doc";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
+import type { AppContext } from "./contract";
+import { getDoc } from "./doc";
 
-export const appRouter = app.router({
+const server = serverRpc.context<AppContext>();
+export const appRouter = server.router({
   doc: {
     byId: getDoc,
   },
@@ -753,7 +759,12 @@ const message = errorCatalog(
 
 Adding a definition to the map breaks every catalog missing the new tag. For
 inline one-offs, `matchError(result.error, { ...handlers })` gives the same
-exhaustiveness on a single value.
+exhaustiveness on a single value. A catalog also narrows values arriving from
+an `unknown` boundary, such as a React error boundary:
+
+```ts
+if (message.is(caught)) return message(caught);
+```
 
 ## Compose Results
 
@@ -829,6 +840,44 @@ export function Providers({ children }: { children: React.ReactNode }) {
 Pass an explicit `runtime` instead when the app needs the instance elsewhere —
 SSR prefetching, imperative cache access.
 
+Register the application client once, following TanStack's declaration-merging
+pattern. `useResultClient()` then needs no generic and every deferred selector
+below receives the concrete client:
+
+```ts
+import type { client } from "./client";
+
+declare module "result-rpc/react" {
+  interface Register {
+    client: typeof client;
+  }
+}
+```
+
+```tsx
+import { useResultClient } from "result-rpc/react";
+
+function SaveButton() {
+  const client = useResultClient(); // the registered application client
+  // ...
+}
+```
+
+Repositories that compile several independent applications in one TypeScript
+program should avoid one global `Register`. Bind a scoped React surface per
+application instead:
+
+```ts
+import { createResultRpcReact } from "result-rpc/react";
+import type { client } from "./client";
+
+export const appReact = createResultRpcReact<typeof client>();
+// appReact.ResultRpcProvider, appReact.useResultClient, appReact.layerShell
+```
+
+The scoped hook and layer shells require that binding's matching provider;
+mixing bindings fails at the mount site instead of returning a falsely typed client.
+
 Query a procedure:
 
 ```tsx
@@ -850,6 +899,11 @@ export function DocPage({ id }: { id: string }) {
   }
 }
 ```
+
+Hook controls report completion through React state. `await doc.refetch()`
+waits for the attempt but resolves `void`; it does not return a second snapshot
+or a `Result`. Read the new state on the next render. The lower-level runtime
+observer API is the imperative form whose `refetch()` returns `QueryState`.
 
 `value` and `error` are not an independently-nullable pair — each exists only
 under its own state, so the impossible combinations are unrepresentable:
@@ -922,11 +976,12 @@ properties made that design stick:
 3. **Unclaimed errors fail loudly** rather than vanish.
 
 A shell is the same contract, transplanted from thrown render errors to
-failure _values_. A shell is a provider that claims a set of error tags. Any
-operation rendered beneath it — no matter which hook issued it — that fails
-with a claimed tag is routed to the shell instead of surfacing as component
-state. The 401 interceptor becomes a typed declaration with a position in the
-tree, and the tags it owns disappear from the unions below it.
+failure _values_. A shell is a provider that claims a map of error definitions.
+Any operation rendered beneath it — no matter which hook issued it — that fails
+with an instance recognized by one of those definitions is routed to the shell
+instead of surfacing as component state. The 401 interceptor becomes a typed
+declaration with a position in the tree, and the errors it owns disappear from
+the unions below it.
 
 ### Three tiers of failure, three built-in owners
 
@@ -1074,23 +1129,24 @@ No test can make that claim. The type checker makes it on every build.
 ### How claiming actually works
 
 Claiming is **per observer and tree-positional**. Each hook, at its render
-position, checks whether an enclosing shell claims the failure's tag. The
+position, uses the failure tag to find a candidate definition in an enclosing
+shell, then asks that exact definition to recognize the instance. The
 cache is never rewritten: the entry still holds the real `Err`, refetch
 bookkeeping continues underneath, and an observer of the same cache entry
 rendered _outside_ the shell still sees `state: "failure"`. A shell changes
 how a failure presents where it presents — nothing else. The innermost shell
-claiming a tag owns it.
+claiming the definition owns it.
 
 The type story has two halves:
 
-- **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's claimed
-  tags from the union — and eagerly asserts, at mount, that every shell in
+- **Shell hooks subtract.** `AuthShell.useQuery` removes the chain's exact
+  claimed error signatures from the union — and eagerly asserts, at mount, that every shell in
   the chain is actually mounted above it. The subtraction is only honest if
   the owners exist, so a missing provider throws on _first render_, the same
   contract as any context hook without its provider. You find out on the
   happy path in development, not on the error path in production.
 - **Plain hooks over-approximate.** `useResultQuery` keeps the full union.
-  Under a mounted shell, the claimed tags in that type are unreachable —
+  Under a mounted shell, the claimed errors in that type are unreachable —
   the shell routes them — exactly the way a `try/catch` inside an error
   boundary lists exceptions the boundary would have caught anyway.
   Unreachable, not untrue; and outside any shell, the same type is exact.
@@ -1100,7 +1156,7 @@ if a plain hook under `AuthShell` could surface `auth/session-expired` as
 component state, the shell's guarantee — and every narrowed union derived from
 it — would be a lie. Ownership is positional or it is nothing.
 
-To genuinely own a claimed tag yourself, render outside the shell that owns
+To genuinely own a claimed error yourself, render outside the shell that owns
 it. The login page lives outside `AuthShell` and handles
 `auth/session-expired` as an ordinary failure, because there is no session to
 guarantee there.
@@ -1228,7 +1284,7 @@ procedure and middleware failures
 export const authErrors = { Unauthorized, SessionExpired };
 
 // server
-const authenticated = app.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
+const authenticated = server.middleware<{ user: User }>().errors(authErrors).use(/* ... */);
 
 // client
 const AuthShell = defineShell({ name: "auth", claims: authErrors /* ... */ });
@@ -1267,20 +1323,20 @@ The server half derives from it:
 
 ```ts
 // server
-const authenticated = AuthLayer.middleware(app, async ({ context, errors }) => {
+const authenticated = AuthLayer.middleware(server, async ({ context, errors }) => {
   const user = await context.auth.user();
   return user ? ok(user) : err(errors.Unauthorized());
 });
 // Middleware<AppContext, AppContext & { user: User }, typeof AuthLayer.errors>
 
-export const whoami = AuthLayer.procedure(app, authenticated);
+export const whoami = AuthLayer.procedure(server, authenticated);
 // the context procedure: {} -> User with the layer union. Its handler is
 // derived — it returns the user the middleware placed in context — so the
 // endpoint *cannot* disagree with the middleware. That is the drift, deleted.
 ```
 
 (Contract-first codebases put `AuthLayer.contract(app)` in the shared contract
-and pass it as `AuthLayer.procedure(app, contract, authenticated)`.)
+and pass it as `AuthLayer.procedure(server, contract, authenticated)`.)
 
 And the React half is its sibling:
 
@@ -1290,7 +1346,7 @@ import { layerShell } from "result-rpc/react";
 
 export const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
-  procedure: client.auth.whoami,
+  select: (client) => client.auth.whoami,
   onError: () => redirect("/login"),
 });
 ```
@@ -1320,7 +1376,7 @@ by refinement:
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: wire.union([UserCodec, wire.null] as const),
+  provides: wire.union([UserCodec, wire.null]),
   errors: {}, // optional: cannot fail
 });
 
@@ -1335,31 +1391,39 @@ export const ViewerLayer = SessionLayer.require({
 On the server, context grows and narrows monotonically through the chain:
 
 ```ts
-const session = SessionLayer.middleware(app, ({ context }) => ok(await userFromCookie(context))); // User | null — never fails
+const session = SessionLayer.middleware(server, ({ context }) => ok(await userFromCookie(context))); // User | null — never fails
 
 // No resolver: the refinement is derived. Passing `session` bundles the
 // parent, so one `.use(requireViewer)` pulls the whole chain in order.
-const requireViewer = ViewerLayer.middleware(app, session);
+const requireViewer = ViewerLayer.middleware(server, session);
 
-app
+server
   .procedure()
   .use(requireViewer) // session runs first: viewer is User
   .query(({ context }) => ok(greet(context.viewer)));
 ```
 
-(`ViewerLayer.middleware(app)` without the parent also works when the input
-context already carries the session value — the bundled form is the usual
-one.)
+Required layers always take their parent middleware and compose it with
+`.after()`. Pass the resulting `requireViewer` as the **one composed
+middleware** to a procedure; do not pass the session and refinement as a loose
+array:
+
+```ts
+export const viewer = ViewerLayer.procedure(server, requireViewer);
+```
 
 On the client the same shape appears as nested providers — the optional shell
 claims nothing and provides the nullable value; the required shell claims
 `Unauthorized` and provides the narrowed one:
 
 ```tsx
-const SessionShell = layerShell(SessionLayer, { from: DefectShell, procedure: client.session });
+const SessionShell = layerShell(SessionLayer, {
+  from: DefectShell,
+  select: (client) => client.session,
+});
 const ViewerShell = layerShell(ViewerLayer, {
   from: SessionShell,
-  procedure: client.viewer,
+  select: (client) => client.viewer,
   onError: () => redirect("/login"),
 });
 
@@ -1595,8 +1659,12 @@ world, zero refetches anywhere.
 A model is to values what an error definition is to failures — a named,
 shared declaration. `Doc.all("why")` is every field; `Doc.pick("id",
 "title")` declares a projection (the key field is mandatory — an entity
-without its identity is just data). Use them anywhere in outputs, at any
-depth, including inside each other. The mechanics are the decode pass you
+without its identity is just data). The model retains its literal key in its
+type: `pick` and `select` fail at compile time if any identity field is absent,
+including one member of a composite key. Key codecs must decode to `string` or
+`number`; nullable and object-valued keys are rejected when the model is
+declared. Use model views anywhere in outputs, at any depth, including inside
+each other. The mechanics are the decode pass you
 already pay for: decoding brands entity objects, the runtime indexes every
 cached result by the entities it contains, and mutations that return
 entities patch by identity. There are no heuristics and no schema walking —
@@ -1738,7 +1806,7 @@ export const TourContent = defineModel("tour-content", {
   key: ["id", "locale"],
   shape: {
     id: wire.string,
-    locale: wire.union([wire.literal("en"), wire.literal("ja")] as const),
+    locale: wire.union([wire.literal("en"), wire.literal("ja")]),
     title: wire.string,
   },
 }).$satisfies<typeof tourContent.$inferSelect>();
@@ -1857,7 +1925,7 @@ export const docEventsContract = app
   .errors({ Unauthorized, DocNotFound })
   .subscription();
 
-export const docEvents = app
+export const docEvents = server
   .implement(docEventsContract)
   .use(authenticated)
   .stream(async function* ({ input, errors, context }) {
@@ -1972,7 +2040,6 @@ and tagged error data transparently preserve:
 - `undefined`, `NaN`, infinity, and `-0`
 - `Date`, `BigInt`, `RegExp`, `URL`, and `URLSearchParams`
 - `Map`, `Set`, `ArrayBuffer`, and typed arrays
-- Temporal values when `Temporal` is available in both runtimes
 - cycles and repeated object identity
 
 ```ts
@@ -1984,11 +2051,11 @@ const RichDoc = wire.object({
 });
 ```
 
-For a recursive or otherwise richer application type, validate serializer
-support at the boundary:
+For a recursive or otherwise richer application type, supply an actual type
+guard. Serializer support alone cannot prove an application shape:
 
 ```ts
-const Graph = wire.serializable<DocGraph>();
+const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value));
 ```
 
 Functions, symbols, unsupported class instances, and arbitrary `Error` causes
@@ -2014,7 +2081,7 @@ typically via a presigned URL, and let the contract carry only the **reference**
 ```ts
 // mint a target (RPC or a plain POST route), PUT the file to it directly,
 // then finish with an RPC that carries only the bucket key:
-const setAvatar = app
+const setAvatar = server
   .procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
   .output(UserCard)
@@ -2127,7 +2194,7 @@ required. The examples run their full React trees this way:
 const handler = createFetchHandler({ router, createContext: () => context });
 
 const client = createBrowserClient({
-  router,
+  contract: appContract,
   transport: fetchTransport({
     url: "https://example.test/rpc",
     fetch: (input, init) => handler(new Request(input, init)),
@@ -2172,7 +2239,7 @@ const client = createBrowserClient({
 // 2. Ownership: a shell's reaction is a reporting moment.
 const AuthShell = layerShell(AuthLayer, {
   from: DefectShell,
-  procedure: (client: AppClient) => client.auth.me,
+  select: (client: AppClient) => client.auth.me,
   onError: (error) => {
     Sentry.captureMessage(`signed out: ${error._tag}`, "info");
     redirect("/login");
@@ -2218,7 +2285,7 @@ tapError(await client.doc.rename(input), (error) => log.warn(error._tag));
 | RPC                | Procedures, middleware, routers, server execution, protocol, clients                                 |
 | Transport failures | Tagged additions to each procedure's inferred error union                                            |
 | Query runtime      | Keys, caching, retries, invalidation, lifecycle, hydration                                           |
-| Failure ownership  | Shells that subtract claimed tags and guarantee context                                              |
+| Failure ownership  | Shells that subtract claimed errors and guarantee context                                            |
 | React              | Query, mutation, subscription, suspense, and SSR bindings                                            |
 | Diagnostics        | Safe incident IDs publicly; full causes only in local observability                                  |
 | Observability      | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps                          |
@@ -2255,19 +2322,19 @@ instead of at the end.
 
 The concept mapping is mechanical:
 
-| tRPC                                         | result-rpc                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------ |
-| `initTRPC.context<Ctx>().create()`           | `rpc.context<Ctx>()`                                                     |
-| `t.procedure.input(z...).query(fn)`          | `app.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
-| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                    |
-| `t.middleware` + `ctx` spread                | `app.middleware<Added>().errors({...}).use(...)`                         |
-| `protectedProcedure`                         | `app.procedure().use(authenticated)` — same pattern                      |
-| `httpBatchLink`                              | `batchFetchTransport`                                                    |
-| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                           |
-| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                 |
-| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                    |
-| `createCaller`                               | `createServerClient`                                                     |
-| `queryClient.setDefaultOptions({ onError })` | a shell                                                                  |
+| tRPC                                         | result-rpc                                                                  |
+| -------------------------------------------- | --------------------------------------------------------------------------- |
+| `initTRPC.context<Ctx>().create()`           | `serverRpc.context<Ctx>()`                                                  |
+| `t.procedure.input(z...).query(fn)`          | `server.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                       |
+| `t.middleware` + `ctx` spread                | `server.middleware<Added>().errors({...}).use(...)`                         |
+| `protectedProcedure`                         | `server.procedure().use(authenticated)` — same pattern                      |
+| `httpBatchLink`                              | `batchFetchTransport`                                                       |
+| `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                              |
+| `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                    |
+| adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                       |
+| `createCaller`                               | `createServerClient`                                                        |
+| `queryClient.setDefaultOptions({ onError })` | a shell                                                                     |
 
 Two things have no tRPC equivalent and are the actual work: every procedure
 declares its error union (this is where the two-failure-channel debt gets paid

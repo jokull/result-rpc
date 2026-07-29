@@ -12,14 +12,15 @@ import {
   type Context,
   type ReactNode,
 } from "react";
-import type { AnyTaggedError } from "../error.js";
+import { isTaggedError, type AnyErrorDefinition, type AnyTaggedError } from "../error.js";
+import type { EmptyObject } from "../wire.js";
+import type { RpcConstraintError } from "../type-diagnostics.js";
 import type { LayerShape } from "../layer.js";
-import { ClaimScopeContext, type ClaimEntry } from "./claims.js";
+import { ClaimScopeContext, type ClaimEntry, type ClaimRegistry } from "./claims.js";
 import type { ErrorDefinitionMap, ErrorUnion } from "../server/contract.js";
 import type {
   MutationOptions,
   MutationState,
-  PaginatedClientCursor,
   PaginatedClientItem,
   PaginatedClientListInput,
   PaginatedProcedureClientLike,
@@ -27,12 +28,12 @@ import type {
   ProcedureClientError,
   ProcedureClientInput,
   ProcedureClientOutput,
+  ProcedureClientResult,
   QueryOptions,
+  QueryRuntime,
   QueryState,
   SubscriptionClientError,
-  SubscriptionClientInput,
   SubscriptionClientOutput,
-  SubscriptionOptions,
   SubscriptionState,
 } from "../query/runtime.js";
 import {
@@ -45,14 +46,43 @@ import {
   type MutationProcedureClientLike,
   type QueryHookArgs,
   type QueryProcedureClientLike,
+  type SubscriptionHookArgs,
   type SubscriptionProcedureClientLike,
 } from "./index.js";
 
-/** Remove every union member whose `_tag` is claimed by an enclosing shell. */
-export type ExcludeTags<TError, TTags extends string> = TError extends {
-  readonly _tag: TTags;
+type ErrorSignature<TError> = TError extends {
+  readonly _tag: infer TTag;
+  readonly data: infer TData;
+  readonly visibility: infer TVisibility;
 }
-  ? never
+  ? readonly [tag: TTag, data: TData, visibility: TVisibility]
+  : never;
+
+type IsTypeEqual<TLeft, TRight> =
+  (<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
+    ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => T extends TLeft ? 1 : 2
+      ? true
+      : false
+    : false;
+
+type HasExactClaim<TError, TClaimedError> = TClaimedError extends AnyTaggedError
+  ? IsTypeEqual<ErrorSignature<TError>, ErrorSignature<TClaimedError>> extends true
+    ? true
+    : never
+  : never;
+
+/**
+ * Removes only procedure-error members whose complete public signature is
+ * owned by a shell. The distributive outer conditional preserves every other
+ * member verbatim; a shared tag alone is deliberately insufficient.
+ */
+export type SubtractClaimedErrors<
+  TError,
+  TClaimedError extends AnyTaggedError,
+> = TError extends AnyTaggedError
+  ? true extends HasExactClaim<TError, TClaimedError>
+    ? never
+    : TError
   : TError;
 
 export type TagsOf<TDefinitions extends ErrorDefinitionMap> =
@@ -81,10 +111,36 @@ export interface ShellHoldings<TError extends AnyTaggedError> {
   readonly resume: () => void;
 }
 
+export interface ShellErrorRegistry<TError extends AnyTaggedError> extends ClaimRegistry<TError> {}
+
+type ShellClaimedErrors<
+  TDefinitions extends ErrorDefinitionMap,
+  TParent extends AnyShell | undefined,
+> = ErrorUnion<TDefinitions> | (TParent extends AnyShell ? ClaimedErrorsBy<TParent> : never);
+
+/**
+ * The non-generic runtime identity shared by every shell. This is the
+ * existential constraint used while composing shell chains; importantly, it
+ * does not instantiate the generic hook surface with `any`.
+ */
+export interface AnyShell {
+  readonly $shell: true;
+  readonly name: string;
+  readonly effect: ShellEffect;
+  readonly claims: ErrorDefinitionMap;
+  readonly parent: AnyShell | undefined;
+  readonly ownTags: readonly string[];
+  readonly claimedTags: readonly string[];
+  // Provider props are deliberately erased only for shell-agnostic adapters.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly Provider: (props: any) => ReactNode;
+  use(): unknown;
+  useHeld(): ShellHoldings<AnyTaggedError>;
+}
+
 interface ShellNode {
   readonly report: (id: string, error: AnyTaggedError, retry?: () => void) => void;
   readonly release: (id: string) => void;
-  readonly retryAll: () => void;
   readonly subscribe: (listener: () => void) => () => void;
   readonly snapshot: () => ShellHoldings<AnyTaggedError>;
   readonly whenChanged: () => Promise<void>;
@@ -99,37 +155,50 @@ interface ShellInternals {
   readonly name: string;
   readonly effect: ShellEffect;
   readonly ownTags: ReadonlySet<string>;
+  readonly registry: ShellErrorRegistry<AnyTaggedError>;
   readonly context: Context<ShellMount | undefined>;
   /** Innermost first: `[self, parent, grandparent, ...]`. */
   readonly chain: readonly ShellInternals[];
 }
 
 export interface Shell<
-  THandled extends string = string,
+  TDefinitions extends ErrorDefinitionMap = ErrorDefinitionMap,
+  TParent extends AnyShell | undefined = AnyShell | undefined,
   TProps = Record<never, never>,
-  TValue = void,
-  TOwn extends AnyTaggedError = AnyTaggedError,
-> {
+  TValue = unknown,
+> extends AnyShell {
   readonly $shell: true;
   readonly name: string;
   readonly effect: ShellEffect;
+  /** Runtime guard and associated type for every error this shell chain claims. */
+  readonly $errors: ShellErrorRegistry<ShellClaimedErrors<TDefinitions, TParent>>;
+  /** The exact definitions owned by this shell. */
+  readonly claims: TDefinitions;
+  /** The exact enclosing shell, retained for runtime and type-level composition. */
+  readonly parent: TParent;
   /** Tags this shell claims. */
-  readonly ownTags: readonly string[];
+  readonly ownTags: readonly TagsOf<TDefinitions>[];
   /** Tags this shell and every enclosing shell claim. */
-  readonly claimedTags: readonly string[];
+  readonly claimedTags: readonly (
+    | TagsOf<TDefinitions>
+    | (TParent extends AnyShell ? ClaimedBy<TParent> : never)
+  )[];
   readonly Provider: (props: TProps & { readonly children?: ReactNode }) => ReactNode;
 
   /** The value this shell guarantees. Throws if the shell is not mounted. */
   use(): TValue;
   /** Aggregate view of what this shell is currently holding. */
-  useHeld(): ShellHoldings<TOwn>;
+  useHeld(): ShellHoldings<ErrorUnion<TDefinitions>>;
 
   useQuery<TProcedureClient extends QueryProcedureClientLike>(
     procedure: TProcedureClient,
     ...rest: QueryHookArgs<TProcedureClient>
   ): QueryState<
     ProcedureClientOutput<TProcedureClient>,
-    ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
+    SubtractClaimedErrors<
+      ProcedureClientError<TProcedureClient>,
+      ShellClaimedErrors<TDefinitions, TParent>
+    >
   >;
 
   useSuspenseQuery<TProcedureClient extends QueryProcedureClientLike>(
@@ -138,7 +207,10 @@ export interface Shell<
   ): Exclude<
     QueryState<
       ProcedureClientOutput<TProcedureClient>,
-      ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
+      SubtractClaimedErrors<
+        ProcedureClientError<TProcedureClient>,
+        ShellClaimedErrors<TDefinitions, TParent>
+      >
     >,
     { readonly state: "pending" }
   >;
@@ -149,8 +221,10 @@ export interface Shell<
     options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
   ): PaginatedState<
     PaginatedClientItem<TProcedureClient>,
-    PaginatedClientCursor<TProcedureClient>,
-    ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
+    SubtractClaimedErrors<
+      ProcedureClientError<TProcedureClient>,
+      ShellClaimedErrors<TDefinitions, TParent>
+    >
   >;
 
   useMutation<TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(
@@ -158,32 +232,45 @@ export interface Shell<
     options?: MutationOptions<
       ProcedureClientInput<TProcedureClient>,
       ProcedureClientOutput<TProcedureClient>,
-      ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>,
+      ProcedureClientError<TProcedureClient>,
       TContext
     >,
   ): MutationState<
     ProcedureClientInput<TProcedureClient>,
     ProcedureClientOutput<TProcedureClient>,
-    ExcludeTags<ProcedureClientError<TProcedureClient>, THandled>
+    SubtractClaimedErrors<
+      ProcedureClientError<TProcedureClient>,
+      ShellClaimedErrors<TDefinitions, TParent>
+    >
   >;
 
   useSubscription<TProcedureClient extends SubscriptionProcedureClientLike>(
     procedure: TProcedureClient,
-    input: SubscriptionClientInput<TProcedureClient>,
-    options?: SubscriptionOptions<SubscriptionClientError<TProcedureClient>>,
+    ...rest: SubscriptionHookArgs<TProcedureClient>
   ): SubscriptionState<
     SubscriptionClientOutput<TProcedureClient>,
-    ExcludeTags<SubscriptionClientError<TProcedureClient>, THandled>
+    SubtractClaimedErrors<
+      SubscriptionClientError<TProcedureClient>,
+      ShellClaimedErrors<TDefinitions, TParent>
+    >
   >;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyShell = Shell<any, any, any, any>;
+export type ClaimedBy<TShell> = TShell extends {
+  readonly claims: infer TDefinitions extends ErrorDefinitionMap;
+  readonly parent: infer TParent;
+}
+  ? TagsOf<TDefinitions> | ClaimedBy<TParent>
+  : never;
 
-export type ClaimedBy<TShell> =
-  TShell extends Shell<infer THandled, any, any, any> ? THandled : never;
+export type ClaimedErrorsBy<TShell> = TShell extends {
+  readonly claims: infer TDefinitions extends ErrorDefinitionMap;
+  readonly parent: infer TParent;
+}
+  ? ErrorUnion<TDefinitions> | ClaimedErrorsBy<TParent>
+  : never;
 
-export type ValueOf<TShell> = TShell extends Shell<any, any, infer TValue, any> ? TValue : never;
+export type ValueOf<TShell> = TShell extends { use(): infer TValue } ? TValue : never;
 
 export interface DefineShellOptions<
   TDefinitions extends ErrorDefinitionMap,
@@ -216,9 +303,11 @@ const internalsOf = (shell: AnyShell): ShellInternals => {
   return found;
 };
 
-const createNode = (
-  onError: ((error: never, value: unknown) => void) | undefined,
-  valueRef: { current: unknown },
+const createNode = <TError extends AnyTaggedError, TValue>(
+  name: string,
+  registry: ShellErrorRegistry<TError>,
+  onError: ((error: TError, value: TValue) => void) | undefined,
+  valueRef: { current: TValue },
 ): ShellNode => {
   const entries = new Map<
     string,
@@ -250,15 +339,19 @@ const createNode = (
   };
   return {
     report: (id, error, retry) => {
+      if (!registry.is(error)) {
+        throw new TypeError(
+          `Shell ${name} received ${error._tag} from a different error definition`,
+        );
+      }
       if (entries.get(id)?.error === error) return;
       entries.set(id, retry === undefined ? { error } : { error, retry });
       recompute();
-      onError?.(error as never, valueRef.current);
+      onError?.(error, valueRef.current);
     },
     release: (id) => {
       if (entries.delete(id)) recompute();
     },
-    retryAll,
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -273,6 +366,25 @@ const createNode = (
   };
 };
 
+const createShellErrorRegistry = <TDefinitions extends ErrorDefinitionMap>(
+  name: string,
+  claims: TDefinitions,
+): ShellErrorRegistry<ErrorUnion<TDefinitions>> => {
+  const definitions = new Map<string, AnyErrorDefinition>();
+  for (const definition of Object.values(claims)) {
+    const existing = definitions.get(definition.tag);
+    if (existing && existing !== definition) {
+      throw new TypeError(`Shell ${name} declares two different definitions for ${definition.tag}`);
+    }
+    definitions.set(definition.tag, definition);
+  }
+  return Object.freeze({
+    definitions,
+    is: (value: unknown): value is ErrorUnion<TDefinitions> =>
+      isTaggedError(value) && definitions.get(value._tag)?.is(value) === true,
+  });
+};
+
 const missingParentContext = createContext<ShellMount | undefined>(undefined);
 
 export const defineShell = <
@@ -282,15 +394,11 @@ export const defineShell = <
   TValue = void,
 >(
   options: DefineShellOptions<TDefinitions, TParent, TProps, TValue>,
-): Shell<
-  TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
-  TProps,
-  TValue,
-  ErrorUnion<TDefinitions>
-> => {
+): Shell<TDefinitions, TParent, TProps, TValue> => {
   const parent = options.from as AnyShell | undefined;
   const parentInternals = parent ? internalsOf(parent) : undefined;
-  const ownTags = new Set(Object.values(options.claims).map((definition) => definition.tag));
+  const ownRegistry = createShellErrorRegistry(options.name, options.claims);
+  const ownTags = new Set(ownRegistry.definitions.keys());
   if (ownTags.size === 0 && options.provide === undefined) {
     throw new TypeError(`Shell ${options.name} claims no errors and provides no value`);
   }
@@ -310,6 +418,7 @@ export const defineShell = <
     name: options.name,
     effect,
     ownTags,
+    registry: ownRegistry,
     context,
     chain: [],
   };
@@ -323,18 +432,16 @@ export const defineShell = <
       throw new TypeError(`Shell ${options.name} must be mounted inside ${parentInternals.name}`);
     }
     const value = options.provide ? options.provide(props) : (undefined as TValue);
-    const valueRef = useRef<unknown>(value);
+    const valueRef = useRef<TValue>(value);
     valueRef.current = value;
-    const [node] = useState(() =>
-      createNode(options.onError as ((error: never, value: unknown) => void) | undefined, valueRef),
-    );
+    const [node] = useState(() => createNode(options.name, ownRegistry, options.onError, valueRef));
     const mount = useMemo<ShellMount>(() => ({ node, value }), [node, value]);
     const parentScope = useContext(ClaimScopeContext);
     const entry = useMemo<ClaimEntry>(
       () => ({
         name: options.name,
         effect,
-        tags: ownTags,
+        registry: ownRegistry,
         report: node.report,
         release: node.release,
         whenChanged: node.whenChanged,
@@ -355,10 +462,24 @@ export const defineShell = <
     return mount;
   };
 
+  const claimedDefinitions = new Map<string, AnyErrorDefinition>();
+  for (const layer of self.chain) {
+    for (const [tag, definition] of layer.registry.definitions) {
+      claimedDefinitions.set(tag, definition);
+    }
+  }
+
   const shell = {
     $shell: true as const,
+    $errors: {
+      definitions: claimedDefinitions,
+      is: (value: unknown): value is AnyTaggedError =>
+        self.chain.some((layer) => layer.registry.is(value)),
+    },
     name: options.name,
     effect,
+    claims: options.claims,
+    parent: options.from,
     ownTags: [...ownTags],
     claimedTags: self.chain.flatMap((layer) => [...layer.ownTags]),
     Provider,
@@ -370,32 +491,31 @@ export const defineShell = <
     // Absorption is ambient (any hook under the providers); the shell hooks add
     // the type subtraction and an eager proof that the whole chain is mounted,
     // so the narrowed union can never outrun its owners.
-    useQuery: (procedure: any, input: any, queryOptions?: any) => {
+    useQuery: (procedure: any, ...rest: any[]) => {
       useAssertChainMounted(self);
-      return useResultQuery(procedure, ...([input, queryOptions] as [never, never]));
+      return useResultQuery(procedure, ...rest);
     },
-    useSuspenseQuery: (procedure: any, input: any, queryOptions?: any) => {
+    useSuspenseQuery: (procedure: any, ...rest: any[]) => {
       useAssertChainMounted(self);
-      return useResultSuspenseQuery(procedure, ...([input, queryOptions] as [never, never]));
+      return useResultSuspenseQuery(procedure, ...rest);
     },
     usePaginatedQuery: (procedure: any, input: any, queryOptions?: any) => {
       useAssertChainMounted(self);
-      return useResultPaginatedQuery(procedure, input, queryOptions);
+      return useResultPaginatedQuery(
+        procedure as PaginatedProcedureClientLike,
+        input as never,
+        queryOptions,
+      );
     },
     useMutation: (procedure: any, mutationOptions?: any) => {
       useAssertChainMounted(self);
       return useResultMutation(procedure, mutationOptions);
     },
-    useSubscription: (procedure: any, input: any, subscriptionOptions?: any) => {
+    useSubscription: (procedure: any, ...rest: any[]) => {
       useAssertChainMounted(self);
-      return useResultSubscription(procedure, input, subscriptionOptions);
+      return useResultSubscription(procedure, ...rest);
     },
-  } as unknown as Shell<
-    TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
-    TProps,
-    TValue,
-    ErrorUnion<TDefinitions>
-  >;
+  } as unknown as Shell<TDefinitions, TParent, TProps, TValue>;
 
   internals.set(shell, self);
   return shell;
@@ -416,31 +536,89 @@ const useAssertChainMounted = (shell: ShellInternals): void => {
 
 // --- Layer shells ----------------------------------------------------------
 
-export interface LayerShellOptions<
-  TParent extends AnyShell | undefined,
+type Exact<TLeft, TRight> = [TLeft] extends [TRight]
+  ? [TRight] extends [TLeft]
+    ? true
+    : false
+  : false;
+
+type LayerProcedureCompatibility<
+  TProcedureClient extends QueryProcedureClientLike,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> = (Exact<ProcedureClientOutput<TProcedureClient>, TValue> extends true
+  ? unknown
+  : RpcConstraintError<
+      "layer-procedure-output-does-not-match-layer-value",
+      { readonly expected: TValue; readonly actual: ProcedureClientOutput<TProcedureClient> }
+    >) &
+  (EmptyObject extends ProcedureClientInput<TProcedureClient>
+    ? unknown
+    : RpcConstraintError<
+        "layer-procedure-requires-empty-input",
+        ProcedureClientInput<TProcedureClient>
+      >) &
+  (ErrorUnion<TDefinitions> extends ProcedureClientError<TProcedureClient>
+    ? unknown
+    : RpcConstraintError<
+        "layer-procedure-is-missing-layer-errors",
+        Exclude<ErrorUnion<TDefinitions>, ProcedureClientError<TProcedureClient>>["_tag"]
+      >);
+
+interface LayerShellCommonOptions<
+  TParent extends AnyShell,
   TProcedureClient extends QueryProcedureClientLike,
   TValue,
 > {
-  /** The enclosing shell layer. Omit for the outermost layer. */
-  readonly from?: TParent;
-  /**
-   * The client procedure for the layer's context procedure (`layer.contract`),
-   * either directly or as a selector from the app's client — the selector form
-   * lets shells be defined at module level, before any client exists; it is
-   * resolved through the enclosing ResultRpcProvider at render time.
-   */
-  readonly procedure: TProcedureClient | ((client: never) => TProcedureClient);
   /**
    * Fires when the layer cannot be established — a load failure the enclosing
    * layers did not claim — and when an operation inside the layer fails with
    * one of the layer's own tags. Must be idempotent.
    */
   readonly onError?: (
-    error: TParent extends AnyShell
-      ? ExcludeTags<ProcedureClientError<TProcedureClient>, ClaimedBy<TParent>>
-      : ProcedureClientError<TProcedureClient>,
+    error: SubtractClaimedErrors<
+      ProcedureClientError<NoInfer<TProcedureClient>>,
+      ClaimedErrorsBy<NoInfer<TParent>>
+    >,
     value: TValue | undefined,
   ) => void;
+}
+
+/**
+ * A layer procedure is either already available, or selected from the provider
+ * client at render time. The distinct keys keep two callable values from being
+ * distinguished by a runtime heuristic.
+ */
+export type LayerShellOptions<
+  TParent extends AnyShell,
+  TProcedureClient extends QueryProcedureClientLike,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+  TClient = unknown,
+> = LayerShellCommonOptions<TParent, TProcedureClient, TValue> & { readonly from: TParent } & (
+    | {
+        readonly procedure: TProcedureClient;
+        readonly select?: never;
+      }
+    | {
+        readonly select: (client: TClient) => TProcedureClient;
+        readonly procedure?: never;
+      }
+  ) &
+  LayerProcedureCompatibility<TProcedureClient, TValue, TDefinitions>;
+
+declare const layerShellMetadata: unique symbol;
+
+export interface LayerShellMetadata<
+  TClient,
+  TProcedureClient extends QueryProcedureClientLike,
+  THandled extends string = string,
+> {
+  readonly [layerShellMetadata]: {
+    readonly client: TClient;
+    readonly procedure: TProcedureClient;
+    readonly handled: THandled;
+  };
 }
 
 export interface LayerShellProviderProps {
@@ -458,21 +636,19 @@ export interface LayerShellProviderProps {
  * defect failures during load are owned by the layers that already claim them;
  * only the layer's own errors reach `onError`.
  */
-export const layerShell = <
+const createLayerShell = <
+  TClient,
   TKey extends string,
   TValue,
   TDefinitions extends ErrorDefinitionMap,
   TProcedureClient extends QueryProcedureClientLike,
-  TParent extends AnyShell | undefined = undefined,
+  TParent extends AnyShell,
 >(
+  useClient: () => TClient,
   layer: LayerShape<TKey, TValue, TDefinitions>,
-  options: LayerShellOptions<TParent, TProcedureClient, TValue>,
-): Shell<
-  TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
-  LayerShellProviderProps,
-  TValue,
-  ErrorUnion<TDefinitions>
-> => {
+  options: LayerShellOptions<TParent, TProcedureClient, TValue, TDefinitions, TClient>,
+): Shell<TDefinitions, TParent, LayerShellProviderProps, TValue> &
+  LayerShellMetadata<TClient, TProcedureClient, TagsOf<TDefinitions> | ClaimedBy<TParent>> => {
   const valueHolder: { current: TValue | undefined } = { current: undefined };
   const inner = defineShell({
     name: layer.name,
@@ -491,25 +667,20 @@ export const layerShell = <
     provide: (props: { readonly value: TValue }) => props.value,
   });
   const parent = options.from as AnyShell | undefined;
-  const resolveProcedure = (client: unknown): TProcedureClient => {
-    // Client procedures carry $kind; a bare selector function does not.
-    const candidate = options.procedure as unknown as ((client: unknown) => TProcedureClient) & {
-      readonly $kind?: unknown;
-    };
-    return candidate.$kind === undefined
-      ? candidate(client)
-      : (options.procedure as TProcedureClient);
-  };
+  const resolveProcedure = (client: TClient): TProcedureClient =>
+    options.select === undefined ? options.procedure : options.select(client);
   // Chosen once at definition time, so the wrapped Provider's hook order is stable.
   const useLoad = parent
-    ? (): QueryState<TValue, AnyTaggedError> =>
-        parent.useQuery(
-          resolveProcedure(useResultClient()),
+    ? (): QueryState<TValue, AnyTaggedError> => {
+        useAssertChainMounted(internalsOf(parent));
+        return useResultQuery(
+          resolveProcedure(useClient()),
           {} as ProcedureClientInput<TProcedureClient>,
-        ) as unknown as QueryState<TValue, AnyTaggedError>
+        ) as unknown as QueryState<TValue, AnyTaggedError>;
+      }
     : (): QueryState<TValue, AnyTaggedError> =>
         useResultQuery(
-          resolveProcedure(useResultClient()),
+          resolveProcedure(useClient()),
           {} as ProcedureClientInput<TProcedureClient>,
         ) as unknown as QueryState<TValue, AnyTaggedError>;
 
@@ -560,11 +731,12 @@ export const layerShell = <
   };
 
   const shell = { ...inner, Provider } as unknown as Shell<
-    TagsOf<TDefinitions> | (TParent extends AnyShell ? ClaimedBy<TParent> : never),
+    TDefinitions,
+    TParent,
     LayerShellProviderProps,
-    TValue,
-    ErrorUnion<TDefinitions>
-  >;
+    TValue
+  > &
+    LayerShellMetadata<TClient, TProcedureClient, TagsOf<TDefinitions> | ClaimedBy<TParent>>;
   // The wrapped shell shares the inner shell's identity in the chain registry so
   // child shells can use it as `from:` and hooks resolve the same context.
   internals.set(shell, internalsOf(inner as AnyShell));
@@ -572,12 +744,90 @@ export const layerShell = <
   return shell;
 };
 
+/** The globally registered, TanStack-style layer-shell constructor. */
+export const layerShell = <
+  TKey extends string,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+  TProcedureClient extends QueryProcedureClientLike,
+  TParent extends AnyShell,
+>(
+  layer: LayerShape<TKey, TValue, TDefinitions>,
+  options: LayerShellOptions<
+    TParent,
+    TProcedureClient,
+    TValue,
+    TDefinitions,
+    ReturnType<typeof useResultClient>
+  >,
+) =>
+  createLayerShell<
+    ReturnType<typeof useResultClient>,
+    TKey,
+    TValue,
+    TDefinitions,
+    TProcedureClient,
+    TParent
+  >(useResultClient, layer, options);
+
+/** Internal building block for `createResultRpcReact<TClient>()`. */
+export const bindLayerShell =
+  <TClient,>(useClient: () => TClient) =>
+  <
+    TKey extends string,
+    TValue,
+    TDefinitions extends ErrorDefinitionMap,
+    TProcedureClient extends QueryProcedureClientLike,
+    TParent extends AnyShell,
+  >(
+    layer: LayerShape<TKey, TValue, TDefinitions>,
+    options: LayerShellOptions<TParent, TProcedureClient, TValue, TDefinitions, TClient>,
+  ) =>
+    createLayerShell<TClient, TKey, TValue, TDefinitions, TProcedureClient, TParent>(
+      useClient,
+      layer,
+      options,
+    );
+
 const layerResolvers = new WeakMap<AnyShell, (client: unknown) => QueryProcedureClientLike>();
+
+export type LayerProcedureResolver<TShell> =
+  TShell extends LayerShellMetadata<infer TClient, infer TProcedureClient, string>
+    ? (client: TClient) => TProcedureClient
+    : ((client: unknown) => QueryProcedureClientLike) | undefined;
 
 /**
  * Internal: the context-procedure resolver of a layer-derived shell, used by
  * router integrations to derive prefetching loaders. Undefined for plain shells.
  */
-export const getLayerProcedureResolver = (
-  shell: AnyShell,
-): ((client: unknown) => QueryProcedureClientLike) | undefined => layerResolvers.get(shell);
+export const getLayerProcedureResolver = <TShell extends AnyShell>(
+  shell: TShell,
+): LayerProcedureResolver<TShell> => layerResolvers.get(shell) as LayerProcedureResolver<TShell>;
+
+export type AnyLayerShell = LayerShellMetadata<any, QueryProcedureClientLike, string> & {
+  readonly Provider: (props: LayerShellProviderProps) => ReactNode;
+};
+
+export type LayerShellClient<TShell> =
+  TShell extends LayerShellMetadata<infer TClient, QueryProcedureClientLike, string>
+    ? TClient
+    : never;
+
+export type LayerShellProcedure<TShell> =
+  TShell extends LayerShellMetadata<any, infer TProcedureClient, string> ? TProcedureClient : never;
+
+/** Prefetches the empty-input context procedure retained by a typed layer shell. */
+export const prefetchLayer = <TShell extends AnyLayerShell>(
+  runtime: QueryRuntime<LayerShellClient<TShell>>,
+  shell: TShell,
+  client: LayerShellClient<TShell>,
+): Promise<ProcedureClientResult<LayerShellProcedure<TShell>>> => {
+  const resolver = layerResolvers.get(shell as unknown as AnyShell) as (
+    client: LayerShellClient<TShell>,
+  ) => LayerShellProcedure<TShell>;
+  const procedure = resolver(client);
+  return runtime.prefetch(
+    procedure,
+    {} as ProcedureClientInput<LayerShellProcedure<TShell>>,
+  ) as Promise<ProcedureClientResult<LayerShellProcedure<TShell>>>;
+};

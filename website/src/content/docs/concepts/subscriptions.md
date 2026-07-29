@@ -7,6 +7,8 @@ Declare the stream in the shared contract and attach its generator only on the
 server:
 
 ```ts
+import { serverRpc } from "result-rpc/server";
+
 export const docEventsContract = app
   .procedure()
   .input(wire.object({ docId: wire.string }))
@@ -14,7 +16,8 @@ export const docEventsContract = app
   .errors({ Unauthorized, DocNotFound })
   .subscription();
 
-export const docEvents = app
+const server = serverRpc.context<AppContext>();
+export const docEvents = server
   .implement(docEventsContract)
   .use(authenticated)
   .stream(async function* ({ input, errors, context }) {

@@ -4,14 +4,14 @@ export const TicketStatus = wire.union([
   wire.literal("backlog"),
   wire.literal("in_progress"),
   wire.literal("done"),
-] as const);
+]);
 
 export const TicketPriority = wire.union([
   wire.literal("urgent"),
   wire.literal("high"),
   wire.literal("medium"),
   wire.literal("low"),
-] as const);
+]);
 
 export const Ticket = defineModel("ticket", {
   key: "id",
@@ -22,7 +22,7 @@ export const Ticket = defineModel("ticket", {
     description: wire.string,
     status: TicketStatus,
     priority: TicketPriority,
-    assignee: wire.union([wire.string, wire.null] as const),
+    assignee: wire.union([wire.string, wire.null]),
     labels: wire.array(wire.string),
     commentCount: wire.integer({ min: 0 }),
     createdAt: wire.date,

@@ -1,8 +1,7 @@
 import { err, ok } from "result-rpc";
-import { createFetchHandler } from "result-rpc/server";
+import { createFetchHandler, serverRpc } from "result-rpc/server";
 import { getD1, initializeD1 } from "../db";
 import {
-  app,
   createTicketContract,
   editTicketContract,
   moveTicketContract,
@@ -17,6 +16,8 @@ export interface AppContext {
   db: D1Database;
   workspaceId: string;
 }
+
+const server = serverRpc.context<AppContext>();
 
 interface TicketRow {
   id: string;
@@ -45,11 +46,22 @@ const SERVER_ONLY_CANARY = "RESULT_RPC_DEMO_SERVER_GRAPH_DO_NOT_SHIP";
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const parseLabels = (labelsJson: string): string[] => {
+  const parsed: unknown = JSON.parse(labelsJson);
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every((label): label is string => typeof label === "string")
+  ) {
+    throw new TypeError("Stored ticket labels must be a JSON array of strings");
+  }
+  return parsed;
+};
+
 const toTicket = (row: TicketRow): TicketValue => {
   const { labelsJson, createdAt, updatedAt, ...ticket } = row;
   return {
     ...ticket,
-    labels: JSON.parse(labelsJson) as string[],
+    labels: parseLabels(labelsJson),
     createdAt: new Date(createdAt),
     updatedAt: new Date(updatedAt),
   };
@@ -331,7 +343,7 @@ function decodeCursor(cursor: string | null): { updatedAt: number; id: string } 
   return Number.isSafeInteger(updatedAt) && id ? { updatedAt, id } : null;
 }
 
-const ticketList = app.implement(ticketListContract).handler(async ({ input, context }) => {
+const ticketList = server.implement(ticketListContract).handler(async ({ input, context }) => {
   await ensureSeeded(context);
   const clauses = ["workspace_id = ?"];
   const bindings: unknown[] = [context.workspaceId];
@@ -368,16 +380,18 @@ const ticketList = app.implement(ticketListContract).handler(async ({ input, con
   });
 });
 
-const ticketById = app.implement(ticketByIdContract).handler(async ({ input, errors, context }) => {
-  await ensureSeeded(context);
-  const row = await context.db
-    .prepare(`${SELECT_TICKET} WHERE workspace_id = ? AND id = ? LIMIT 1`)
-    .bind(context.workspaceId, input.id)
-    .first<TicketRow>();
-  return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
-});
+const ticketById = server
+  .implement(ticketByIdContract)
+  .handler(async ({ input, errors, context }) => {
+    await ensureSeeded(context);
+    const row = await context.db
+      .prepare(`${SELECT_TICKET} WHERE workspace_id = ? AND id = ? LIMIT 1`)
+      .bind(context.workspaceId, input.id)
+      .first<TicketRow>();
+    return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
+  });
 
-const ticketStats = app.implement(ticketStatsContract).handler(async ({ context }) => {
+const ticketStats = server.implement(ticketStatsContract).handler(async ({ context }) => {
   await ensureSeeded(context);
   const row = await context.db
     .prepare(
@@ -392,7 +406,7 @@ const ticketStats = app.implement(ticketStatsContract).handler(async ({ context 
   return ok(row ?? { total: 0, backlog: 0, inProgress: 0, done: 0 });
 });
 
-const createTicket = app.implement(createTicketContract).handler(async ({ input, context }) => {
+const createTicket = server.implement(createTicketContract).handler(async ({ input, context }) => {
   await ensureSeeded(context);
   await wait(MUTATION_DELAY_MS);
   const next = await context.db
@@ -423,7 +437,7 @@ const createTicket = app.implement(createTicketContract).handler(async ({ input,
     number: next?.number ?? 101,
     title: input.title,
     description: input.description,
-    status: "backlog" as const,
+    status: "backlog",
     priority: input.priority,
     assignee: null,
     labels: [],
@@ -433,54 +447,58 @@ const createTicket = app.implement(createTicketContract).handler(async ({ input,
   });
 });
 
-const editTicket = app.implement(editTicketContract).handler(async ({ input, errors, context }) => {
-  await ensureSeeded(context);
-  await wait(MUTATION_DELAY_MS);
-  if (input.id === SERVER_ONLY_CANARY) return err(errors.notFound({ ticketId: input.id }));
-  const row = await context.db
-    .prepare(
-      `UPDATE tickets
+const editTicket = server
+  .implement(editTicketContract)
+  .handler(async ({ input, errors, context }) => {
+    await ensureSeeded(context);
+    await wait(MUTATION_DELAY_MS);
+    if (input.id === SERVER_ONLY_CANARY) return err(errors.notFound({ ticketId: input.id }));
+    const row = await context.db
+      .prepare(
+        `UPDATE tickets
        SET title = ?, description = ?, priority = ?, assignee = ?, updated_at = ?
        WHERE workspace_id = ? AND id = ?
        RETURNING id, number, title, description, status, priority, assignee,
                  labels_json AS labelsJson, comment_count AS commentCount,
                  created_at AS createdAt, updated_at AS updatedAt`,
-    )
-    .bind(
-      input.title,
-      input.description,
-      input.priority,
-      input.assignee,
-      Date.now(),
-      context.workspaceId,
-      input.id,
-    )
-    .first<TicketRow>();
-  return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
-});
+      )
+      .bind(
+        input.title,
+        input.description,
+        input.priority,
+        input.assignee,
+        Date.now(),
+        context.workspaceId,
+        input.id,
+      )
+      .first<TicketRow>();
+    return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
+  });
 
-const moveTicket = app.implement(moveTicketContract).handler(async ({ input, errors, context }) => {
-  await ensureSeeded(context);
-  await wait(MUTATION_DELAY_MS);
-  const row = await context.db
-    .prepare(
-      `UPDATE tickets SET status = ?, updated_at = ?
+const moveTicket = server
+  .implement(moveTicketContract)
+  .handler(async ({ input, errors, context }) => {
+    await ensureSeeded(context);
+    await wait(MUTATION_DELAY_MS);
+    const row = await context.db
+      .prepare(
+        `UPDATE tickets SET status = ?, updated_at = ?
        WHERE workspace_id = ? AND id = ?
        RETURNING id, number, title, description, status, priority, assignee,
                  labels_json AS labelsJson, comment_count AS commentCount,
                  created_at AS createdAt, updated_at AS updatedAt`,
-    )
-    .bind(input.status, Date.now(), context.workspaceId, input.id)
-    .first<TicketRow>();
-  return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
-});
+      )
+      .bind(input.status, Date.now(), context.workspaceId, input.id)
+      .first<TicketRow>();
+    return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
+  });
 
-const resetWorkspace = app.implement(resetWorkspaceContract).handler(async ({ context }) => {
+const resetWorkspace = server.implement(resetWorkspaceContract).handler(async ({ context }) => {
   await wait(MUTATION_DELAY_MS);
   return ok({ restored: await restoreWorkspace(context) });
 });
 
-export const router = app.router({
+export const router = server.router({
   tickets: {
     list: ticketList,
     byId: ticketById,

@@ -21,7 +21,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../../src/index.js";
-import { createBrowserClient } from "../../src/client/client.js";
+import { createFixtureClient } from "../../src/testing/index.js";
 import { fetchTransport } from "../../src/client/transport.js";
 import { createFetchHandler } from "../../src/server/index.js";
 import { rpc } from "../../src/server/contract.js";
@@ -154,7 +154,7 @@ const makeWorld = () => {
   });
   const handler = createFetchHandler({ router, createContext: () => ({ db }) });
   let requests = 0;
-  const client = createBrowserClient({
+  const client = createFixtureClient({
     router,
     transport: fetchTransport({
       url: "https://oracle.test/rpc",
@@ -344,7 +344,7 @@ describe("entity coherence oracle", () => {
         } else {
           const model = random() < 0.5 ? User : Doc;
           const id = model === User ? pick([...db.users.keys()]) : pick([...db.docs.keys()]);
-          await runtime.cache.invalidateEntity(model as never, id);
+          await runtime.cache.invalidateEntity(model, id);
           await settle();
         }
         // The invariants hold AFTER the world settles — a stale remount is

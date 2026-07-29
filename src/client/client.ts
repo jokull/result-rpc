@@ -28,9 +28,7 @@ import { encodeProcedureInput } from "../wire.js";
 import type {
   ContractRouterRecord,
   ErrorDefinitionMap,
-  Router,
   RouterContract,
-  RouterRecord,
 } from "../server/contract.js";
 import {
   createClientErrorRegistry,
@@ -133,7 +131,7 @@ export type ClientEvent =
 
 export type ClientEventListener = (event: ClientEvent) => void;
 
-export interface CreateContractClientOptions<
+export interface CreateBrowserClientOptions<
   TRouter extends RouterContract<any, ContractRouterRecord>,
 > {
   /** Runtime contract used to encode inputs and validate outputs and errors. */
@@ -143,22 +141,6 @@ export interface CreateContractClientOptions<
   /** Overrides the automatic contract digest; set the same value server-side. */
   readonly contractVersion?: string;
 }
-
-export interface CreateRouterClientOptions<TRouter extends Router<any, RouterRecord>> {
-  /** Full server routers are accepted for colocated or migration use. */
-  readonly router: TRouter;
-  readonly transport: ClientTransport;
-  readonly onEvent?: ClientEventListener;
-  /** Overrides the automatic contract digest; set the same value server-side. */
-  readonly contractVersion?: string;
-}
-
-export type CreateBrowserClientOptions<TRouter extends ClientRouter> =
-  TRouter extends RouterContract<any, ContractRouterRecord>
-    ? CreateContractClientOptions<TRouter>
-    : TRouter extends Router<any, RouterRecord>
-      ? CreateRouterClientOptions<TRouter>
-      : never;
 
 const clientEventListeners = new WeakMap<object, ClientEventListener>();
 
@@ -206,7 +188,7 @@ const decodeEnvelope = (
       const decoded = framework.decode(envelope.error);
       return decoded.ok ? err(decoded.value) : err(ClientDecodeFailure({ target: "error" }));
     }
-    const definitions = procedure._def.definitions as ErrorDefinitionMap;
+    const definitions: ErrorDefinitionMap = procedure._def.definitions;
     const definition = Object.values(definitions).find(
       (candidate) => candidate.tag === envelope.error._tag,
     );
@@ -326,8 +308,8 @@ const retryDelayFor = (
   failure: AnyTaggedError,
   attempt: number,
 ): number | undefined => {
-  const definitions = {
-    ...(procedure._def.definitions as ErrorDefinitionMap),
+  const definitions: ErrorDefinitionMap = {
+    ...procedure._def.definitions,
     ServerInternal,
     ClientOffline,
     ClientNetworkFailure,
@@ -336,7 +318,7 @@ const retryDelayFor = (
     ClientProtocolViolation,
     ClientDecodeFailure,
     ClientStale,
-  } as ErrorDefinitionMap;
+  };
   const definition = Object.values(definitions).find((candidate) => candidate.tag === failure._tag);
   // Never spin on offline while the browser still reports offline — the
   // recovery path is reconnect, not a retry timer.
@@ -390,7 +372,10 @@ const callProcedure = async (
   skew: SkewMonitor,
   options?: TransportRequestOptions,
 ): Promise<Result<unknown, AnyTaggedError>> => {
-  const kind = procedure._def.kind as "query" | "mutation";
+  const kind = procedure._def.kind;
+  if (kind === "subscription") {
+    throw new TypeError("Subscription procedures use the streaming client path");
+  }
   const startedAt = Date.now();
   onEvent?.({ type: "call", kind, path });
   for (let attempt = 0; ; attempt += 1) {
@@ -424,23 +409,23 @@ const callProcedure = async (
   }
 };
 
-const subscribeProcedure = <T, E extends AnyTaggedError>(
+const subscribeProcedure = (
   procedure: ClientProcedure,
   path: string,
   input: unknown,
   transport: ClientTransport,
   onEvent: ClientEventListener | undefined,
   options: TransportRequestOptions = {},
-): ResultSubscription<T, E> => {
+): ResultSubscription<unknown, AnyTaggedError> => {
   const controller = new AbortController();
   const signal = options.signal
     ? AbortSignal.any([options.signal, controller.signal])
     : controller.signal;
-  async function* stream(): AsyncGenerator<Result<T, E>> {
+  async function* stream(): AsyncGenerator<Result<unknown, AnyTaggedError>> {
     const encodedInput = encodeProcedureInput(procedure._def.input, input);
     if (!encodedInput.ok) throw new TypeError(`Invalid input for ${path}`);
     if (!transport.stream) {
-      yield err(ClientProtocolViolation({ reason: "content-type" })) as unknown as Result<T, E>;
+      yield err(ClientProtocolViolation({ reason: "content-type" }));
       return;
     }
     const outcome = await transport.stream(requestEnvelope(path, encodedInput.value), {
@@ -448,7 +433,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
       signal,
     });
     if (!outcome.ok) {
-      yield err(clientFailure(outcome)) as Result<T, E>;
+      yield err(clientFailure(outcome));
       return;
     }
     const { response } = outcome;
@@ -462,7 +447,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
         response.status >= 400
           ? ClientHttpFailure({ status: response.status })
           : ClientProtocolViolation({ reason: "content-type" }),
-      ) as unknown as Result<T, E>;
+      );
       return;
     }
     const reader = response.body.getReader();
@@ -474,7 +459,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
         const chunk = await reader.read();
         buffer += decoder.decode(chunk.value, { stream: !chunk.done });
         if (new TextEncoder().encode(buffer).byteLength > DEFAULT_MAX_WIRE_BYTES) {
-          yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+          yield err(ClientProtocolViolation({ reason: "envelope" }));
           return;
         }
         const lines = buffer.split("\n");
@@ -484,22 +469,22 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
           const decoded = deserialize(line, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
           const frame = decoded.ok ? decodeStreamFrame(decoded.value) : undefined;
           if (!frame || frame.seq !== expectedSequence++) {
-            yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+            yield err(ClientProtocolViolation({ reason: "envelope" }));
             return;
           }
           if (frame.done) return;
-          const result = decodeEnvelope(procedure, frame.response, 200) as Result<T, E>;
+          const result = decodeEnvelope(procedure, frame.response, 200);
           yield result;
           if (!result.ok) return;
         }
         if (chunk.done) {
-          yield err(ClientProtocolViolation({ reason: "envelope" })) as unknown as Result<T, E>;
+          yield err(ClientProtocolViolation({ reason: "envelope" }));
           return;
         }
       }
     } catch (failure) {
       if (isCancelled(failure)) throw failure;
-      yield err(ClientNetworkFailure({ retryable: false })) as unknown as Result<T, E>;
+      yield err(ClientNetworkFailure({ retryable: false }));
     } finally {
       reader.releaseLock();
     }
@@ -509,7 +494,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
     async *[Symbol.asyncIterator]() {
       const startedAt = Date.now();
       onEvent?.({ type: "call", kind: "subscription", path });
-      let last: Result<T, E> | undefined;
+      let last: Result<unknown, AnyTaggedError> | undefined;
       let failureObserved = false;
       for await (const result of stream()) {
         last = result;
@@ -522,7 +507,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
             type: "failure",
             kind: "subscription",
             path,
-            tag: (result.error as AnyTaggedError)._tag,
+            tag: result.error._tag,
             durationMs: Date.now() - startedAt,
           });
         }
@@ -540,7 +525,7 @@ const subscribeProcedure = <T, E extends AnyTaggedError>(
           type: "failure",
           kind: "subscription",
           path,
-          tag: (last.error as AnyTaggedError)._tag,
+          tag: last.error._tag,
           durationMs: Date.now() - startedAt,
         });
       }
@@ -620,57 +605,15 @@ const createProxy = (
   return proxy;
 };
 
-/**
- * A router (unlike a contract) holds the implemented procedures — handlers,
- * middleware, their imports. If one reaches a browser bundle, all of that
- * ships with it: server code, database drivers, secrets. Handing `router` to
- * `createBrowserClient` is that exact footgun, so warn once in dev.
- * Bundlers do NOT save you — a top-level `.handler()`/`.router()` call is not
- * tree-shaken. Build the client from a `contract()` defined in a module that
- * never imports server code. See /concepts/client-boundary.
- */
-/**
- * Reads NODE_ENV without requiring `@types/node`: a browser-only consumer
- * compiles this library with `types: []`, so `process` may not be declared.
- * Bundlers still see the `process.env.NODE_ENV` text and strip dev branches.
- */
-const isProductionEnv = (): boolean =>
-  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
-    "NODE_ENV"
-  ] === "production";
-
-const clientBoundaryWarningState = { warned: false };
-
-/** Test-only: reset the once-per-process router-in-browser warning. */
-export const __resetClientBoundaryWarning = () => {
-  clientBoundaryWarningState.warned = false;
-};
-
-const warnRouterInBrowser = () => {
-  if (clientBoundaryWarningState.warned) return;
-  // Dev-only, and behind a browser guard so servers never see it.
-  const isProduction = isProductionEnv();
-  const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
-  if (isProduction || !isBrowser) return;
-  clientBoundaryWarningState.warned = true;
-  // eslint-disable-next-line no-console
-  console.warn(
-    "[result-rpc] createBrowserClient received a server `router`. The " +
-      "router carries handlers, middleware, and their imports (db drivers, " +
-      "secrets) — all of which are now in your client bundle. Pass a " +
-      "`contract` defined in a server-code-free module instead. " +
-      "See https://result-rpc.com/concepts/client-boundary",
-  );
-};
-
-const createBrowserClientImplementation = (
-  options:
-    | CreateContractClientOptions<RouterContract<any, ContractRouterRecord>>
-    | CreateRouterClientOptions<Router<any, RouterRecord>>,
-  warnAboutRouter: boolean,
-): BrowserClientOf<ClientRouter> => {
-  const router = "contract" in options ? options.contract : options.router;
-  if ("router" in options && warnAboutRouter) warnRouterInBrowser();
+/** @internal Shared with `result-rpc/testing`; not exported from `result-rpc/client`. */
+export const createClientRuntime = <TRouter extends ClientRouter>(
+  router: TRouter,
+  options: {
+    readonly transport: ClientTransport;
+    readonly onEvent?: ClientEventListener;
+    readonly contractVersion?: string;
+  },
+): BrowserClientOf<TRouter> => {
   const clientIdentity = Object.freeze({});
   registerClientIdentity(clientIdentity, clientIdentity, router);
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
@@ -678,7 +621,7 @@ const createBrowserClientImplementation = (
     options.contractVersion ?? contractDigest(router),
     options.onEvent,
   );
-  const errorRegistry = createClientErrorRegistry<AnyPublicTaggedError>(
+  const errorRegistry = createClientErrorRegistry<BrowserClientErrorOf<TRouter>>(
     router,
     Object.values(frameworkErrorDefinitions),
   );
@@ -691,28 +634,14 @@ const createBrowserClientImplementation = (
     new Map(),
     clientIdentity,
     errorRegistry,
-  ) as BrowserClientOf<ClientRouter>;
+  ) as BrowserClientOf<TRouter>;
 };
 
-/** @internal Used only by the parity harness, which cannot enter a browser bundle. */
-export const createParityBrowserClient = <TRouter extends Router<any, RouterRecord>>(
-  options: CreateRouterClientOptions<TRouter>,
-): BrowserClientOf<TRouter> =>
-  createBrowserClientImplementation(
-    options as CreateRouterClientOptions<Router<any, RouterRecord>>,
-    false,
-  ) as BrowserClientOf<TRouter>;
-
-export function createBrowserClient<TRouter extends RouterContract<any, ContractRouterRecord>>(
-  options: CreateContractClientOptions<TRouter>,
-): BrowserClientOf<TRouter>;
-export function createBrowserClient<TRouter extends Router<any, RouterRecord>>(
-  options: CreateRouterClientOptions<TRouter>,
-): BrowserClientOf<TRouter>;
-export function createBrowserClient(
-  options:
-    | CreateContractClientOptions<RouterContract<any, ContractRouterRecord>>
-    | CreateRouterClientOptions<Router<any, RouterRecord>>,
-): BrowserClientOf<ClientRouter> {
-  return createBrowserClientImplementation(options, true);
-}
+export const createBrowserClient = <TRouter extends RouterContract<any, ContractRouterRecord>>(
+  options: CreateBrowserClientOptions<TRouter>,
+): BrowserClientOf<TRouter> => {
+  if (options.contract?._kind !== "router-contract") {
+    throw new TypeError("createBrowserClient expected an application contract");
+  }
+  return createClientRuntime(options.contract, options);
+};

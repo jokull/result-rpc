@@ -3,11 +3,10 @@ import { act, create } from "react-test-renderer";
 import { createElement } from "react";
 import { ok, wire } from "../index.js";
 import { defineModel } from "../model.js";
-import { createBrowserClient } from "../client/client.js";
 import { fetchTransport } from "../client/transport.js";
 import { createServerClient } from "../server/server-client.js";
 import { createFetchHandler } from "../server/index.js";
-import { createParityClient } from "../testing/index.js";
+import { createFixtureClient, createParityClient } from "../testing/index.js";
 import { rpc } from "../server/contract.js";
 import { createQueryRuntime, type QueryRuntime } from "../query/runtime.js";
 import {
@@ -56,7 +55,7 @@ const makeWorld = () => {
     return handler(new Request(input, init));
   }) as typeof globalThis.fetch;
 
-  const client = createBrowserClient({
+  const client = createFixtureClient({
     router,
     transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
   });

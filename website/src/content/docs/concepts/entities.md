@@ -190,6 +190,13 @@ export const UserCard = User.pick("id", "name", "avatarUrl"); // a card
 export const UserSelf = User.all("the viewer is the subject of this record");
 ```
 
+The identity declaration is part of the model's type, not a runtime convention.
+Only fields whose codecs decode to `string` or `number` may be keys; nullable
+and object-valued fields are rejected by `defineModel`. Every `pick` and
+`select` must include all key fields, so omitting `locale` from a composite
+`["id", "locale"]` identity is a compile error. The runtime checks remain as a
+defense for untyped JavaScript inputs.
+
 ```ts
 friends.output(wire.array(UserCard)); // can only ever ship three fields
 me.output(UserSelf); // wide, and it says why
@@ -206,11 +213,11 @@ which closes the entire class.
 
 Three forms, in order of how often you should reach for them:
 
-| Form                  | Use it for                                                    |
-| --------------------- | ------------------------------------------------------------- |
-| `Model.pick("id", …)` | the flat 80% case; the key field is mandatory                 |
-| `Model.select({ … })` | nesting and computed fields (below)                           |
-| `Model.all("why")`    | genuinely every field — costs a sentence that lands in review |
+| Form                  | Use it for                                                     |
+| --------------------- | -------------------------------------------------------------- |
+| `Model.pick("id", …)` | the flat 80% case; every key field is required by the compiler |
+| `Model.select({ … })` | nesting and computed fields; all key fields remain required    |
+| `Model.all("why")`    | genuinely every field — costs a sentence that lands in review  |
 
 `select` takes one flat map: `true` for the model's own fields, a **codec** for
 anything nested or computed, so relationships and one-off aggregates read

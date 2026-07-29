@@ -1,15 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { createSentryStub } from "./sentry.js";
-import {
-  AppShell,
-  ChargeForm,
-  createHandler,
-  DefectShell,
-  makeBillingShell,
-  makeObservedClient,
-  ResultRpcProvider,
-} from "./app.js";
+import { AppShell, ChargeForm, DefectShell, makeBillingShell, ResultRpcProvider } from "./app.js";
+import { makeObservedClient } from "./client.js";
+import { createHandler } from "./server.js";
 import { createQueryRuntime } from "../../src/query/runtime.js";
 
 (

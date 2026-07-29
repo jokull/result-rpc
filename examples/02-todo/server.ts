@@ -2,17 +2,18 @@
  * Rung 2, server: implements the contract with an in-memory store.
  */
 import { err, ok } from "../../src/index.js";
-import { createFetchHandler } from "../../src/server/index.js";
-import { app, todoContract, type Todo, type TodoStore } from "./contract.js";
+import { createFetchHandler, serverRpc } from "../../src/server/index.js";
+import { todoContract, type Todo, type TodoStore } from "./contract.js";
 
 const LIMIT = 5;
+const server = serverRpc.context<{ todos: TodoStore }>();
 
-export const todoRouter = app.router({
-  list: app
+export const todoRouter = server.router({
+  list: server
     .implement(todoContract.list)
     .handler(async ({ context }) => ok(await context.todos.all())),
 
-  add: app.implement(todoContract.add).handler(async ({ input, errors, context }) => {
+  add: server.implement(todoContract.add).handler(async ({ input, errors, context }) => {
     const existing = await context.todos.all();
     if (existing.length >= LIMIT) return err(errors.listFull({ limit: LIMIT }));
     if (existing.some((todo) => todo.title === input.title)) {
@@ -23,7 +24,7 @@ export const todoRouter = app.router({
     return ok(todo);
   }),
 
-  toggle: app.implement(todoContract.toggle).handler(async ({ input, errors, context }) => {
+  toggle: server.implement(todoContract.toggle).handler(async ({ input, errors, context }) => {
     const todo = await context.todos.find(input.id);
     if (!todo) return err(errors.notFound({ todoId: input.id }));
     const toggled = { ...todo, done: !todo.done };

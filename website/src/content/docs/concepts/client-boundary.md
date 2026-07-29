@@ -15,7 +15,7 @@ at your server router because only its shape survives.
 result-rpc ships **a value** to the client — a real runtime built from your
 contract, with codecs that encode inputs and decode outputs. That value has to
 exist in the browser. So the question "what ends up in my bundle?" has a real
-answer, and you are responsible for it.
+answer. `createBrowserClient` therefore accepts contracts only.
 
 The rule is one sentence:
 
@@ -23,8 +23,8 @@ The rule is one sentence:
 > module that never imports handler or server code.**
 
 Do that and your bundle contains codecs and error definitions — nothing else.
-Get it wrong and your handlers, middleware, database driver, and any secret they
-close over ship to every visitor.
+You still control imports: merely importing a server module from a browser entry
+can make it reachable before any call runs.
 
 ## What a contract carries, and what a router carries
 
@@ -38,47 +38,36 @@ Two different values, two different payloads:
   plus the handler function and its middleware chain_, which close over your
   database, your services, your environment. Server-only.
 
-The client engine never calls a handler — it reads `input`, `output`,
-`definitions`, and `kind`. But a value it can reach, a bundler must keep. Hand it
-a router and the handler closures are live properties of live objects; they
-cannot be tree-shaken away.
+The browser client is constructed from the contract. Fetch handlers and server
+clients are constructed from the implemented router.
 
-## The footgun, demonstrated
+## Why the split matters
 
 A handler that closes over a secret:
 
 ```ts
 // server.ts
-const getUser = app.implement(getUserContract).handler(async ({ input }) => {
+const server = serverRpc.context<AppContext>()
+const getUser = server.implement(getUserContract).handler(async ({ input }) => {
   const key = process.env.STRIPE_SECRET_KEY!   // closed over by the handler
   const row = await db.query.users.findFirst(...)
   return ok(row)
 })
-export const appRouter = app.router({ users: { get: getUser } })
+export const appRouter = server.router({ users: { get: getUser } })
 ```
 
-Two client entries, bundled and grepped:
+A client entry imports the standalone contract:
 
 ```ts
-// ✅ client-good.ts — imports the standalone contract
+// client.ts
 import { appContract } from "./contract";
 createBrowserClient({ contract: appContract, transport });
 // bundle: STRIPE_SECRET_KEY → 0 hits. db driver → 0 hits.
-
-// ☠️ client-bad.ts — imports the router
-import { appRouter } from "./server";
-createBrowserClient({ router: appRouter, transport });
-// bundle: STRIPE_SECRET_KEY → SHIPPED. db driver → SHIPPED.
 ```
 
-**Your bundler will not warn you.** `"sideEffects": false` does not help here: a
-top-level `app.router(...)` or `.handler(...)` call is a function call the
-bundler treats as potentially side-effecting, so it keeps the whole graph. The
-secret is in the browser and nothing failed.
-
-In development, result-rpc itself will `console.warn` if you hand a `router` to
-`createBrowserClient` in a browser — but treat that as a last-resort net, not the
-design. The design is: never import the router into client code.
+The layout is the protection. A top-level `server.router(...)` or `.handler(...)`
+call is potentially side-effecting, so a browser entry that imports the server
+module may retain its graph. Keep the import direction clean.
 
 ## The safe layout
 
@@ -105,9 +94,11 @@ export const appContract = rpc.context<AppContext>().contract({
 
 ```ts
 // server.ts — imports the contract to implement it
-import { appContract, getUserContract } from "./contract"
-const getUser = rpc.context<AppContext>().implement(getUserContract).handler(...)
-export const appRouter = rpc.context<AppContext>().router({ users: { get: getUser } })
+import { serverRpc } from "result-rpc/server"
+import { getUserContract } from "./contract"
+const server = serverRpc.context<AppContext>()
+const getUser = server.implement(getUserContract).handler(...)
+export const appRouter = server.router({ users: { get: getUser } })
 ```
 
 ```ts
