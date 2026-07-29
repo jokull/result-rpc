@@ -9,6 +9,12 @@ repo's strict `pnpm check`, and the main claims are asserted with
 **per-procedure request counters** — the examples are the library's DX
 regression suite, not demos.
 
+For a persistent browser application, open the [live ticket
+demo](https://demo.result-rpc.com) or read its [implementation
+notes](/reference/ticket-demo/). It runs on Cloudflare Workers and D1 and makes
+optimistic updates, entity patches, cursor pagination, and declared
+invalidation visible in a client-event panel.
+
 ```bash
 bun test examples/01-hello             # any single rung
 bun test examples                      # the whole ladder

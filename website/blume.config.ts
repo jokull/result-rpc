@@ -65,7 +65,12 @@ export default defineConfig({
       },
       {
         label: "Reference",
-        items: ["/reference/examples", "/reference/sharp-edges", "/reference/agent-skill"],
+        items: [
+          "/reference/ticket-demo",
+          "/reference/examples",
+          "/reference/sharp-edges",
+          "/reference/agent-skill",
+        ],
       },
     ],
   },
