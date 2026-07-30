@@ -73,7 +73,7 @@ jobs:
         run: |
           mkdir -p release
           npm pack --ignore-scripts --pack-destination release
-          tarball="release/result-rpc-$VERSION.tgz"
+          tarball="./release/result-rpc-$VERSION.tgz"
           test -f "$tarball"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
           shasum -a 256 "$tarball"

@@ -67,6 +67,8 @@ jobs:
           npm init -y > /dev/null
           npm install --no-audit --no-fund --loglevel=error \
             react react-dom "$GITHUB_WORKSPACE"/artifacts/*.tgz
+          # JavaScript template literals must reach Node unchanged.
+          # shellcheck disable=SC2016
           node --input-type=module -e '
             const entries = [
               "result-rpc",
