@@ -1,6 +1,29 @@
 const semver =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
+/**
+ * Version-only Changesets: `changeset version` bumps and writes the changelog,
+ * and a human signs the tag. Nothing forces those two to agree, so this is the
+ * check that they did. Both failures are silent otherwise — the release ships,
+ * and the changelog simply does not mention it.
+ *
+ * @param version the version about to be published
+ * @param changelog the text of CHANGELOG.md
+ * @param pendingChangesets basenames of unconsumed `.changeset/*.md` files
+ */
+export function assertReleaseIsDocumented(version, changelog, pendingChangesets) {
+  if (pendingChangesets.length > 0) {
+    throw new TypeError(
+      `Unconsumed changesets at release time: ${pendingChangesets.join(", ")}. ` +
+        "Run `pnpm changeset:version` before tagging.",
+    );
+  }
+  // A heading, not a substring: `0.2.0` also occurs inside `0.2.0-rc.1`.
+  if (!new RegExp(`^## ${version.replace(/[.+]/g, "\\$&")}$`, "m").test(changelog)) {
+    throw new TypeError(`CHANGELOG.md has no \`## ${version}\` entry for this release`);
+  }
+}
+
 export function releasePlan(packageJson, tag) {
   const match = semver.exec(packageJson.version);
   if (!match) {
