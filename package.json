@@ -59,6 +59,11 @@
       "import": "./dist/testing/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsdown",
     "check": "tsc -p tsconfig.json --noEmit",
@@ -69,14 +74,16 @@
     "test": "bun test src examples tests",
     "test:demo": "npm --prefix demo install && npm --prefix demo test",
     "test:package": "node scripts/package-smoke.mjs",
+    "test:release": "node --test scripts/release-plan.test.mjs",
     "test:diagnostics": "node scripts/diagnostic-smoke.mjs",
     "test:entity-perf": "RESULT_RPC_PERF=1 bun test tests/entity/attack-10-perf.test.ts",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
     "docs:verify": "pnpm --dir website check && pnpm --dir website validate && pnpm --dir website build",
-    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test:diagnostics && pnpm test && pnpm build && node scripts/api-report.mjs && pnpm test:package",
+    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test:release && pnpm test:diagnostics && pnpm test && pnpm build && node scripts/api-report.mjs && pnpm test:package",
     "verify:release": "pnpm verify && pnpm bench:types && pnpm test:entity-perf && pnpm docs:verify",
     "prepack": "pnpm run build",
     "prepublishOnly": "pnpm run verify:release",
+    "release:check": "node scripts/release-check.mjs",
     "api:report": "pnpm build && node scripts/api-report.mjs --update",
     "api:report:check": "pnpm build && node scripts/api-report.mjs",
     "bench:types": "node bench/types.mjs"
@@ -113,7 +120,7 @@
     "react": ">=18.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.5"
   },
   "packageManager": "pnpm@11.9.0"
 }

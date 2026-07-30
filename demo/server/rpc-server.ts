@@ -11,8 +11,10 @@ import {
   ticketStatsContract,
 } from "../shared/contract";
 import type { TicketValue } from "../shared/models";
+import { accessErrors, authErrors, type DemoAccess, type WriteAction } from "../shared/errors";
 
 export interface AppContext {
+  access: DemoAccess;
   db: D1Database;
   workspaceId: string;
 }
@@ -45,6 +47,19 @@ const MUTATION_DELAY_MS = 650;
 const SERVER_ONLY_CANARY = "RESULT_RPC_DEMO_SERVER_GRAPH_DO_NOT_SHIP";
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+type WriteGuardErrors = Pick<typeof authErrors, "loginRequired"> &
+  Pick<typeof accessErrors, "writeRequired">;
+
+const requireWrite = (context: AppContext, errors: WriteGuardErrors, action: WriteAction) => {
+  if (context.access === "signed-out") {
+    return err(errors.loginRequired({ action }));
+  }
+  if (context.access === "read-only") {
+    return err(errors.writeRequired({ action, workspaceId: context.workspaceId }));
+  }
+  return undefined;
+};
 
 const parseLabels = (labelsJson: string): string[] => {
   const parsed: unknown = JSON.parse(labelsJson);
@@ -406,50 +421,58 @@ const ticketStats = server.implement(ticketStatsContract).handler(async ({ conte
   return ok(row ?? { total: 0, backlog: 0, inProgress: 0, done: 0 });
 });
 
-const createTicket = server.implement(createTicketContract).handler(async ({ input, context }) => {
-  await ensureSeeded(context);
-  await wait(MUTATION_DELAY_MS);
-  const next = await context.db
-    .prepare("SELECT COALESCE(MAX(number), 100) + 1 AS number FROM tickets WHERE workspace_id = ?")
-    .bind(context.workspaceId)
-    .first<{ number: number }>();
-  const now = Date.now();
-  await context.db
-    .prepare(
-      `INSERT INTO tickets
+const createTicket = server
+  .implement(createTicketContract)
+  .handler(async ({ input, errors, context }) => {
+    const denied = requireWrite(context, errors, "create");
+    if (denied) return denied;
+    await ensureSeeded(context);
+    await wait(MUTATION_DELAY_MS);
+    const next = await context.db
+      .prepare(
+        "SELECT COALESCE(MAX(number), 100) + 1 AS number FROM tickets WHERE workspace_id = ?",
+      )
+      .bind(context.workspaceId)
+      .first<{ number: number }>();
+    const now = Date.now();
+    await context.db
+      .prepare(
+        `INSERT INTO tickets
        (workspace_id, id, number, title, description, status, priority, assignee,
         labels_json, comment_count, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'backlog', ?, NULL, '[]', 0, ?, ?)`,
-    )
-    .bind(
-      context.workspaceId,
-      input.id,
-      next?.number ?? 101,
-      input.title,
-      input.description,
-      input.priority,
-      now,
-      now,
-    )
-    .run();
-  return ok({
-    id: input.id,
-    number: next?.number ?? 101,
-    title: input.title,
-    description: input.description,
-    status: "backlog",
-    priority: input.priority,
-    assignee: null,
-    labels: [],
-    commentCount: 0,
-    createdAt: new Date(now),
-    updatedAt: new Date(now),
+      )
+      .bind(
+        context.workspaceId,
+        input.id,
+        next?.number ?? 101,
+        input.title,
+        input.description,
+        input.priority,
+        now,
+        now,
+      )
+      .run();
+    return ok({
+      id: input.id,
+      number: next?.number ?? 101,
+      title: input.title,
+      description: input.description,
+      status: "backlog",
+      priority: input.priority,
+      assignee: null,
+      labels: [],
+      commentCount: 0,
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+    });
   });
-});
 
 const editTicket = server
   .implement(editTicketContract)
   .handler(async ({ input, errors, context }) => {
+    const denied = requireWrite(context, errors, "edit");
+    if (denied) return denied;
     await ensureSeeded(context);
     await wait(MUTATION_DELAY_MS);
     if (input.id === SERVER_ONLY_CANARY) return err(errors.notFound({ ticketId: input.id }));
@@ -457,7 +480,7 @@ const editTicket = server
       .prepare(
         `UPDATE tickets
        SET title = ?, description = ?, priority = ?, assignee = ?, updated_at = ?
-       WHERE workspace_id = ? AND id = ?
+       WHERE workspace_id = ? AND id = ? AND updated_at = ?
        RETURNING id, number, title, description, status, priority, assignee,
                  labels_json AS labelsJson, comment_count AS commentCount,
                  created_at AS createdAt, updated_at AS updatedAt`,
@@ -470,14 +493,30 @@ const editTicket = server
         Date.now(),
         context.workspaceId,
         input.id,
+        input.expectedUpdatedAt.getTime(),
       )
       .first<TicketRow>();
-    return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
+    if (row) return ok(toTicket(row));
+    const current = await context.db
+      .prepare(`${SELECT_TICKET} WHERE workspace_id = ? AND id = ? LIMIT 1`)
+      .bind(context.workspaceId, input.id)
+      .first<TicketRow>();
+    return current
+      ? err(
+          errors.conflict({
+            ticketId: input.id,
+            expectedUpdatedAt: input.expectedUpdatedAt,
+            actualUpdatedAt: new Date(current.updatedAt),
+          }),
+        )
+      : err(errors.notFound({ ticketId: input.id }));
   });
 
 const moveTicket = server
   .implement(moveTicketContract)
   .handler(async ({ input, errors, context }) => {
+    const denied = requireWrite(context, errors, "move");
+    if (denied) return denied;
     await ensureSeeded(context);
     await wait(MUTATION_DELAY_MS);
     const row = await context.db
@@ -493,10 +532,14 @@ const moveTicket = server
     return row ? ok(toTicket(row)) : err(errors.notFound({ ticketId: input.id }));
   });
 
-const resetWorkspace = server.implement(resetWorkspaceContract).handler(async ({ context }) => {
-  await wait(MUTATION_DELAY_MS);
-  return ok({ restored: await restoreWorkspace(context) });
-});
+const resetWorkspace = server
+  .implement(resetWorkspaceContract)
+  .handler(async ({ errors, context }) => {
+    const denied = requireWrite(context, errors, "reset");
+    if (denied) return denied;
+    await wait(MUTATION_DELAY_MS);
+    return ok({ restored: await restoreWorkspace(context) });
+  });
 
 export const router = server.router({
   tickets: {
@@ -515,10 +558,16 @@ const workspacePattern = /^ws_[a-zA-Z0-9-]{8,80}$/;
 export const rpcHandler = createFetchHandler({
   router,
   endpoint: "/api/rpc",
-  contractVersion: "result-rpc-demo-v1",
+  contractVersion: "result-rpc-demo-v2",
   createContext: ({ request }) => {
     const candidate = request.headers.get("x-demo-workspace") ?? "";
+    const requestedAccess = request.headers.get("x-demo-access");
+    const access: DemoAccess =
+      requestedAccess === "signed-out" || requestedAccess === "read-only"
+        ? requestedAccess
+        : "writer";
     return {
+      access,
       db: getD1(),
       workspaceId: workspacePattern.test(candidate) ? candidate : "ws_public-preview",
     };

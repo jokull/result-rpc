@@ -14,13 +14,14 @@ in the result-rpc repository.
 
 ## What to try
 
-| Action                                     | What it demonstrates                                                                                                                                                                    |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Change a ticket's status or edit its title | The list row and open detail pane update optimistically before the deliberately delayed mutation settles. The returned entity then reconciles every cached projection by identity.      |
-| Load another page                          | Cursor pagination appends into one stable query without replacing the rows already on screen.                                                                                           |
-| Move a ticket across a filtered list       | The optimistic entity patch updates known data immediately; the mutation's declared `.affects()` edge then refreshes list membership and aggregate counts.                              |
-| Watch the proof panel                      | Client events distinguish wire calls, entity patches, optimistic writes, and invalidation-driven refetches. The behavior is inspectable instead of implied by the UI.                   |
-| Take the browser offline                   | The application shell owns `client/offline`, presents one connection-level reaction, and resumes held work when connectivity returns. Components below it do not grow offline branches. |
+| Action                                      | What it demonstrates                                                                                                                                                                                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change a ticket's status or edit its title  | The list row and open detail pane update optimistically before the deliberately delayed mutation settles. The returned entity then reconciles every cached projection by identity.                                                                                  |
+| Load another page                           | Cursor pagination appends into one stable query without replacing the rows already on screen.                                                                                                                                                                       |
+| Move a ticket across a filtered list        | The optimistic entity patch updates known data immediately; the mutation's declared `.affects()` edge then refreshes list membership and aggregate counts.                                                                                                          |
+| Watch the proof panel                       | Client events distinguish wire calls, entity patches, optimistic writes, and invalidation-driven refetches. The behavior is inspectable instead of implied by the UI.                                                                                               |
+| Take the browser offline                    | The application shell owns `client/offline`, presents one connection-level reaction, and resumes held work when connectivity returns. Components below it do not grow offline branches.                                                                             |
+| Open **error stack** and arm the guided run | A real edit returns `auth/login-required`, then `access/write-required`, then `ticket/conflict`. Higher-order shells open the login and access dialogs; the editor sees only its residual domain union. Mutations are retried by the user, never replayed silently. |
 
 Each browser receives an anonymous workspace token in local storage. Tickets are
 stored in D1, so refreshing the page or returning later preserves that
@@ -36,7 +37,40 @@ the browser graph.
 
 The Worker integration test runs the built artifact under Cloudflare's
 production test harness and exercises SSR, pagination, detail reads, and a
-mutation through the real result-rpc wire.
+mutation through the real result-rpc wire. It also proves that authentication,
+write access, and optimistic-concurrency conflict arrive as three distinct
+reified tagged failures.
+
+## The error stack in code
+
+The edit contract declares all application failures that can reach the wire:
+
+```ts
+errors({
+  ...authErrors, // auth/login-required
+  ...accessErrors, // access/write-required
+  ...ticketErrors, // ticket/not-found | ticket/conflict
+});
+```
+
+The providers own the app-level affordances. Their chain is a value, so the
+hook's residual union is derived rather than asserted:
+
+```tsx
+<AuthShell.Provider>
+  <WriteAccessShell.Provider>
+    <TicketEditor />
+  </WriteAccessShell.Provider>
+</AuthShell.Provider>;
+
+const edit = WriteAccessShell.useMutation(client.tickets.edit);
+// edit failure: TicketNotFound | TicketConflict
+```
+
+The server still returns real `Result` values for every branch. No component
+observes an HTTP status or matches an error message, and no shell rewrites the
+cached failure. Ownership changes only how that failure presents at a position
+in the React tree.
 
 ## Run it locally
 

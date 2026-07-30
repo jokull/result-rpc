@@ -13,11 +13,20 @@ It demonstrates:
   or an aggregate;
 - batched initial queries, a structured client-event timeline, offline holding,
   and contract-skew protection;
+- a guided error stack where the built-in transport owner, an authentication
+  shell, a write-access shell, and a local optimistic-concurrency conflict each
+  discharge at the UI layer that can actually resolve them;
 - a browser contract graph that excludes the D1 implementation and server
   handlers.
 
 Each browser gets a durable anonymous workspace. Only the workspace token is
 device-local; tickets live in Cloudflare D1.
+
+Open **error stack** in the top bar and arm the guided run. The next real ticket
+edit starts signed out, then becomes read-only, then reaches a deliberately
+stale version. The two shells open app-level dialogs while the editor receives
+only `ticket/not-found | ticket/conflict`. Every retry is explicit because a
+shell never silently replays a failed mutation.
 
 ## Development
 

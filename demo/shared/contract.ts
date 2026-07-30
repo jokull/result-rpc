@@ -1,9 +1,14 @@
 import { pickErrors, rpc, wire } from "result-rpc";
 import type { AppContext } from "../server/rpc-server";
-import { ticketErrors } from "./errors";
+import { accessErrors, authErrors, ticketErrors } from "./errors";
 import { Ticket, TicketPriority, TicketStats, TicketStatus } from "./models";
 
 export const app = rpc.context<AppContext>();
+
+const writeErrors = {
+  ...pickErrors(authErrors, "loginRequired"),
+  ...pickErrors(accessErrors, "writeRequired"),
+};
 
 export const ticketListContract = app
   .procedure()
@@ -40,6 +45,7 @@ export const createTicketContract = app
     }),
   )
   .output(Ticket.all("the created ticket enters entity-aware caches"))
+  .errors(writeErrors)
   .affects(ticketListContract)
   .affects(ticketStatsContract)
   .mutation();
@@ -53,17 +59,21 @@ export const editTicketContract = app
       description: wire.string,
       priority: TicketPriority,
       assignee: wire.union([wire.string, wire.null]),
+      expectedUpdatedAt: wire.date,
     }),
   )
   .output(Ticket.all("one entity response patches every cached projection"))
-  .errors({ ...pickErrors(ticketErrors, "notFound") })
+  .errors({
+    ...writeErrors,
+    ...pickErrors(ticketErrors, "notFound", "conflict"),
+  })
   .mutation();
 
 export const moveTicketContract = app
   .procedure()
   .input(wire.object({ id: wire.string, status: TicketStatus }))
   .output(Ticket.all("the moved entity patches list and detail views immediately"))
-  .errors({ ...pickErrors(ticketErrors, "notFound") })
+  .errors({ ...writeErrors, ...pickErrors(ticketErrors, "notFound") })
   .affects(ticketListContract)
   .affects(ticketStatsContract)
   .mutation();
@@ -72,6 +82,7 @@ export const resetWorkspaceContract = app
   .procedure()
   .input(wire.object({}))
   .output(wire.object({ restored: wire.integer({ min: 0 }) }))
+  .errors(writeErrors)
   .affects(ticketListContract)
   .affects(ticketStatsContract)
   .mutation();

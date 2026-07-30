@@ -5,6 +5,8 @@
 <p align="center"><strong>Typed RPC for React. Errors accumulate along the call path and discharge along the component tree.</strong></p>
 
 <p align="center">
+  <a href="https://github.com/jokull/result-rpc/actions/workflows/ci.yml"><img src="https://github.com/jokull/result-rpc/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  ·
   <a href="https://result-rpc.com/start/introduction/">Documentation</a>
   ·
   <a href="https://result-rpc.com/start/quickstart/">Quickstart</a>
@@ -43,6 +45,12 @@ A server layer strengthens request context before a handler runs. Its
 corresponding React shell provides UI context and owns the same failure
 definitions. The handler cannot run without its required context, and the
 component cannot silently ignore an unowned failure.
+
+The live ticket demo makes this positional ownership concrete. One edit can
+accumulate `client/offline`, `auth/login-required`,
+`access/write-required`, and `ticket/conflict`. The transport, auth, and
+access shells discharge their own classes into a banner or dialog; the editor
+receives only its residual domain conflict. [Run the error stack →](https://demo.result-rpc.com)
 
 ```ts
 const query = useResultQuery(client.doc.byId, { id: "doc_123" });
@@ -97,7 +105,9 @@ are providers and hooks, so they compose with whatever owns the tree.
 
 > **Status**: pre-1.0. Everything documented here is implemented and tested —
 > the `examples/` directory is runnable — but the package is not yet published
-> to npm while the API settles.
+> to npm while the API settles. Releases are verified from packed consumers and
+> published through protected npm OIDC with provenance; see
+> [RELEASING.md](RELEASING.md).
 
 ## The two problems
 
