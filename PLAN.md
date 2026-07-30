@@ -49,13 +49,24 @@ incompatible value in between.
 
 ## Fresh verdict gate
 
-- [ ] A new blind reviewer packs the post-fix artifact, independently proves
+- [x] A new blind reviewer packs the post-fix artifact, independently proves
       controlled same-tag mutation mismatch on React 18.3 and 19.2 through
       both hook forms, reruns retry/callback adjacency, and finds no release
       blocker across the complete package.
-- [ ] That reviewer gives an unqualified yes that the exact artifact's public
+- [x] That reviewer gives an unqualified yes that the exact artifact's public
       TypeScript architecture/DX remains at a serious TanStack-quality standard
       for this library's scope.
+
+## Wave 10 verdict
+
+The independent reviewer audited clean commit `433ae0d`, tree `2591682`, and
+the byte-reproducible 115-file tarball with SHA-256 `01abf6ca`. It returned
+unqualified **yes** verdicts for both publish readiness and TanStack-quality
+public TypeScript architecture/DX within this library's scope. Its independent
+matrix covered TS 5.4/5.9/7, React 18/19 and Node 20/26, exact collision and
+retry lifecycles, declaration scaling, Vite 8, Worker, Next 16 RSC, package
+graphs, wire/privacy/skew/hydration/entity behavior, performance, and strict
+documentation checks. No release blocker remains.
 
 ## Prior evidence to preserve
 
