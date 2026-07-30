@@ -182,6 +182,7 @@ describe("React bindings", () => {
     const runtime = createQueryRuntime({ client });
     const failures: RenameFailure[] = [];
     const settled: Result<string, RenameFailure>[] = [];
+    const controls: string[] = [];
     let mutationState:
       | MutationState<{ readonly title: string }, string, FrameworkFailure>
       | undefined;
@@ -190,6 +191,7 @@ describe("React bindings", () => {
       mutationState = SessionShell.useMutation(client.demo.rename, {
         onFailure: (failure) => void failures.push(failure),
         onSettled: (result) => void settled.push(result),
+        onCancel: () => void controls.push("cleanup"),
       });
       return null;
     }
@@ -216,12 +218,12 @@ describe("React bindings", () => {
     expect(isCancelled(rejection)).toBe(false);
     if (!isClaimed(rejection)) throw new Error("unreachable");
     expect(rejection.data).toEqual({ tag: "session/expired", owner: "session-owner" });
-    // Runtime callbacks run before React projects the claimed error away. They
-    // receive the procedure's complete error union and the original Result.
-    expect(failures.map((failure) => failure._tag)).toEqual(["session/expired"]);
-    expect(settled).toHaveLength(1);
-    expect(settled[0]?.ok).toBe(false);
-    if (settled[0]?.ok === false) expect(settled[0].error._tag).toBe("session/expired");
+    // The shell owns this outcome: failure/settled callbacks carry the same
+    // residual union as state and mutate(), while control cleanup still rolls
+    // back optimistic work.
+    expect(failures).toEqual([]);
+    expect(settled).toEqual([]);
+    expect(controls).toEqual(["cleanup"]);
     // the outcome is owned above: the mutation projects idle, not failure
     expect(mutationState?.state).toBe("idle");
     await act(async () => renderer?.unmount());

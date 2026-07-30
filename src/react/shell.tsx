@@ -249,7 +249,10 @@ export interface Shell<
     options?: MutationOptions<
       ProcedureClientInput<TProcedureClient>,
       ProcedureClientOutput<TProcedureClient>,
-      ProcedureClientError<TProcedureClient>,
+      SubtractClaimedErrors<
+        ProcedureClientError<TProcedureClient>,
+        ShellClaimedErrors<TDefinitions, TParent>
+      >,
       TContext
     >,
   ): MutationState<
@@ -326,16 +329,25 @@ export type ShellProviderOption<TProps, TValue> =
     }
   | ([TValue] extends [void] ? { readonly provide?: never } : never);
 
-export interface ShellCommonOptions<TDefinitions extends ErrorDefinitionMap, TValue> {
+export type ShellCommonOptions<TDefinitions extends ErrorDefinitionMap, TValue> = {
   /** Used in mount diagnostics and devtools. */
   readonly name: string;
   /** The error definitions this shell claims. Pass the same map given to `.errors()`. */
   readonly claims: TDefinitions;
-  /** Defaults to `"pause"`. */
-  readonly effect?: ShellEffect;
-  /** Runs once per newly claimed error. May fire many times for one logical event. */
-  readonly onError?: (error: ErrorUnion<TDefinitions>, value: NoInfer<TValue>) => void;
-}
+} & (
+  | {
+      /** Pause is the default: the shell holds failures until `resume()`. */
+      readonly effect?: "pause";
+      /** Runs once per newly paused error. Recovery attempts may report again. */
+      readonly onError?: (error: ErrorUnion<TDefinitions>, value: NoInfer<TValue>) => void;
+    }
+  | {
+      /** Delegates the exact tagged error to the nearest React error boundary. */
+      readonly effect: "escalate";
+      /** Escalation is observed by the React error boundary, not a shell reaction. */
+      readonly onError?: never;
+    }
+);
 
 const internals = new WeakMap<AnyShell, ShellInternals>();
 
@@ -697,6 +709,11 @@ export function defineShell<
 ): Shell<TDefinitions, TParent, Record<never, never>, void>;
 
 export function defineShell(options: RuntimeShellOptions): AnyShell {
+  if (options.effect === "escalate" && options.onError !== undefined) {
+    throw new TypeError(
+      `Escalating shell ${options.name} delegates observability to its React error boundary`,
+    );
+  }
   if (Object.keys(options.claims).length === 0 && options.provide === undefined) {
     throw new TypeError(`Shell ${options.name} claims no errors and provides no value`);
   }

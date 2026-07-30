@@ -494,14 +494,16 @@ const useClaimNotifier = (procedure: Function) => {
     return (
       entry: { readonly name: string; readonly effect: "pause" | "escalate" },
       error: AnyTaggedError,
-    ) =>
+    ) => {
+      if (entry.effect !== "pause") return;
       listener({
         type: "claimed",
         path,
         tag: error._tag,
         owner: entry.name,
-        effect: entry.effect,
+        effect: "pause",
       });
+    };
   }, [listener, path]);
 };
 
@@ -779,6 +781,9 @@ export const useResultMutation = <
   ProcedureClientError<TProcedureClient>
 > => {
   const runtime = useRuntime();
+  const scope = useClaimScope();
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
   // The observer is created once per (runtime, procedure); every option is
   // read through a ref at use time. Inline options objects — the way React
   // codebases naturally write them — must never resubscribe or loop.
@@ -792,15 +797,24 @@ export const useResultMutation = <
       TContext
     > = {
       get retry() {
-        return optionsRef.current.retry;
+        const retry = optionsRef.current.retry;
+        if (typeof retry !== "function") return retry;
+        return (error: ProcedureClientError<TProcedureClient>, failureCount: number) =>
+          claimOwner(scopeRef.current, error) ? false : retry(error, failureCount);
       },
       optimistic: (input, cache) => optionsRef.current.optimistic?.(input, cache),
       onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
-      onFailure: (error, input, context, cache) =>
-        optionsRef.current.onFailure?.(error, input, context, cache),
+      onFailure: (error, input, context, cache) => {
+        if (claimOwner(scopeRef.current, error)) {
+          return optionsRef.current.onCancel?.(input, context, cache);
+        }
+        return optionsRef.current.onFailure?.(error, input, context, cache);
+      },
       onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
-      onSettled: (result, input, context, cache) =>
-        optionsRef.current.onSettled?.(result, input, context, cache),
+      onSettled: (result, input, context, cache) => {
+        if (!result.ok && claimOwner(scopeRef.current, result.error)) return undefined;
+        return optionsRef.current.onSettled?.(result, input, context, cache);
+      },
     };
     return runtime.mutation(procedure, dynamicOptions);
   }, [runtime, procedure]);
@@ -823,9 +837,6 @@ export const useResultMutation = <
   );
   useEffect(() => () => observer.destroy(), [observer]);
   const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
-  const scope = useClaimScope();
-  const scopeRef = useRef(scope);
-  scopeRef.current = scope;
   const stateRef = useRef(state);
   stateRef.current = state;
   const [mutate] = useState(() => async (input: ProcedureClientInput<TProcedureClient>) => {

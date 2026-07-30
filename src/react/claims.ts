@@ -45,6 +45,7 @@ export interface SuspenseClaimLease {
   readonly activate: () => void;
   readonly isActive: () => boolean;
   readonly retain: (entry: ClaimEntry, operationId: string) => void;
+  readonly forget: (entry: ClaimEntry, operationId: string) => void;
   readonly release: () => void;
 }
 
@@ -63,6 +64,12 @@ export const createSuspenseClaimLease = (): SuspenseClaimLease => {
       const operations = holdings.get(entry) ?? new Set<string>();
       operations.add(operationId);
       holdings.set(entry, operations);
+    },
+    forget: (entry, operationId) => {
+      const operations = holdings.get(entry);
+      if (!operations) return;
+      operations.delete(operationId);
+      if (operations.size === 0) holdings.delete(entry);
     },
     release: () => {
       active = false;
@@ -115,11 +122,11 @@ const ownerOf = (
 /**
  * One stable operation bridge shared by ordinary and Suspense hooks.
  *
- * `render` is deliberately pure. Acquisitions happen only from a committed
- * effect, an external observer notification, or a settled request promise.
- * That lets a first-render Suspense request reach its shell without requiring
- * the querying component to commit and without changing external state while
- * React renders.
+ * `render` is deliberately pure. Ordinary acquisitions happen from a
+ * committed effect or external observer notification. A relevant Suspense
+ * retry acquires only when its thrown `wait()` promise runs, under the
+ * committed boundary lease supplied by `ResultSuspense`. Request settlement
+ * itself only populates cache state and can never acquire ownership.
  */
 export const useClaimObserver = (
   onClaimed?: (entry: ClaimEntry, error: AnyTaggedError) => void,
@@ -143,14 +150,19 @@ export const useClaimObserver = (
     let current: ClaimEntry | undefined;
     let currentError: AnyTaggedError | undefined;
 
+    const releaseFrom = (entry: ClaimEntry) => {
+      entry.release(aggregateId, leaseId);
+      suspenseLease?.forget(entry, aggregateId);
+    };
+
     const release = () => {
-      current?.release(aggregateId, leaseId);
+      if (current) releaseFrom(current);
       current = undefined;
       currentError = undefined;
       // A previous initial-Suspense attempt can have the same React operation
       // id but a discarded local bridge. Releasing across the mounted scope is
       // therefore intentional and idempotent.
-      for (const entry of entriesRef.current) entry.release(aggregateId, leaseId);
+      for (const entry of entriesRef.current) releaseFrom(entry);
     };
 
     const acquire = (error: AnyTaggedError | undefined): ClaimAcquisition | undefined => {
@@ -166,7 +178,7 @@ export const useClaimObserver = (
       }
       if (suspenseLease && !suspenseLease.isActive()) return undefined;
       if (current && (current !== owner || currentError !== error)) {
-        current.release(aggregateId, leaseId);
+        releaseFrom(current);
       }
       current = owner;
       currentError = error;

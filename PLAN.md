@@ -1,47 +1,69 @@
-# Pre-release correctness plan — review wave 6
+# Pre-release correctness plan — review wave 7
 
-This plan replaces Wave 5. The fresh installed-package review verified the
-supersession fix on React 18.3.1 and 19.2.8, then found that a claimed
-first-render Suspense retry still had no committed lifecycle owner. The fix is
-to make the Suspense boundary itself own those leases.
+This plan replaces Wave 6. The fresh installed-package reviewer verified the
+new `ResultSuspense` ownership model across React 18.3.1 and 19.2.8 and judged
+the inference/scaling architecture excellent, then held publication on two
+public lifecycle-contract mismatches.
 
 ## Governing invariant
 
-Every shell holding has a committed owner. Ordinary hooks own opaque leases in
-their committed effects. A Suspense query that may be claimed uses a committed
-`ResultSuspense` boundary lease because a child that suspends before commit can
-never install cleanup. Request settlement remains cache-only.
+Runtime discharge and public subtraction are one contract. A shell hook must
+not deliver a claimed error through a callback whose type says that error was
+removed. Pause ownership has shell reactions, holdings, and `claimed`
+breadcrumbs. Escalation delegates the exact tagged error to React's error
+boundary; it does not pretend to create a pause holding or shell reaction.
 
-## P0 — committed Suspense claim ownership
+## P0 — mutation callbacks discharge with shell ownership
 
-- [x] Add `ResultSuspense`, a drop-in Suspense boundary with an opaque claim
-      lease and effect-owned cleanup.
-- [x] Require a claimed `useResultSuspenseQuery` to be beneath
-      `ResultSuspense`; fail clearly instead of silently leaking under a plain
-      React boundary.
-- [x] Make separately removable branches separately owned, so removing one of
-      two same-key boundaries preserves one lease and removing the second
-      drains the holding.
-- [ ] Pin `resetKey` replacement and distinct-key partial removal.
-- [ ] Document the ownership scope: independently removable branches need
-      distinct boundaries; `resetKey` replaces a retained boundary's scope.
-- [ ] Verify installed consumers on React 18.3.1 and 19.2.8.
+- [ ] Make ambient mutation lifecycle callbacks consult the mounted claim
+      scope before invoking consumer callbacks.
+- [ ] For a claimed failure, suppress `onFailure` and failure `onSettled`, do
+      not invoke a consumer retry predicate, and invoke the control cleanup
+      callback used for optimistic rollback.
+- [ ] Type `Shell.useMutation` callback errors/results with the same exact
+      residual union as its returned state and `mutate()` result.
+- [ ] Preserve full callback unions for plain hooks as a sound
+      over-approximation, while ambient runtime claiming still suppresses an
+      owned failure beneath a mounted provider.
+- [ ] Pin callback freshness, exact same-tag/different-definition behavior,
+      optimistic cleanup, claimed rejection, and ordinary unclaimed failure.
+
+## P0 — make escalation observability truthful
+
+- [ ] Define `onError` as a pause reaction and reject it at the type level for
+      `effect: "escalate"`.
+- [ ] Narrow the public `claimed` ClientEvent to pause ownership; escalation is
+      observed by the React error boundary receiving the exact tagged instance.
+- [ ] Update README, docs, architecture, examples, public fixtures, and API
+      reports so no text or type promises an escalation claim breadcrumb or
+      shell reaction.
+- [ ] Pin pause reaction/breadcrumb behavior and escalation's exact throw,
+      zero holding, and absence of a pause breadcrumb.
+
+## Lifecycle hygiene
+
+- [x] Boundary leases forget released operations instead of retaining their
+      IDs until a long-lived boundary unmounts.
+- [ ] State and test that a failed recovery attempt is a fresh claim and may
+      re-fire an idempotent pause reaction.
+- [x] Release automation runs the packed ResultSuspense matrix on React 18.3.1
+      and 19.2.8 and enables strict optional/indexed access in package types.
 
 ## Release gates
 
-- [x] Source type-check and focused React/shell tests pass.
-- [ ] Public type fixture and API reports include the new boundary.
-- [ ] Full `pnpm verify:release` passes.
-- [ ] A fresh blind installed-package review finds no publish blocker and
-      judges the package publish-grade, with type quality comparable to serious
-      TanStack work for this library's scope.
+- [ ] Focused runtime and public type regressions pass.
+- [ ] API reports and docs are updated and strict/link/static checks pass.
+- [ ] Full `pnpm verify:release` passes, including installed React 18/19,
+      TS 5.4/5.9/7, Vite 8, Next 16, Worker, entity, and type-scaling gates.
+- [ ] A new blind installed-package review finds no release blocker and judges
+      both the complete package and its public TypeScript architecture/DX at a
+      serious TanStack-quality standard for this library's scope.
 
 ## Prior evidence to preserve
 
-- Suspense settlement cannot acquire a holding from an async continuation.
-- Abandoned and superseded request generations own nothing.
-- Same-key ordinary and Suspense claims aggregate while committed leases retire
-  independently.
-- Exact nested shell subtraction, definition identity, procedure/input
-  correlation, erased error reconstruction, contract stamps, clean browser
-  graphs, and package navigation remain intact.
+- `ResultSuspense` same-key, distinct-key, reset, abandonment, supersession,
+  Strict replay, and resume ownership.
+- Exact nested shell subtraction and same-tag/different-definition identity.
+- Procedure/input correlation, tagged reconstruction, private sanitization,
+  contract stamps/skew, clean browser/server graphs, hydration, entity
+  coherence, and package navigation.

@@ -131,6 +131,36 @@ const stopChild = async (child) => {
   ]);
 };
 
+const runReactLifecycleSmoke = (tarball, reactVersion) => {
+  const runtimeFixture = join(temporary, `react-${reactVersion}`);
+  mkdirSync(runtimeFixture, { recursive: true });
+  writeFileSync(
+    join(runtimeFixture, "package.json"),
+    JSON.stringify(
+      {
+        private: true,
+        type: "module",
+        dependencies: {
+          react: reactVersion,
+          "react-test-renderer": reactVersion,
+          "result-rpc": `file:${tarball}`,
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(
+    join(runtimeFixture, "probe.mjs"),
+    readFileSync(join(root, "scripts/fixtures/react-claim-lifecycle.mjs"), "utf8"),
+  );
+  execFileSync("pnpm", ["install", "--ignore-scripts"], {
+    cwd: runtimeFixture,
+    stdio: "inherit",
+  });
+  execFileSync(process.execPath, ["probe.mjs"], { cwd: runtimeFixture, stdio: "inherit" });
+};
+
 try {
   mkdirSync(packDirectory, { recursive: true });
   const packOutput = execFileSync(
@@ -168,6 +198,8 @@ try {
       {
         compilerOptions: {
           strict: true,
+          exactOptionalPropertyTypes: true,
+          noUncheckedIndexedAccess: true,
           noEmit: true,
           target: "ES2022",
           module: "ESNext",
@@ -347,6 +379,9 @@ export type EveryPublicSubpath = readonly [
       stdio: "inherit",
     });
   }
+
+  runReactLifecycleSmoke(tarball, "18.3.1");
+  runReactLifecycleSmoke(tarball, "19.2.8");
 
   const devPort = await availablePort();
   const devOutput = [];
@@ -733,7 +768,7 @@ export default async function Page({
   }
 
   console.log(
-    "package smoke: TS 5.4/5.9/7 declarations, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
+    "package smoke: TS 5.4/5.9/7 declarations, React 18.3/19.2 claims, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
   );
 } finally {
   rmSync(temporary, { recursive: true, force: true });

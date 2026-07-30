@@ -668,7 +668,6 @@ export interface MutationControls<TInput, TOutput, TError extends AnyTaggedError
 
 // @public (undocumented)
 export interface MutationOptions<in TInput, in TOutput, in TError extends AnyTaggedError, in out TContext = undefined> {
-    // (undocumented)
     readonly onCancel?: (input: TInput, context: TContext | undefined, cache: QueryCache) => void | Promise<void>;
     // (undocumented)
     readonly onFailure?: (error: TError, input: TInput, context: TContext | undefined, cache: QueryCache) => void | Promise<void>;

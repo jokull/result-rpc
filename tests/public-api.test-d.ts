@@ -737,6 +737,14 @@ const DefectShell = defineShell({
   effect: "escalate",
 });
 
+// @ts-expect-error Escalation delegates observability to the React error boundary.
+defineShell({
+  name: "invalid-escalation-reaction",
+  claims: defectErrors,
+  effect: "escalate",
+  onError: () => undefined,
+});
+
 const StaleShell = defineShell({
   name: "stale",
   from: DefectShell,
@@ -871,17 +879,19 @@ export type _SuspenseShellSubtractsExactlyTheClaimedErrors = Assert<
 
 // oxlint-disable-next-line react-hooks/rules-of-hooks -- compile-time callback inference proof
 const shellMutation = AuthShell.useMutation(client.example.mutation, {
-  // Mutation lifecycle callbacks run in the query runtime before React claims
-  // the outcome, so they truthfully retain the complete procedure union.
   onFailure: (failure) => {
-    const fullFailure: ExpectedError = failure;
-    void fullFailure;
+    const residualFailure: ReturnType<typeof Missing> = failure;
+    void residualFailure;
   },
   onSettled: (result) => {
     if (!result.ok) {
-      const fullFailure: ExpectedError = result.error;
-      void fullFailure;
+      const residualFailure: ReturnType<typeof Missing> = result.error;
+      void residualFailure;
     }
+  },
+  retry: (failure) => {
+    const residualFailure: ReturnType<typeof Missing> = failure;
+    return residualFailure.data.id.length > 0;
   },
 });
 type ShellMutationError = Extract<typeof shellMutation, { readonly state: "failure" }>["error"];

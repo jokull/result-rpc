@@ -387,7 +387,7 @@ export type ClientEvent = Readonly<{
     path: string;
     tag: string;
     owner: string;
-    effect: "pause" | "escalate";
+    effect: "pause";
 }> | Readonly<{
     type: "skew";
     clientContract: string;

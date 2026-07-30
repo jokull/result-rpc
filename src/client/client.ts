@@ -118,7 +118,7 @@ export type ClientEvent =
       path: string;
       tag: string;
       owner: string;
-      effect: "pause" | "escalate";
+      effect: "pause";
     }>
   | Readonly<{
       /** The server's effective contract version stopped matching this client's — a

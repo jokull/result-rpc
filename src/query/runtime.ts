@@ -463,6 +463,11 @@ export interface MutationOptions<
     context: TContext | undefined,
     cache: QueryCache,
   ) => void | Promise<void>;
+  /**
+   * Cleans up local optimistic work when control flow interrupts the consumer:
+   * an explicit cancellation, or a mounted React shell claiming the failure.
+   * The rejected mutation promise distinguishes `cancelled` from `claimed`.
+   */
   readonly onCancel?: (
     input: TInput,
     context: TContext | undefined,

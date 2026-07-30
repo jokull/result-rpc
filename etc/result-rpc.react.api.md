@@ -651,7 +651,6 @@ export interface MutationControls<TInput, TOutput, TError extends AnyTaggedError
 
 // @public (undocumented)
 export interface MutationOptions<in TInput, in TOutput, in TError extends AnyTaggedError, in out TContext = undefined> {
-    // (undocumented)
     readonly onCancel?: (input: TInput, context: TContext | undefined, cache: QueryCache) => void | Promise<void>;
     // (undocumented)
     readonly onFailure?: (error: TError, input: TInput, context: TContext | undefined, cache: QueryCache) => void | Promise<void>;
@@ -1164,7 +1163,7 @@ export interface Shell<TDefinitions extends ErrorDefinitionMap = ErrorDefinition
     use(): TValue;
     useHeld(): ShellHoldings<ErrorUnion<TDefinitions>>;
     // (undocumented)
-    useMutation<const TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(procedure: NarrowProcedureClient<TProcedureClient>, options?: MutationOptions<ProcedureClientInput<TProcedureClient>, ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>, TContext>): MutationState<ProcedureClientInput<TProcedureClient>, ProcedureClientOutput<TProcedureClient>, SubtractClaimedErrors<ProcedureClientError<TProcedureClient>, ShellClaimedErrors<TDefinitions, TParent>>>;
+    useMutation<const TProcedureClient extends MutationProcedureClientLike, TContext = undefined>(procedure: NarrowProcedureClient<TProcedureClient>, options?: MutationOptions<ProcedureClientInput<TProcedureClient>, ProcedureClientOutput<TProcedureClient>, SubtractClaimedErrors<ProcedureClientError<TProcedureClient>, ShellClaimedErrors<TDefinitions, TParent>>, TContext>): MutationState<ProcedureClientInput<TProcedureClient>, ProcedureClientOutput<TProcedureClient>, SubtractClaimedErrors<ProcedureClientError<TProcedureClient>, ShellClaimedErrors<TDefinitions, TParent>>>;
     // (undocumented)
     usePaginatedQuery<const TProcedureClient extends PaginatedProcedureClientLike>(procedure: NarrowProcedureClient<TProcedureClient>, input: PaginatedClientListInput<NoInfer<TProcedureClient>>, options?: QueryOptions<ProcedureClientError<NoInfer<TProcedureClient>>>): PaginatedState<PaginatedClientItem<TProcedureClient>, SubtractClaimedErrors<ProcedureClientError<TProcedureClient>, ShellClaimedErrors<TDefinitions, TParent>>>;
     // (undocumented)
@@ -1184,12 +1183,16 @@ export type ShellClaimCompatibility<TParent extends AnyShell | undefined, TDefin
 export type ShellClaimedErrors<TDefinitions extends ErrorDefinitionMap, TParent extends AnyShell | undefined> = ErrorUnion<TDefinitions> | (TParent extends AnyShell ? ClaimedErrorsBy<TParent> : never);
 
 // @public (undocumented)
-export interface ShellCommonOptions<TDefinitions extends ErrorDefinitionMap, TValue> {
-    readonly claims: TDefinitions;
-    readonly effect?: ShellEffect;
+export type ShellCommonOptions<TDefinitions extends ErrorDefinitionMap, TValue> = {
     readonly name: string;
+    readonly claims: TDefinitions;
+} & ({
+    readonly effect?: "pause";
     readonly onError?: (error: ErrorUnion<TDefinitions>, value: NoInfer<TValue>) => void;
-}
+} | {
+    readonly effect: "escalate";
+    readonly onError?: never;
+});
 
 // @public
 export type ShellEffect = "pause" | "escalate";
