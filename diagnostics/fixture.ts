@@ -34,6 +34,7 @@ const User = defineModel("diagnostic-user", {
 });
 
 User.pick("name"); // diagnostic: model-selection-missing-identity-fields
+User.$satisfies<{ readonly id: string; readonly name: string | null }>(); // diagnostic-text: field 'name': the model declares string, the source has string | null
 
 const Unauthorized = error({ tag: "diagnostic/unauthorized" });
 const Parent = defineShell({ name: "parent", claims: { Unauthorized } });

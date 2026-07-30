@@ -37,7 +37,9 @@ The assertion enforces one precise relationship:
 `passwordHash` is allowed as a source field but is absent from the model, so
 it cannot appear in a model view or RPC response. If `avatarUrl` becomes
 non-nullable—or the model forgets that it is nullable—the assertion stops
-type-checking.
+type-checking. The compiler points at the bare `$satisfies<Source>()` call and
+prints each mismatched field together with the model and source types; no
+runtime argument is involved.
 
 ## Type-only sources
 

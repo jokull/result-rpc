@@ -623,7 +623,7 @@ export type MismatchedSourceFields<TModel extends object, TSource> = {
 export interface ModelDefinition<TName extends string = string, TShape extends CodecShape = CodecShape, TKey extends ShapeKeySpec<TShape> = ShapeKeySpec<TShape>> extends AnyModel {
     // (undocumented)
     readonly $model: true;
-    $satisfies<TSource extends object>(...mismatch: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never] ? [] : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]): ModelDefinition<TName, TShape, TKey>;
+    $satisfies<TSource extends object>(this: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never] ? unknown : ModelSourceMismatch<ShapeInput<TShape>, TSource>): ModelDefinition<TName, TShape, TKey>;
     all(reason: string): WireCodec<ShapeInput<TShape>, WireValue>;
     readonly key: TKey;
     readonly keyFields: readonly KeyField<TKey>[];

@@ -55,16 +55,17 @@ export interface ModelDefinition<
    *
    *     const User = defineModel("user", { ... })
    *       .$satisfies<typeof users.$inferSelect>()
-   */
-  /**
-   * On a mismatch the compiler asks for an argument whose type spells out every
-   * offending field and both sides — hover it, or pass anything to make the
-   * message print.
+   *
+   * The erased `this` parameter is the proof site. It does not add a runtime
+   * argument, but on a mismatch it makes the receiver incompatible with a
+   * string literal that spells out every offending field and both sides. That
+   * puts the useful diagnostic on the bare call instead of behind a hover or a
+   * deliberately wrong argument.
    */
   $satisfies<TSource extends object>(
-    ...mismatch: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never]
-      ? []
-      : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]
+    this: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never]
+      ? unknown
+      : ModelSourceMismatch<ShapeInput<TShape>, TSource>,
   ): ModelDefinition<TName, TShape, TKey>;
   /**
    * A strict projection codec — a subset of the shape, still
@@ -233,24 +234,16 @@ export type SourceFieldMessage<
   : `field '${TKey}' is missing from the source`;
 
 /**
- * Surfaced as a constraint violation rather than an arity error. TS2554
- * ("Expected 1 arguments, but got 0") never prints a type, which left readers
- * passing a deliberately wrong argument just to make the compiler reveal what
- * was expected; TS2344 prints both sides.
- *
- * One key, so the useful half is not truncated away by the message limit.
- */
-/**
- * The constraint a source must satisfy.
+ * The diagnostic a source must satisfy.
  *
  * Resolves to string literals rather than a named generic, because TypeScript
  * prints an alias by *name* when one exists — so a carefully built structural
  * diagnostic shows up as `SourceFieldMismatch<Model, Row>` and tells the reader
  * nothing. Literals print verbatim, which is the whole point.
  *
- * `object` appears only in the passing branch: intersecting it with a string
- * literal collapses the constraint to `never`, and the reader is told the
- * constraint is `never` instead of what is wrong.
+ * The literal becomes the method's erased `this` type on failure. TypeScript
+ * includes it in TS2684 at the bare call site, avoiding both a circular generic
+ * constraint (TS2313) and an unhelpful missing-argument error (TS2554).
  */
 export type ModelSourceMismatch<TModel extends object, TSource> = SourceFieldMessage<
   TModel,
