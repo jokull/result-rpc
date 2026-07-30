@@ -87,9 +87,9 @@ The pieces, in the order this document builds them:
 Routing, SSR frameworks, and bundling are explicitly not on the list — shells
 are providers and hooks, so they compose with whatever owns the tree.
 
-> **Status**: pre-1.0. Everything documented here is implemented and tested —
-> the `examples/` directory is runnable — but the package is not yet published
-> to npm while the API settles.
+> **Status**: `0.1.0`, published to npm. Everything documented here is
+> implemented and tested — the `examples/` directory is runnable — but this is a
+> 0.x release and the API surface can still move.
 
 ## The two problems
 

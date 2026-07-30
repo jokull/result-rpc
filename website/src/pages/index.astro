@@ -305,7 +305,7 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Is it production-ready?</span></summary>
           <div class="faq-body">
-            <p>Not yet. The repository is at <code>0.1.0</code>, the package is not published to npm, and the API surface can still move. The implementation is exercised by runnable examples and end-to-end tests, but it should currently be evaluated from source rather than treated as a production dependency.</p>
+            <p><code>0.1.0</code> is on npm, published with provenance through a protected OIDC workflow, and every release is verified from packed consumers on Node 20 and 24 across TypeScript 5.4, 5.9 and 7.0. It is a 0.x release: the API surface can still move, and a minor version may break you. The implementation is exercised by runnable examples and end-to-end tests, so it is ready to build on — pin the version.</p>
           </div>
         </details>
       </div>
