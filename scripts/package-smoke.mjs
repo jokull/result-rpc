@@ -15,6 +15,23 @@ import { createServer as createTcpServer } from "node:net";
 import { once } from "node:events";
 import { build } from "vite";
 
+/**
+ * Installs a consumer fixture. `--offline` keeps repeat local runs fast and
+ * hermetic against a warm store, but a cold store — a fresh CI runner, a fresh
+ * clone — has none of the fixtures' transitive deps, and pnpm hard-fails with
+ * ERR_PNPM_NO_OFFLINE_TARBALL rather than reaching for the network. Fall back
+ * so the smoke test is a real check everywhere instead of only where someone
+ * has already run it.
+ */
+const installFixture = (cwd) => {
+  try {
+    execFileSync("pnpm", ["install", "--offline", "--ignore-scripts"], { cwd, stdio: "inherit" });
+  } catch {
+    console.log("package smoke: store is cold, installing from the registry");
+    execFileSync("pnpm", ["install", "--ignore-scripts"], { cwd, stdio: "inherit" });
+  }
+};
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporary = mkdtempSync(join(tmpdir(), "result-rpc-package-smoke-"));
 const fixture = join(temporary, "consumer");
@@ -311,10 +328,7 @@ export type EveryPublicSubpath = readonly [
 `,
   );
 
-  execFileSync("pnpm", ["install", "--offline", "--ignore-scripts"], {
-    cwd: fixture,
-    stdio: "inherit",
-  });
+  installFixture(fixture);
 
   const installedPackage = join(fixture, "node_modules/result-rpc");
   const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
@@ -671,10 +685,7 @@ export default async function Page({
 `,
   );
 
-  execFileSync("pnpm", ["install", "--offline", "--ignore-scripts"], {
-    cwd: nextFixture,
-    stdio: "inherit",
-  });
+  installFixture(nextFixture);
 
   const nextBin = join(nextFixture, "node_modules/.bin/next");
   const nextDevPort = await availablePort();
