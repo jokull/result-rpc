@@ -56,8 +56,13 @@ export interface ModelDefinition<
    *     const User = defineModel("user", { ... })
    *       .$satisfies<typeof users.$inferSelect>()
    */
+  /**
+   * On a mismatch the compiler asks for an argument whose type spells out every
+   * offending field and both sides — hover it, or pass anything to make the
+   * message print.
+   */
   $satisfies<TSource extends object>(
-    ...mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource> extends never
+    ...mismatch: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never]
       ? []
       : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]
   ): ModelDefinition<TName, TShape, TKey>;
@@ -146,23 +151,112 @@ export type ModelTypeEqual<TLeft, TRight> =
       : false
     : false;
 
-export type MismatchedSourceFields<TModel extends object, TSource extends object> = {
+/**
+ * Drops `readonly` so a source can be compared for the difference that matters.
+ *
+ * Wire codecs decode readonly by design, and a schema column does not, so a
+ * correctly-aligned pair like `readonly string[]` and `string[]` failed the
+ * identity test — a false positive on exactly the schemas the check exists to
+ * bless. Mutability is not a difference in values, so it is normalized away.
+ *
+ * Nullability, scalar type and missing fields are untouched: those survive
+ * normalization and still fail, which is the whole point of the check.
+ * Functions are returned as-is — mapping over one erases its call signature —
+ * and both sides get identical treatment, so the comparison stays symmetric.
+ */
+export type MutableModelType<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer TItem)[]
+    ? MutableModelType<TItem>[]
+    : T extends object
+      ? { -readonly [TKey in keyof T]: MutableModelType<T[TKey]> }
+      : T;
+
+/** Identical, or identical once `readonly` is set aside. */
+export type ModelTypeCompatible<TLeft, TRight> =
+  ModelTypeEqual<TLeft, TRight> extends true
+    ? true
+    : ModelTypeEqual<MutableModelType<TLeft>, MutableModelType<TRight>>;
+
+export type MismatchedSourceFields<TModel extends object, TSource> = {
   [TKey in keyof TModel]: TKey extends keyof TSource
-    ? ModelTypeEqual<TModel[TKey], TSource[TKey]> extends true
+    ? ModelTypeCompatible<TModel[TKey], TSource[TKey]> extends true
       ? never
       : TKey
     : TKey;
 }[keyof TModel];
 
-export type ModelSourceMismatch<TModel extends object, TSource extends object> =
-  MismatchedSourceFields<TModel, TSource> extends never
-    ? never
-    : {
-        readonly "Model fields missing or incompatible in source": MismatchedSourceFields<
-          TModel,
-          TSource
-        >;
-      };
+/**
+ * Renders a field's type as text.
+ *
+ * A template literal can only interpolate literal types, so there is no way to
+ * ask TypeScript to stringify an arbitrary one — the alternative is a diagnostic
+ * that names a type alias the reader then has to go and read. Covering the wire
+ * scalars plus arrays gets the cases a schema mismatch actually produces.
+ *
+ * Deliberately non-distributive (`[T] extends [X]`): a naive version turns
+ * `string | null` into two messages that each claim the type is something it
+ * partly is not, and `string | null` is precisely what a nullable column looks
+ * like.
+ */
+export type PrintModelType<T> = [T] extends [never]
+  ? "never"
+  : unknown extends T
+    ? "an unspecified type"
+    : PrintKnownModelType<T>;
+
+type PrintKnownModelType<T> = [null] extends [T]
+  ? `${PrintModelType<Exclude<T, null>>} | null`
+  : [undefined] extends [T]
+    ? `${PrintModelType<Exclude<T, undefined>>} | undefined`
+    : [T] extends [string]
+      ? "string"
+      : [T] extends [number]
+        ? "number"
+        : [T] extends [boolean]
+          ? "boolean"
+          : [T] extends [bigint]
+            ? "bigint"
+            : [T] extends [Date]
+              ? "Date"
+              : [T] extends [readonly (infer TItem)[]]
+                ? `${PrintModelType<TItem>}[]`
+                : "a different type";
+
+/** One line per failing field, naming it and both sides. */
+export type SourceFieldMessage<
+  TModel extends object,
+  TSource,
+  TKey extends string,
+> = TKey extends keyof TSource
+  ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}`
+  : `field '${TKey}' is missing from the source`;
+
+/**
+ * Surfaced as a constraint violation rather than an arity error. TS2554
+ * ("Expected 1 arguments, but got 0") never prints a type, which left readers
+ * passing a deliberately wrong argument just to make the compiler reveal what
+ * was expected; TS2344 prints both sides.
+ *
+ * One key, so the useful half is not truncated away by the message limit.
+ */
+/**
+ * The constraint a source must satisfy.
+ *
+ * Resolves to string literals rather than a named generic, because TypeScript
+ * prints an alias by *name* when one exists — so a carefully built structural
+ * diagnostic shows up as `SourceFieldMismatch<Model, Row>` and tells the reader
+ * nothing. Literals print verbatim, which is the whole point.
+ *
+ * `object` appears only in the passing branch: intersecting it with a string
+ * literal collapses the constraint to `never`, and the reader is told the
+ * constraint is `never` instead of what is wrong.
+ */
+export type ModelSourceMismatch<TModel extends object, TSource> = SourceFieldMessage<
+  TModel,
+  TSource,
+  MismatchedSourceFields<TModel, TSource> & string
+>;
 
 export type ModelValue<TModel extends AnyModel> =
   TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;

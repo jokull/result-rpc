@@ -420,3 +420,24 @@ describe("error registry", () => {
     expect(() => defineErrors("a/b", { x: { httpStatus: 400 } })).toThrow(/must not contain/);
   });
 });
+
+describe("wire.nullable", () => {
+  // A spelling of `wire.union([codec, wire.null])`, so it must behave as that
+  // union in every respect — including on the wire, where any difference would
+  // change the contract digest and desync deployed clients.
+  test("round-trips the value and null", () => {
+    const codec = wire.nullable(wire.string);
+    expect(codec.decode("ada")).toEqual(ok("ada"));
+    expect(codec.decode(null)).toEqual(ok(null));
+    expect(codec.encode("ada")).toEqual(ok("ada"));
+    expect(codec.encode(null)).toEqual(ok(null));
+  });
+
+  test("rejects undefined — nullable is present-and-null, not absent", () => {
+    expect(wire.nullable(wire.string).decode(undefined).ok).toBe(false);
+  });
+
+  test("is the union it replaces, so the contract digest cannot move", () => {
+    expect(wire.nullable(wire.string).kind).toBe(wire.union([wire.string, wire.null]).kind);
+  });
+});

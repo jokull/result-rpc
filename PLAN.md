@@ -1,81 +1,138 @@
-# Pre-release correctness plan — review wave 9
+# Post-0.1.0 plan — first external adopter
 
-This plan replaces Wave 8. The fresh installed-package reviewer verified every
-owned and residual mutation retry form on React 18/19, package/type/build
-boundaries, and again judged the public TypeScript architecture and DX at a
-serious TanStack Router/Start standard for this scope. Publication is held on
-one localized runtime integration defect.
+This plan replaces the pre-release wave plans (Wave 10 closed clean; `0.1.0` is
+published). The work below comes from the first external port of a real feature
+onto result-rpc — a themes app on TanStack Start + D1 + iron-session — reported
+after the author read the full docs and the `11-tanstack-start` example.
+
+What the port validated, recorded because it decides what _not_ to touch: the
+closed error union split one `throw new Error("Unauthorized")` into
+`auth/required` vs `theme/not-owner` and surfaced a design bug the author had
+not planned to fix; layers deleted three artifacts that had to agree and did
+not; entities removed every `revalidatePath`. Net −1012 lines. None of that
+changes.
 
 ## Governing invariant
 
-Exact-definition mismatch is a programmer error, but every callback delegated
-to TanStack Query must be total. Detection may happen inside retry/observer
-machinery; throwing must happen only through a controlled imperative promise
-or React render/error-boundary path. No typed callback may receive the
-incompatible value in between.
+A declared domain error is a **value**. Everything below follows from applying
+that consistently: a value may be dehydrated, a value must not arrive as a
+rejection, and a difference that is not a difference in values (`readonly`) is
+not a mismatch.
 
-## P0 — total owner resolution at external callback boundaries
+## P0 — a declared failure is part of the answer
 
-- [x] Split owner lookup into a non-throwing exact resolution
-      (`unclaimed | owned | incompatible`) and a fail-loud throwing facade.
-- [x] Use non-throwing resolution in mutation retry, failure/settled callbacks,
-      and observer notification so no exception escapes TanStack retry/cache
-      callbacks.
-- [x] Keep `claimOwner` throwing for imperative mutation continuation and
-      React render projection, preserving the precise shell/tag diagnostic.
-- [x] On incompatibility, make exactly one request, invoke only `onCancel` for
-      local optimistic cleanup (never consumer retry/failure/settled, shell
-      reaction, holding, or claimed event), and reject `mutate()` with the
-      diagnostic TypeError; a rendered failure must reach the nearest React
-      error boundary rather than the process.
-- [x] Preserve owned and residual retry counts, callback freshness, optimistic
-      cleanup, claimed control flow, pause/escalation behavior, and query
-      mismatch behavior.
+Reported as: a 404 detail page server-rendered an empty body and only said
+"not found" after a client round-trip. `dehydrate` keeps successes only
+(`src/query/runtime.ts:1829`, `status === "success"`).
 
-## Installed-package proof
+That rule is right for `client/network-failure` — transient, do not bake it in —
+and wrong for `theme/not-found`, which is not a failed prefetch but the answer.
+The current behaviour contradicts the library's own first pillar.
 
-- [x] Add source regressions for `Shell.useMutation` and plain
-      `useResultMutation` beneath a colliding shell on React's current line.
-- [x] Extend packed React 18.3.1 and 19.2.8 smoke with both collision hook
-      forms, asserting controlled rejection/boundary delivery and no unhandled
-      rejection.
-- [x] Extend packed smoke with residual retry counts `1/3/2/4` and retry
-      callback freshness across attempts, preserving Wave 9's independent
-      positive evidence.
-- [x] Focused formatting, lint, source/public types, API reports, query/React
-      runtime, and package smoke pass.
-- [x] Full `pnpm verify:release` passes, including TS 5.4/5.9/7, React 18/19,
-      Vite 8, Next 16, Worker, entity performance, type scaling, and docs.
+- [x] Dehydrate queries whose failure is a **declared domain error**; keep
+      excluding framework and transport failures.
+- [x] Hydrate them back as failures, reified through the procedure's registry
+      like any wire error, so shells claim them exactly as they would live.
+- [x] Regression: an RSC prefetch of a not-found row renders the domain failure
+      on first paint at **zero** client requests, and a prefetch that failed on
+      a transport error still hydrates as absent rather than as a baked-in
+      failure. Two runtime details worth keeping: a successful query carries
+      `error: null` rather than `undefined`, and `fetchFailureReason` holds the
+      same instance — a retry detail about one attempt, dropped rather than
+      translated.
+- [ ] Document the rule in the RSC guide, replacing the workaround this
+      currently forces adopters into.
 
-## Fresh verdict gate
+## P0 — `mutate()` must not reject
 
-- [x] A new blind reviewer packs the post-fix artifact, independently proves
-      controlled same-tag mutation mismatch on React 18.3 and 19.2 through
-      both hook forms, reruns retry/callback adjacency, and finds no release
-      blocker across the complete package.
-- [x] That reviewer gives an unqualified yes that the exact artifact's public
-      TypeScript architecture/DX remains at a serious TanStack-quality standard
-      for this library's scope.
+Reported as the sharpest edge, and confirmed worse than reported: our own
+`concepts/entities.md:30` documents
+`onChange={(e) => void assign.mutate({ … })}`, and `void` on a rejecting promise
+is an unhandled rejection. `src/react/index.tsx:874` throws `claimed(...)`
+whenever a mounted shell owns the outcome, so the documented call site is
+correct only in an app where nothing claims.
 
-## Wave 10 verdict
+The intent — a caller's continuation must not run on an outcome a shell owns —
+stays. Only the delivery changes, to the split TanStack Query already
+established and adopters already know.
 
-The independent reviewer audited clean commit `433ae0d`, tree `2591682`, and
-the byte-reproducible 115-file tarball with SHA-256 `01abf6ca`. It returned
-unqualified **yes** verdicts for both publish readiness and TanStack-quality
-public TypeScript architecture/DX within this library's scope. Its independent
-matrix covered TS 5.4/5.9/7, React 18/19 and Node 20/26, exact collision and
-retry lifecycles, declaration scaling, Vite 8, Worker, Next 16 RSC, package
-graphs, wire/privacy/skew/hydration/entity behavior, performance, and strict
-documentation checks. No release blocker remains.
+- [ ] `mutate(input)` becomes fire-and-forget: never rejects. Outcomes are read
+      from hook state, which is where a fire-and-forget caller was always going
+      to read them.
+- [ ] `mutateAsync(input)` returns `Promise<Result<…>>` and rejects with the
+      `claimed` signal — the awaiting caller can handle it, which is the case
+      the rejection was designed for.
+- [ ] Every doc example that ignores the outcome moves to `mutate`; every one
+      that awaits moves to `mutateAsync`. The `void` disappears.
+- [ ] Regression: a claimed mutation under a mounted shell produces **no**
+      unhandled rejection through `mutate`, and still rejects through
+      `mutateAsync`.
+- [ ] Note the break in the release notes. It is breaking, it is a 0.x, and the
+      cost of carrying it grows with every adopter.
 
-## Prior evidence to preserve
+## P1 — `$satisfies` should not fail on `readonly`
 
-- Owned retry counts `1/1/1/1`; residual counts `1/3/2/4`; shell/plain parity;
-  exact residual callback/state/promise types and ambient full-union honesty.
-- Optimistic rollback, claimed sentinel/idle state, pause-only
-  reaction/holding/event, exact tagged escalation with zero pause observation.
-- `ResultSuspense` same/distinct/reset/abandon/supersede/Strict ownership across
-  React 18.3 and 19.2.
-- Procedure/input correlation, exact nested subtraction, tagged reconstruction,
-  privacy/skew/hydration/entity contracts, clean package graphs, TS
-  5.4/5.9/7, and controlled scaling.
+Reported as: failed on `colors` with
+`{ "Model fields missing or incompatible in source": "colors" }` and no
+indication the mismatch was `readonly`; found only by passing a deliberately
+wrong argument to make the compiler print the expected type.
+
+`ModelTypeEqual` (`src/model.ts:142`) is strict structural identity, so a codec
+decoding to `readonly string[]` never matches a source column typed `string[]`.
+Wire codecs decode readonly by design — so this fires on correctly-aligned
+schemas, which is the definition of a false positive.
+
+- [x] Compare modulo `readonly`: normalize both sides before the identity test,
+      leaving genuine differences failing exactly as now.
+- [x] Preserve nullability strictness. `string` vs `string | null` stays a
+      mismatch; that is the check earning its keep.
+- [x] Diagnostic resolves to string literals rather than a structural type.
+      Research settled this: TypeScript prints a type alias by _name_ when one
+      exists, so the carefully built `{ model, source }` object showed up as
+      `SourceFieldMismatch<Model, Row>` and told the reader nothing. The earlier
+      probe only looked informative because the source was an anonymous inline
+      type. Literals print verbatim; nullable unions need a non-distributive
+      printer or `string | null` becomes two messages each claiming the type is
+      something it partly is not. Prior art: Drizzle's
+      `DrizzleTypeError<Message>`, ArkType's zero-width-space brand,
+      expect-type's `MismatchInfo`.
+- [x] Type-perf: `modelSelection` unchanged at 50 instantiations/unit.
+- [x] Regression: `readonly` differences pass; nullability, scalar, missing
+      fields and wrong array elements still fail; the message names every
+      offending field and both sides.
+- [ ] **Open**: the message still requires hovering or passing an argument.
+      Moving it into the type parameter's constraint would print it on the bare
+      call, but `TSource extends …TSource…` is a circular constraint (TS2313)
+      inside an interface method with an enclosing type parameter — the standalone
+      generic function the research validated does not transfer. Worth another
+      attempt; not worth thrashing on now.
+
+## P1 — `wire.nullable`
+
+Reported as: `wire.union([X, wire.null])` written constantly. Confirmed absent.
+
+- [x] `wire.nullable(codec)` with the encoding of the union it replaces —
+      pinned by a test asserting the same `kind`, so the contract digest cannot
+      move.
+- [ ] Use it in the docs where the union spelling appears.
+
+## Not doing
+
+- **`.all("reason")`.** Reported as theatre: the sentence is written by whoever
+  already decided, so it is a speed bump rather than a gate. Half right — it does
+  not constrain, and `concepts/entities.md:221` already claims only that it
+  "costs a sentence that lands in review", which is an audit trail and a diff,
+  not enforcement. Removing it returns the self-profile case to enumerating every
+  field by hand, which is how the leak it exists for happened. Keep it; keep
+  describing it as exactly what it is.
+- **Mutable decode shapes.** `readonly` output is correct and stays. P1 removes
+  the place it caused a false failure, which was the actual complaint.
+
+## Follow-up, not blocking
+
+- [ ] The adopter could not exercise authenticated writes or optimistic
+      `updateEntity` patches (`/api/dev-auth` 403s locally). The library side is
+      covered — `attack-08-rollback-and-notify` pins rollback under interleaving
+      and object identity, `attack-13-concurrent-optimistic` pins that a stale
+      authoritative response never clobbers a newer confirmed write — so the
+      untested surface is their wiring, not the patch engine. Worth telling them.

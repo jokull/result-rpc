@@ -1071,8 +1071,8 @@ export interface MiddlewareTypes<TInputContext, TOutputContext, TDefinitionSourc
 export type MiddlewareTypesOf<TMiddleware> = TMiddleware extends Middleware<infer TTypes> ? TTypes : never;
 
 // @public (undocumented)
-export type MismatchedSourceFields<TModel extends object, TSource extends object> = {
-    [TKey in keyof TModel]: TKey extends keyof TSource ? ModelTypeEqual<TModel[TKey], TSource[TKey]> extends true ? never : TKey : TKey;
+export type MismatchedSourceFields<TModel extends object, TSource> = {
+    [TKey in keyof TModel]: TKey extends keyof TSource ? ModelTypeCompatible<TModel[TKey], TSource[TKey]> extends true ? never : TKey : TKey;
 }[keyof TModel];
 
 // @public (undocumented)
@@ -1082,7 +1082,7 @@ export type MissingDefinitionKeys<TExpected extends ErrorDefinitionMap, TActual 
 export interface ModelDefinition<TName extends string = string, TShape extends CodecShape = CodecShape, TKey extends ShapeKeySpec<TShape> = ShapeKeySpec<TShape>> extends AnyModel {
     // (undocumented)
     readonly $model: true;
-    $satisfies<TSource extends object>(...mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource> extends never ? [] : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]): ModelDefinition<TName, TShape, TKey>;
+    $satisfies<TSource extends object>(...mismatch: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never] ? [] : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]): ModelDefinition<TName, TShape, TKey>;
     all(reason: string): WireCodec<ShapeInput<TShape>, WireValue>;
     readonly key: TKey;
     readonly keyFields: readonly KeyField<TKey>[];
@@ -1111,10 +1111,8 @@ export type ModelKeySpec<TShape extends CodecShape> = ScalarKeyField<TShape> | r
 // @public
 export type ModelProjection<TModel extends AnyModel> = Readonly<Pick<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>> & Partial<Omit<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>>>>;
 
-// @public (undocumented)
-export type ModelSourceMismatch<TModel extends object, TSource extends object> = MismatchedSourceFields<TModel, TSource> extends never ? never : {
-    readonly "Model fields missing or incompatible in source": MismatchedSourceFields<TModel, TSource>;
-};
+// @public
+export type ModelSourceMismatch<TModel extends object, TSource> = SourceFieldMessage<TModel, TSource, MismatchedSourceFields<TModel, TSource> & string>;
 
 // @public (undocumented)
 export type ModelTypeEqual<TLeft, TRight> = (<T>() => T extends TLeft ? 1 : 2) extends <T>() => (T extends TRight ? 1 : 2) ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => (T extends TLeft ? 1 : 2) ? true : false : false;
@@ -1906,6 +1904,7 @@ export interface WireNamespace {
     readonly literal: <const TValue extends WireScalar>(expected: TValue) => WireCodec<TValue, TValue>;
     // (undocumented)
     readonly null: WireCodec<null, null>;
+    readonly nullable: <TInput, TEncoded extends WireValue>(codec: WireCodec<TInput, TEncoded>) => WireCodec<TInput | null, TEncoded | null>;
     // (undocumented)
     readonly number: WireCodec<number, number>;
     // (undocumented)

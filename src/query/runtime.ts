@@ -12,6 +12,7 @@ import {
   type MutationObserverResult,
 } from "@tanstack/query-core";
 import { isTaggedError, type AnyTaggedError } from "../error.js";
+import { frameworkErrorDefinitions } from "../framework-errors.js";
 import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
 import type { EffectiveContractVersion } from "../contract-digest.js";
 
@@ -583,6 +584,23 @@ export interface ResultSubscriptionObserver<out T, out E extends AnyTaggedError>
   readonly reconnect: () => void;
   readonly close: () => void;
 }
+
+/**
+ * Whether a query's failure belongs in a hydration payload.
+ *
+ * Declared domain errors do: `theme/not-found` is the answer to the query, and
+ * this library's first claim is that such errors are values. Framework and
+ * transport failures do not — `client/network-failure` describes one attempt on
+ * one machine, and shipping it as settled truth would replace a fetch the
+ * client can retry with a verdict it cannot.
+ */
+/** The wire shape a dehydrated failure arrives as: `{ _tag, data }`. */
+const isEncodedTaggedError = (value: unknown): value is { readonly _tag: string } =>
+  typeof value === "object" && value !== null && "_tag" in value && "data" in value;
+
+const isDehydratableFailure = (failure: unknown): boolean =>
+  isTaggedError(failure) &&
+  !Object.values(frameworkErrorDefinitions).some((definition) => definition.tag === failure._tag);
 
 const defaultShouldRetry = (
   definitions: ErrorDefinitionMap,
@@ -1826,10 +1844,37 @@ export const createQueryRuntime = <TClient>(
     },
     dehydrate: () => {
       const dehydrated = dehydrateQueryClient(queryClient, {
-        shouldDehydrateQuery: (query) => query.state.status === "success",
+        // A declared domain failure is the answer, not a failed prefetch: a
+        // server-rendered detail page for a row that does not exist should say
+        // so on first paint rather than after a client round-trip. Framework
+        // and transport failures stay out — those are transient facts about one
+        // attempt, and baking one in would strand the client on a stale verdict.
+        shouldDehydrateQuery: (query) =>
+          query.state.status === "success" || isDehydratableFailure(query.state.error),
         shouldDehydrateMutation: () => false,
       });
-      const encoded = serialize(dehydrated, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
+      // TanStack spreads `query.state`, so the live TaggedError instance would
+      // ride along; the serializer rejects class instances by design. Send the
+      // same wire form the transport would, and reify on the way back in.
+      // A success carries `error: null`, not `undefined`, so test for the thing
+      // being converted rather than for absence.
+      // A success carries `error: null`, not `undefined`, so test for the thing
+      // being converted rather than for absence. `fetchFailureReason` holds the
+      // same instance and is a retry detail about one attempt, not part of the
+      // answer, so it is dropped rather than translated.
+      const queries = dehydrated.queries.map((query) =>
+        isTaggedError(query.state.error)
+          ? {
+              ...query,
+              state: {
+                ...query.state,
+                error: query.state.error.toJSON(),
+                fetchFailureReason: null,
+              },
+            }
+          : query,
+      );
+      const encoded = serialize({ ...dehydrated, queries }, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
       if (!encoded.ok) throw new TypeError("Query cache is not wire-serializable");
       return {
         v: 1,
@@ -1878,10 +1923,25 @@ export const createQueryRuntime = <TClient>(
       const router = getClientRouter(clientIdentity);
       if (router) {
         for (const query of queryClient.getQueryCache().getAll()) {
-          if (query.state.status !== "success" || query.state.data === undefined) continue;
           const path = query.queryKey[0];
           const procedure = typeof path === "string" ? router.procedures.get(path) : undefined;
           if (!procedure || procedure._def.kind !== "query") continue;
+          if (query.state.status === "error") {
+            // A dehydrated failure arrives as the wire shape it was sent as.
+            // Reify it through the procedure's own registry, exactly like a
+            // failure off the transport, so shells claim it and `matchError`
+            // narrows it identically whether it was fetched or hydrated.
+            const encoded = query.state.error;
+            if (isTaggedError(encoded) || !isEncodedTaggedError(encoded)) continue;
+            const definition = Object.values(procedure._def.definitions as ErrorDefinitionMap).find(
+              (candidate) => candidate.tag === encoded._tag,
+            );
+            const reified = definition?.decode(encoded);
+            if (reified?.ok) query.setState({ error: reified.value as Error });
+            else queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+            continue;
+          }
+          if (query.state.status !== "success" || query.state.data === undefined) continue;
           const pagination = procedure._def.pagination;
           if (pagination) {
             // Paginated entries hold InfiniteData — normalize page by page

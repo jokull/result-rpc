@@ -618,6 +618,17 @@ export interface WireNamespace {
   readonly union: <const TCodecs extends readonly AnyWireCodec[]>(
     codecs: TCodecs,
   ) => WireCodec<InputOf<TCodecs[number]>, EncodedOf<TCodecs[number]>>;
+  /**
+   * `wire.union([codec, wire.null])`, which is common enough in schema-backed
+   * shapes to deserve a name. Exactly that union — same encoding, same wire
+   * shape, same contract digest — so it is a spelling, not a new codec kind.
+   *
+   * Distinct from `optional`: nullable means the field is present and null,
+   * optional means it may be absent.
+   */
+  readonly nullable: <TInput, TEncoded extends WireValue>(
+    codec: WireCodec<TInput, TEncoded>,
+  ) => WireCodec<TInput | null, TEncoded | null>;
   readonly optional: <TInput, TEncoded extends WireValue>(
     codec: WireCodec<TInput, TEncoded>,
   ) => WireCodec<TInput | undefined, TEncoded | undefined> & { readonly optional: true };
@@ -651,6 +662,8 @@ export const wire: WireNamespace = {
   regexp: regexpCodec,
   url: urlCodec,
   null: nullCodec,
+  nullable: <TInput, TEncoded extends WireValue>(codec: WireCodec<TInput, TEncoded>) =>
+    union([codec, nullCodec]) as WireCodec<TInput | null, TEncoded | null>,
   integer,
   literal,
   array,
