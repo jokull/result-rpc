@@ -40,8 +40,10 @@ The current behaviour contradicts the library's own first pillar.
       `error: null` rather than `undefined`, and `fetchFailureReason` holds the
       same instance — a retry detail about one attempt, dropped rather than
       translated.
-- [ ] Document the rule in the RSC guide, replacing the workaround this
-      currently forces adopters into.
+- [x] Documented in the RSC guide as "Declared failures hydrate; transport
+      failures do not", derived from the first pillar. `concepts/react.md`
+      carried the same stale "failed queries are not dehydrated" claim and is
+      corrected too.
 
 ## P0 — `mutate()` must not reject
 
@@ -67,12 +69,13 @@ established and adopters already know.
 - [x] Call sites updated across examples and tests. The `void x.mutate(…)
 .catch(() => undefined)` incantation in 07-tracker and 08-bookings is
       gone, which was the point.
-- [ ] **Docs not yet updated.** `concepts/entities.md:30` still shows
-      `void assign.mutate({…})`; `concepts/mutations.md` and
-      `concepts/shells.md` await the result and need `mutateAsync`. The docs
-      typechecker only compiles blocks that import `result-rpc`, and these are
-      fragments, so it will not catch them — they must be found by reading.
-- [ ] Release notes: this is breaking. `mutate()` no longer returns a Result.
+- [x] Docs updated by reading, since the docs typechecker only compiles
+      blocks that import `result-rpc` and every one of these was a fragment:
+      `entities.md`, `mutations.md`, `shells.md`, `forms.md`,
+      `sharp-edges.md`, the ARCHITECTURE projection table, and their README
+      mirrors. A new "`mutate` or `mutateAsync`" section states the rule.
+- [x] `CHANGELOG.md` added (there was none) with a migration diff, and
+      shipped in `files`. Tooling for it is an open question, below.
 
 ## P1 — `$satisfies` should not fail on `readonly`
 
@@ -118,7 +121,9 @@ Reported as: `wire.union([X, wire.null])` written constantly. Confirmed absent.
 - [x] `wire.nullable(codec)` with the encoding of the union it replaces —
       pinned by a test asserting the same `kind`, so the contract digest cannot
       move.
-- [ ] Use it in the docs where the union spelling appears.
+- [x] Documented in `concepts/wire.md` and adopted in `layers.md` and
+      `model-sources.md`. The genuine union in `errors.md` — an author view or
+      an `unavailable` marker — is left alone; it is not nullability.
 
 ## Not doing
 
@@ -131,6 +136,16 @@ Reported as: `wire.union([X, wire.null])` written constantly. Confirmed absent.
   describing it as exactly what it is.
 - **Mutable decode shapes.** `readonly` output is correct and stays. P1 removes
   the place it caused a false failure, which was the actual complaint.
+
+## Open — changelog tooling
+
+`CHANGELOG.md` is hand-written and the release flow is a signed tag plus
+`pnpm verify:release`. That works for one package with one author; it does not
+survive a second contributor, because the person who knows what broke is not
+the person cutting the release. Candidate: Changesets — intent captured in a
+file at PR time, prerelease mode matching the `next` dist-tag flow already in
+`RELEASING.md`, no conventional-commit requirement (these commit messages are
+prose and should stay that way).
 
 ## Follow-up, not blocking
 
