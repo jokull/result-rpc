@@ -938,6 +938,15 @@ export const createQueryRuntime = <TClient>(
   // queries) it was the dominant cost of a patch.
   let suppressReindex = 0;
 
+  /**
+   * Queries holding a confirmed entity write that no authoritative fetch has
+   * reconciled yet. `dataUpdatedAt` cannot carry this: a patch deliberately
+   * leaves it alone so staleness is not laundered, which also means a patched
+   * query looks older than it is to anything comparing timestamps — hydration
+   * above all.
+   */
+  const unreconciledLocalWrites = new Set<string>();
+
   queryClient.getQueryCache().subscribe((event) => {
     if (event.type === "added") reindexQuery(event.query);
     else if (event.type === "updated") {
@@ -945,7 +954,13 @@ export const createQueryRuntime = <TClient>(
       // Only data-bearing updates can change entity membership; fetchStatus
       // flips, invalidation marks, and errors would re-walk unchanged data.
       const action = "action" in event ? event.action : undefined;
-      if (action?.type === "success") reindexQuery(event.query);
+      if (action?.type === "success") {
+        // Authoritative data replaced the local write, so the ledger entry has
+        // served its purpose. Patches never reach here — they raise
+        // `suppressReindex` above — so this only sees real results.
+        unreconciledLocalWrites.delete(event.query.queryHash);
+        reindexQuery(event.query);
+      }
     } else if (event.type === "removed") dropQueryFromIndex(event.query.queryHash);
   });
 
@@ -986,6 +1001,7 @@ export const createQueryRuntime = <TClient>(
     } finally {
       suppressReindex -= 1;
     }
+    if (query) unreconciledLocalWrites.add(query.queryHash);
     if (wasInvalidated) query?.invalidate();
     return true;
   };
@@ -1835,6 +1851,24 @@ export const createQueryRuntime = <TClient>(
       if (!decoded.ok || decoded.value === null || typeof decoded.value !== "object") {
         throw new TypeError("Invalid result-rpc query cache payload");
       }
+      // Snapshot every query holding an unreconciled local write before the
+      // merge. Comparing the payload's timestamps against ours is not an
+      // option — they come from different clocks — so the rule is decided on
+      // provenance instead: a confirmed write outranks a snapshot, and the
+      // disagreement is settled by a refetch rather than by guessing.
+      const pendingLocalWrites = new Map<
+        string,
+        { readonly key: readonly unknown[]; readonly data: unknown; readonly updatedAt: number }
+      >();
+      for (const hash of unreconciledLocalWrites) {
+        const query = queryClient.getQueryCache().get(hash);
+        if (query?.state.status !== "success" || query.state.data === undefined) continue;
+        pendingLocalWrites.set(hash, {
+          key: query.queryKey,
+          data: query.state.data,
+          updatedAt: query.state.dataUpdatedAt,
+        });
+      }
       hydrateQueryClient(queryClient, decoded.value);
       // Normalize every hydrated query through its output codec NOW, not at
       // observe time: decode re-brands the entities, the share pass carries
@@ -1878,6 +1912,21 @@ export const createQueryRuntime = <TClient>(
             if (wasInvalidated) query.invalidate();
           }
         }
+      }
+      for (const [hash, saved] of pendingLocalWrites) {
+        const query = queryClient.getQueryCache().get(hash);
+        if (!query || query.state.data === saved.data) continue;
+        // The payload disagreed with a confirmed write. Keep the write visible
+        // and mark the query for reconciliation: showing the older snapshot
+        // under staleTime would strand it with no path back to the truth.
+        suppressReindex += 1;
+        try {
+          queryClient.setQueryData(saved.key, saved.data, { updatedAt: saved.updatedAt });
+        } finally {
+          suppressReindex -= 1;
+        }
+        unreconciledLocalWrites.add(hash);
+        query.invalidate();
       }
     },
     clear: () => {
