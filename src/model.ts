@@ -203,25 +203,25 @@ export type PrintModelType<T> = [T] extends [never]
   ? "never"
   : unknown extends T
     ? "an unspecified type"
-    : PrintKnownModelType<T>;
-
-type PrintKnownModelType<T> = [null] extends [T]
-  ? `${PrintModelType<Exclude<T, null>>} | null`
-  : [undefined] extends [T]
-    ? `${PrintModelType<Exclude<T, undefined>>} | undefined`
-    : [T] extends [string]
-      ? "string"
-      : [T] extends [number]
-        ? "number"
-        : [T] extends [boolean]
-          ? "boolean"
-          : [T] extends [bigint]
-            ? "bigint"
-            : [T] extends [Date]
-              ? "Date"
-              : [T] extends [readonly (infer TItem)[]]
-                ? `${PrintModelType<TItem>}[]`
-                : "a different type";
+    : [T] extends [null]
+      ? "null"
+      : [null] extends [T]
+        ? `${PrintModelType<Exclude<T, null>>} | null`
+        : [undefined] extends [T]
+          ? `${PrintModelType<Exclude<T, undefined>>} | undefined`
+          : [T] extends [string]
+            ? "string"
+            : [T] extends [number]
+              ? "number"
+              : [T] extends [boolean]
+                ? "boolean"
+                : [T] extends [bigint]
+                  ? "bigint"
+                  : [T] extends [Date]
+                    ? "Date"
+                    : [T] extends [readonly (infer TItem)[]]
+                      ? `${PrintModelType<TItem>}[]`
+                      : "a different type";
 
 /** One line per failing field, naming it and both sides. */
 export type SourceFieldMessage<

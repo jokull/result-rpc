@@ -598,15 +598,15 @@ export interface LayerShellProviderProps {
 export type MaybePromise<T> = T | Promise<T>;
 
 // @public (undocumented)
-export type MismatchedSourceFields<TModel extends object, TSource extends object> = {
-    [TKey in keyof TModel]: TKey extends keyof TSource ? ModelTypeEqual<TModel[TKey], TSource[TKey]> extends true ? never : TKey : TKey;
+export type MismatchedSourceFields<TModel extends object, TSource> = {
+    [TKey in keyof TModel]: TKey extends keyof TSource ? ModelTypeCompatible<TModel[TKey], TSource[TKey]> extends true ? never : TKey : TKey;
 }[keyof TModel];
 
 // @public (undocumented)
 export interface ModelDefinition<TName extends string = string, TShape extends CodecShape = CodecShape, TKey extends ShapeKeySpec<TShape> = ShapeKeySpec<TShape>> extends AnyModel {
     // (undocumented)
     readonly $model: true;
-    $satisfies<TSource extends object>(...mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource> extends never ? [] : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]): ModelDefinition<TName, TShape, TKey>;
+    $satisfies<TSource extends object>(...mismatch: [MismatchedSourceFields<ShapeInput<TShape>, TSource>] extends [never] ? [] : [mismatch: ModelSourceMismatch<ShapeInput<TShape>, TSource>]): ModelDefinition<TName, TShape, TKey>;
     all(reason: string): WireCodec<ShapeInput<TShape>, WireValue>;
     readonly key: TKey;
     readonly keyFields: readonly KeyField<TKey>[];
@@ -632,16 +632,22 @@ export type ModelKeyRecord<TModel extends AnyModel> = Readonly<{
 // @public
 export type ModelProjection<TModel extends AnyModel> = Readonly<Pick<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>> & Partial<Omit<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>>>>;
 
-// @public (undocumented)
-export type ModelSourceMismatch<TModel extends object, TSource extends object> = MismatchedSourceFields<TModel, TSource> extends never ? never : {
-    readonly "Model fields missing or incompatible in source": MismatchedSourceFields<TModel, TSource>;
-};
+// @public
+export type ModelSourceMismatch<TModel extends object, TSource> = SourceFieldMessage<TModel, TSource, MismatchedSourceFields<TModel, TSource> & string>;
+
+// @public
+export type ModelTypeCompatible<TLeft, TRight> = ModelTypeEqual<TLeft, TRight> extends true ? true : ModelTypeEqual<MutableModelType<TLeft>, MutableModelType<TRight>>;
 
 // @public (undocumented)
 export type ModelTypeEqual<TLeft, TRight> = (<T>() => T extends TLeft ? 1 : 2) extends <T>() => (T extends TRight ? 1 : 2) ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => (T extends TLeft ? 1 : 2) ? true : false : false;
 
 // @public (undocumented)
 export type ModelValue<TModel extends AnyModel> = TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
+
+// @public
+export type MutableModelType<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer TItem)[] ? MutableModelType<TItem>[] : T extends object ? {
+    -readonly [TKey in keyof T]: MutableModelType<T[TKey]>;
+} : T;
 
 // @public (undocumented)
 export interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
@@ -816,6 +822,9 @@ export interface PaginationManifest {
 
 // @public
 export const prefetchLayer: <TShell extends AnyLayerShell>(runtime: QueryRuntime<LayerShellClient<TShell>>, shell: TShell, client: LayerShellClient<TShell>) => Promise<ProcedureClientResult<LayerShellProcedure<TShell>>>;
+
+// @public
+export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
 
 // @public (undocumented)
 export type ProcedureCapability = UnaryProcedureCapability<boolean> | PaginatedProcedureCapability<unknown, unknown, unknown, boolean>;
@@ -1228,6 +1237,9 @@ export type ShellProviderOption<TProps, TValue> = {
 } | ([TValue] extends [void] ? {
     readonly provide?: never;
 } : never);
+
+// @public
+export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}` : `field '${TKey}' is missing from the source`;
 
 // @public (undocumented)
 export type SpecificModelKeyInput<TModel extends AnyModel, TKey = TModel["key"]> = TKey extends readonly string[] ? ModelKeyRecord<TModel> : TKey extends keyof ModelValue<TModel> ? Extract<ModelValue<TModel>[TKey], string | number> | ModelKeyRecord<TModel> : never;

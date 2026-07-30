@@ -1114,11 +1114,19 @@ export type ModelProjection<TModel extends AnyModel> = Readonly<Pick<ModelValue<
 // @public
 export type ModelSourceMismatch<TModel extends object, TSource> = SourceFieldMessage<TModel, TSource, MismatchedSourceFields<TModel, TSource> & string>;
 
+// @public
+export type ModelTypeCompatible<TLeft, TRight> = ModelTypeEqual<TLeft, TRight> extends true ? true : ModelTypeEqual<MutableModelType<TLeft>, MutableModelType<TRight>>;
+
 // @public (undocumented)
 export type ModelTypeEqual<TLeft, TRight> = (<T>() => T extends TLeft ? 1 : 2) extends <T>() => (T extends TRight ? 1 : 2) ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => (T extends TLeft ? 1 : 2) ? true : false : false;
 
 // @public (undocumented)
 export type ModelValue<TModel extends AnyModel> = TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
+
+// @public
+export type MutableModelType<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer TItem)[] ? MutableModelType<TItem>[] : T extends object ? {
+    -readonly [TKey in keyof T]: MutableModelType<T[TKey]>;
+} : T;
 
 // @public (undocumented)
 export type NamespacedErrors<TNamespace extends string, TSpecs extends Readonly<Record<string, AnyErrorSpec>>> = {
@@ -1204,6 +1212,9 @@ export interface PendingWritesEntry<TInput> {
 
 // @public
 export const pickErrors: <const TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>, const TKeys extends readonly (keyof TDefinitions & string)[]>(definitions: TDefinitions, ...keys: TKeys) => Pick<TDefinitions, TKeys[number]>;
+
+// @public
+export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
 
 // @public (undocumented)
 export interface Procedure<TTypes extends AnyProcedureTypes> extends ProcedureTypeCarrier<TTypes> {
@@ -1711,6 +1722,9 @@ export type ShapeInput<TShape extends CodecShape> = keyof TShape extends never ?
 
 // @public (undocumented)
 export type ShapeKeySpec<TShape extends CodecShape> = (keyof TShape & string) | readonly (keyof TShape & string)[];
+
+// @public
+export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}` : `field '${TKey}' is missing from the source`;
 
 // @public (undocumented)
 export type SpecData<TSpec> = TSpec extends {
