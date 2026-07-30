@@ -71,7 +71,7 @@ describe("attack-03 unbranded copies", () => {
 
     // Mutation succeeds and returns the fresh User entity...
     const mutation = runtime.mutation(client.setAvatar);
-    const result = await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    const result = await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
     expect(result.ok).toBe(true);
     await sleep(20);
 
@@ -96,7 +96,7 @@ describe("attack-03 unbranded copies", () => {
     await waitFor(header, (s) => s.state === "success");
 
     const mutation = runtime.mutation(client.setAvatar);
-    await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
     await sleep(20);
 
     const state = header.getCurrentState();

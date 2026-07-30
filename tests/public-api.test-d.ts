@@ -914,7 +914,7 @@ export type _ShellMutationStateSubtractsClaimedTags = Assert<
   Equal<ShellMutationError, ReturnType<typeof Missing>>
 >;
 type ShellMutationResultError = Extract<
-  Awaited<ReturnType<typeof shellMutation.mutate>>,
+  Awaited<ReturnType<typeof shellMutation.mutateAsync>>,
   { readonly ok: false }
 >["error"];
 export type _ShellMutationPromiseSubtractsClaimedTags = Assert<

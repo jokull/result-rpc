@@ -670,8 +670,8 @@ export type MutableModelType<T> = T extends (...args: never[]) => unknown ? T : 
 export interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
     // (undocumented)
     readonly cancel: () => void;
-    // (undocumented)
-    readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+    readonly mutate: (input: TInput) => void;
+    readonly mutateAsync: (input: TInput) => Promise<Result<TOutput, TError>>;
     // (undocumented)
     readonly reset: () => void;
     // (undocumented)
@@ -1131,8 +1131,9 @@ export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTagge
     readonly destroy: () => void;
     // (undocumented)
     readonly getCurrentState: () => MutationState<TInput, TOutput, TError>;
+    readonly mutate: (input: TInput) => void;
     // (undocumented)
-    readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+    readonly mutateAsync: (input: TInput) => Promise<Result<TOutput, TError>>;
     // (undocumented)
     readonly reset: () => void;
     // (undocumented)

@@ -291,7 +291,7 @@ describe("entity coherence oracle", () => {
           const mutation = runtime.mutation(client.user.rename);
           const outcome = await mutation
             .getCurrentState()
-            .mutate({ id: pick([...db.users.keys()]), name: `name-${step}` });
+            .mutateAsync({ id: pick([...db.users.keys()]), name: `name-${step}` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -303,7 +303,7 @@ describe("entity coherence oracle", () => {
           const mutation = runtime.mutation(client.user.setAvatar);
           const outcome = await mutation
             .getCurrentState()
-            .mutate({ id: pick([...db.users.keys()]), avatarUrl: `v${step}.png` });
+            .mutateAsync({ id: pick([...db.users.keys()]), avatarUrl: `v${step}.png` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -314,7 +314,7 @@ describe("entity coherence oracle", () => {
           const mutation = runtime.mutation(client.docs.rename);
           const outcome = await mutation
             .getCurrentState()
-            .mutate({ id: pick([...db.docs.keys()]), title: `title-${step}` });
+            .mutateAsync({ id: pick([...db.docs.keys()]), title: `title-${step}` });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -325,7 +325,7 @@ describe("entity coherence oracle", () => {
           const mutation = runtime.mutation(client.docs.archive);
           const outcome = await mutation
             .getCurrentState()
-            .mutate({ id: pick([...db.docs.keys()]) });
+            .mutateAsync({ id: pick([...db.docs.keys()]) });
           expect(outcome.ok).toBe(true);
           mutation.destroy();
           await settle();
@@ -333,7 +333,7 @@ describe("entity coherence oracle", () => {
         } else if (roll < 0.88) {
           const mutation = runtime.mutation(client.docs.create);
           created += 1;
-          const outcome = await mutation.getCurrentState().mutate({
+          const outcome = await mutation.getCurrentState().mutateAsync({
             id: `dn${created}`,
             title: `created-${created}`,
             ownerId: pick([...db.users.keys()]),

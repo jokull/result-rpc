@@ -61,9 +61,9 @@ describe("attack-06 out-of-order mutation responses", () => {
 
     const mutA = runtime.mutation(client.setName);
     const mutB = runtime.mutation(client.setName);
-    const a = mutA.getCurrentState().mutate({ name: "A", delayMs: 80 });
+    const a = mutA.getCurrentState().mutateAsync({ name: "A", delayMs: 80 });
     await sleep(10); // ensure server order A then B
-    const b = mutB.getCurrentState().mutate({ name: "B", delayMs: 0 });
+    const b = mutB.getCurrentState().mutateAsync({ name: "B", delayMs: 0 });
     await Promise.all([a, b]);
     await sleep(30);
 

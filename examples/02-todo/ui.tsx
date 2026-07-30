@@ -117,7 +117,7 @@ function TodoRow({
         <input
           type="checkbox"
           checked={done}
-          onChange={() => void toggle.mutate({ id }).catch(() => undefined)}
+          onChange={() => void toggle.mutateAsync({ id }).catch(() => undefined)}
         />
         {title}
       </label>
@@ -136,7 +136,7 @@ export function AddTodo({ client }: { client: TodoClient }) {
   const add = StaleShell.useMutation(client.add);
 
   async function submit(title: string) {
-    const result = await add.mutate({ title });
+    const result = await add.mutateAsync({ title });
     if (result.ok) return;
     // domain-only union: TitleTaken | ListFull
     console.warn(catalog(result.error));

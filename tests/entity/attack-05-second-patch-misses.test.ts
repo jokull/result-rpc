@@ -66,7 +66,7 @@ describe("attack-05 repeated patches", () => {
     await waitFor(header, (s) => s.state === "success");
 
     const mutation = runtime.mutation(client.setAvatar);
-    await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
     await sleep(20);
     const afterFirst = header.getCurrentState();
     if (afterFirst.state !== "success") throw new Error("unreachable");
@@ -76,7 +76,7 @@ describe("attack-05 repeated patches", () => {
     const cached = runtime.cache.get(client.me, {});
     const stillBranded = collectEntities([cached]).length;
 
-    await mutation.getCurrentState().mutate({ avatarUrl: "v3.png" });
+    await mutation.getCurrentState().mutateAsync({ avatarUrl: "v3.png" });
     await sleep(20);
     const afterSecond = header.getCurrentState();
     if (afterSecond.state !== "success") throw new Error("unreachable");

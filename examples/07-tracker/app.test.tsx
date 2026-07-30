@@ -419,9 +419,11 @@ test("codec-rejected input on the same-version client is a caller bug: mutate re
       <div>
         <button
           onClick={() =>
-            void create.mutate({ id: "x", projectId: "proj-main", title: "no" }).catch((reason) => {
-              rejections.push(reason);
-            })
+            void create
+              .mutateAsync({ id: "x", projectId: "proj-main", title: "no" })
+              .catch((reason) => {
+                rejections.push(reason);
+              })
           }
         >
           Force invalid
@@ -478,7 +480,7 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
     const [fields, setFields] = useState<Record<string, readonly string[]>>({});
     const create = useResultMutation(looseClient.issues.create);
     async function submit() {
-      const result = await create.mutate({ id: "iss_stale", title: "no" });
+      const result = await create.mutateAsync({ id: "iss_stale", title: "no" });
       if (!result.ok && result.error._tag === "server/bad-request") {
         setFields(fieldIssues(result.error));
       }

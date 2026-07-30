@@ -105,7 +105,7 @@ export function NoteEditor({ orderId }: { orderId: string }) {
         event.preventDefault();
         // claimed/cancelled rejections are control flow — the owning shell
         // already reacted; there is nothing to handle here.
-        void setNoteMutation.mutate({ id: orderId, note }).catch(() => undefined);
+        void setNoteMutation.mutateAsync({ id: orderId, note }).catch(() => undefined);
       }}
     >
       <label>
@@ -146,7 +146,9 @@ export function HotelDesk({ hotelId }: { hotelId: string }) {
           </p>
           <button
             onClick={() =>
-              void updatePhone.mutate({ id: hotelId, phone: "+81-3-9999" }).catch(() => undefined)
+              void updatePhone
+                .mutateAsync({ id: hotelId, phone: "+81-3-9999" })
+                .catch(() => undefined)
             }
           >
             Update Okura phone
@@ -262,7 +264,7 @@ export function TopReviewerCard({ userId }: { userId: string }) {
           <p>Top reviewer: {user.value.name}</p>
           <button
             onClick={() =>
-              void rename.mutate({ id: userId, name: "Kenji M." }).catch(() => undefined)
+              void rename.mutateAsync({ id: userId, name: "Kenji M." }).catch(() => undefined)
             }
           >
             Shorten Kenji's name
@@ -290,8 +292,9 @@ export function AddReviewForm({ hotelId }: { hotelId: string }) {
     <form
       onSubmit={(event) => {
         event.preventDefault();
+        // Awaited, because the outcome decides whether to clear the field.
         void addReview
-          .mutate({ hotelId, rating: Number(rating), body })
+          .mutateAsync({ hotelId, rating: Number(rating), body })
           .then((result) => {
             if (result.ok) setBody("");
           })
@@ -398,7 +401,7 @@ export function RenameTourForm({ id, locale }: { id: string; locale: Locale }) {
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void rename.mutate({ id, locale, title }).catch(() => undefined);
+        void rename.mutateAsync({ id, locale, title }).catch(() => undefined);
       }}
     >
       <label>
@@ -425,7 +428,7 @@ export function RetireTourButton({ id }: { id: string }) {
   const client = useResultClient();
   const retire = StaleShell.useMutation(client.tours.retire);
   return (
-    <button onClick={() => void retire.mutate({ id }).catch(() => undefined)}>
+    <button onClick={() => void retire.mutateAsync({ id }).catch(() => undefined)}>
       Retire the Fuji tour
     </button>
   );
@@ -485,13 +488,7 @@ export function NextDeparture() {
           ) : (
             <p>No upcoming departures.</p>
           )}
-          <button
-            onClick={() =>
-              void reschedule
-                .mutate({ lineItemId: "li-2", date: "2026-07-30" })
-                .catch(() => undefined)
-            }
-          >
+          <button onClick={() => reschedule.mutate({ lineItemId: "li-2", date: "2026-07-30" })}>
             Move Clara's trip earlier
           </button>
           {reschedule.state === "failure" && (

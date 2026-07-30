@@ -64,7 +64,7 @@ export function ChargeForm({ client, shell }: { client: BillingClient; shell: Bi
       onSubmit={(event) => {
         event.preventDefault();
         const field = event.currentTarget.elements.namedItem("card") as HTMLInputElement;
-        void charge.mutate({ card: field.value }).catch(() => undefined);
+        void charge.mutateAsync({ card: field.value }).catch(() => undefined);
       }}
     >
       <input name="card" />

@@ -56,19 +56,23 @@ The intent — a caller's continuation must not run on an outcome a shell owns �
 stays. Only the delivery changes, to the split TanStack Query already
 established and adopters already know.
 
-- [ ] `mutate(input)` becomes fire-and-forget: never rejects. Outcomes are read
-      from hook state, which is where a fire-and-forget caller was always going
-      to read them.
-- [ ] `mutateAsync(input)` returns `Promise<Result<…>>` and rejects with the
-      `claimed` signal — the awaiting caller can handle it, which is the case
-      the rejection was designed for.
-- [ ] Every doc example that ignores the outcome moves to `mutate`; every one
-      that awaits moves to `mutateAsync`. The `void` disappears.
-- [ ] Regression: a claimed mutation under a mounted shell produces **no**
-      unhandled rejection through `mutate`, and still rejects through
-      `mutateAsync`.
-- [ ] Note the break in the release notes. It is breaking, it is a 0.x, and the
-      cost of carrying it grows with every adopter.
+- [x] `mutate(input)` is fire-and-forget: returns `void`, never rejects.
+- [x] `mutateAsync(input)` returns `Promise<Result<…>>` and rejects with the
+      `claimed` signal. `MutationControls` and `ResultMutationObserver` both
+      carry the pair, so the runtime and the hook agree.
+- [x] Regression (`src/react/mutate-rejection.test.tsx`): a claimed mutation
+      under a mounted shell raises no unhandled rejection through `mutate`, and
+      still rejects through `mutateAsync`. Verified by restoring the old
+      behaviour — both fail.
+- [x] Call sites updated across examples and tests. The `void x.mutate(…)
+.catch(() => undefined)` incantation in 07-tracker and 08-bookings is
+      gone, which was the point.
+- [ ] **Docs not yet updated.** `concepts/entities.md:30` still shows
+      `void assign.mutate({…})`; `concepts/mutations.md` and
+      `concepts/shells.md` await the result and need `mutateAsync`. The docs
+      typechecker only compiles blocks that import `result-rpc`, and these are
+      fragments, so it will not catch them — they must be found by reading.
+- [ ] Release notes: this is breaking. `mutate()` no longer returns a Result.
 
 ## P1 — `$satisfies` should not fail on `readonly`
 

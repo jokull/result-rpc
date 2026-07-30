@@ -61,7 +61,7 @@ describe("attack-11 double apply", () => {
     const before = requests;
 
     const mutation = runtime.mutation(client.setName);
-    await mutation.getCurrentState().mutate({ name: "new" });
+    await mutation.getCurrentState().mutateAsync({ name: "new" });
     await sleep(50);
 
     const state = header.getCurrentState();
@@ -122,7 +122,7 @@ describe("attack-11 double apply", () => {
     await waitFor(list, (s) => s.state === "success");
 
     const mutation = runtime.mutation(client.renameAndPurge);
-    await mutation.getCurrentState().mutate({ name: "new" });
+    await mutation.getCurrentState().mutateAsync({ name: "new" });
     await sleep(60);
 
     const state = list.getCurrentState();

@@ -420,7 +420,19 @@ export interface ResultPaginatedObserver<out TItem, out E extends AnyTaggedError
 
 export interface MutationControls<TInput, TOutput, TError extends AnyTaggedError> {
   readonly variables?: TInput;
-  readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+  /**
+   * Fire-and-forget. Never rejects, so an event handler can call it without a
+   * floating promise — the outcome is read from this state, which is where a
+   * caller that ignores the return value was always going to read it.
+   */
+  readonly mutate: (input: TInput) => void;
+  /**
+   * The awaited form, for a caller that continues on the outcome. Rejects with
+   * the `claimed` signal when a mounted shell owns the failure, so the
+   * continuation does not run on an outcome someone else has taken
+   * responsibility for.
+   */
+  readonly mutateAsync: (input: TInput) => Promise<Result<TOutput, TError>>;
   readonly cancel: () => void;
   readonly reset: () => void;
 }
@@ -537,7 +549,9 @@ export interface QueryCache {
 export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTaggedError> {
   readonly getCurrentState: () => MutationState<TInput, TOutput, TError>;
   readonly subscribe: (listener: () => void) => () => void;
-  readonly mutate: (input: TInput) => Promise<Result<TOutput, TError>>;
+  /** Fire-and-forget; the outcome is read from `getCurrentState()`. */
+  readonly mutate: (input: TInput) => void;
+  readonly mutateAsync: (input: TInput) => Promise<Result<TOutput, TError>>;
   readonly cancel: () => void;
   readonly reset: () => void;
   readonly destroy: () => void;
@@ -1600,7 +1614,7 @@ export const createQueryRuntime = <TClient>(
       );
 
       let cached: MutationState<TInput, TOutput, TError>;
-      const mutate = async (input: TInput): Promise<Result<TOutput, TError>> => {
+      const mutateAsync = async (input: TInput): Promise<Result<TOutput, TError>> => {
         activeController?.abort();
         activeController = new AbortController();
         try {
@@ -1624,7 +1638,11 @@ export const createQueryRuntime = <TClient>(
       ): MutationState<TInput, TOutput, TError> => {
         const controls = {
           ...(observed.variables === undefined ? {} : { variables: observed.variables }),
-          mutate,
+          // The runtime's own `mutate` resolves rather than rejects — claiming
+          // is a React concern — so the fire-and-forget form only has to drop
+          // the value. The React hook replaces both with claim-aware versions.
+          mutate: (input: TInput) => void mutateAsync(input),
+          mutateAsync,
           cancel,
           reset,
         };
@@ -1673,7 +1691,8 @@ export const createQueryRuntime = <TClient>(
             cached = projectMutation(observed);
             listener();
           }),
-        mutate,
+        mutate: (input: TInput) => void mutateAsync(input),
+        mutateAsync,
         cancel,
         reset,
         destroy: reset,

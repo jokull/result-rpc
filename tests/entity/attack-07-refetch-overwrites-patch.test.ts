@@ -64,7 +64,7 @@ describe("attack-07 stale refetch vs fresh patch", () => {
 
     // Mutation lands and patches while the refetch is still in flight.
     const mutation = runtime.mutation(client.setName);
-    await mutation.getCurrentState().mutate({ name: "new" });
+    await mutation.getCurrentState().mutateAsync({ name: "new" });
     await sleep(10);
     const mid = header.getCurrentState();
     if (mid.state !== "success") throw new Error("unreachable");

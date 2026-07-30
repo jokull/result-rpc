@@ -87,7 +87,7 @@ describe("attack-04 hydration", () => {
     expect(collectEntities([cached]).length).toBe(1); // MECHANISM ASSERTION
 
     const mutation = browser.mutation(client.setAvatar);
-    const result = await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    const result = await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
     expect(result.ok).toBe(true);
     await sleep(20);
 
@@ -124,7 +124,7 @@ describe("attack-04 hydration", () => {
 
     // A mutation fires before the profile page is visited.
     const mutation = browser.mutation(client.setAvatar);
-    const result = await mutation.getCurrentState().mutate({ avatarUrl: "v2.png" });
+    const result = await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
     expect(result.ok).toBe(true);
     await sleep(20);
 

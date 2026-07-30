@@ -169,7 +169,7 @@ describe("paginated query runtime", () => {
     const loaded = requestCount();
 
     const mutation = runtime.mutation(client.rename);
-    const result = await mutation.mutate({ id: "3", label: "THREE" });
+    const result = await mutation.mutateAsync({ id: "3", label: "THREE" });
     expect(result.ok).toBe(true);
 
     const state = await waitFor(

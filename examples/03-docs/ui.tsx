@@ -120,7 +120,9 @@ export function AvatarForm() {
   const client = useResultClient();
   const setAvatar = ViewerShell.useMutation(client.auth.setAvatar);
   return (
-    <button onClick={() => void setAvatar.mutate({ avatarUrl: "v2.png" }).catch(() => undefined)}>
+    <button
+      onClick={() => void setAvatar.mutateAsync({ avatarUrl: "v2.png" }).catch(() => undefined)}
+    >
       Update avatar
     </button>
   );
@@ -164,7 +166,7 @@ export function DocPage({ docId }: { docId: string }) {
               event.preventDefault();
               const field = event.currentTarget.elements.namedItem("title") as HTMLInputElement;
               // claimed/cancelled rejections are control flow, not outcomes
-              void rename.mutate({ id: docId, title: field.value }).catch(() => undefined);
+              void rename.mutateAsync({ id: docId, title: field.value }).catch(() => undefined);
             }}
           >
             <input name="title" defaultValue={doc.value.title} />

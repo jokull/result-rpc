@@ -77,9 +77,9 @@ describe("attack-13 concurrent optimistic mutations on one entity", () => {
       }),
     });
 
-    const a = mutA.getCurrentState().mutate({ name: "renamed", delayMs: 80 });
+    const a = mutA.getCurrentState().mutateAsync({ name: "renamed", delayMs: 80 });
     await sleep(10); // server processes A first
-    const b = mutB.getCurrentState().mutate({});
+    const b = mutB.getCurrentState().mutateAsync({});
     await Promise.all([a, b]);
     // A's authoritative snapshot (name: renamed, starred: FALSE) arrived last.
     await sleep(120);

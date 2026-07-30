@@ -329,7 +329,7 @@ describe("boundaryShells", () => {
 
     let net: { status: string; held: number } | undefined;
     let mutationState:
-      | { mutate: (input: { note: string }) => Promise<unknown>; state: string }
+      | { mutateAsync: (input: { note: string }) => Promise<unknown>; state: string }
       | undefined;
     function Probe() {
       mutationState = TransportShell.useMutation(client.save, { retry: false }) as never;
@@ -351,7 +351,7 @@ describe("boundaryShells", () => {
         await settle();
       });
       await act(async () => {
-        await mutationState!.mutate({ note: "while offline" }).catch(() => undefined);
+        await mutationState!.mutateAsync({ note: "while offline" }).catch(() => undefined);
         await settle();
       });
       // claimed and held: projects idle, banner shows degraded with one waiting

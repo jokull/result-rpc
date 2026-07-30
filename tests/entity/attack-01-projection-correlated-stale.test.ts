@@ -71,7 +71,7 @@ describe("attack-01 projection merge", () => {
     await waitFor(list, (s) => s.state === "success");
 
     const close = runtime.mutation(client.close);
-    const result = await close.getCurrentState().mutate({ id: "t1" });
+    const result = await close.getCurrentState().mutateAsync({ id: "t1" });
     expect(result.ok).toBe(true);
     await sleep(20);
 
@@ -101,7 +101,7 @@ describe("attack-01 projection merge", () => {
     await waitFor(list, (s) => s.state === "success");
 
     const close = runtime.mutation(client.close);
-    await close.getCurrentState().mutate({ id: "t1" });
+    await close.getCurrentState().mutateAsync({ id: "t1" });
     await sleep(20);
 
     const state = list.getCurrentState();

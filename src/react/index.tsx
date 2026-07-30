@@ -867,10 +867,10 @@ export const useResultMutation = <
   const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const [mutate] = useState(() => async (input: ProcedureClientInput<TProcedureClient>) => {
-    const result = await stateRef.current.mutate(input);
-    // The caller's continuation must not run on an outcome an enclosing shell
-    // owns. Cancellation semantics, but a distinguishable signal: "you
+  const [mutateAsync] = useState(() => async (input: ProcedureClientInput<TProcedureClient>) => {
+    const result = await stateRef.current.mutateAsync(input);
+    // An awaiting caller's continuation must not run on an outcome an enclosing
+    // shell owns. Cancellation semantics, but a distinguishable signal: "you
     // cancelled" and "a shell owns this outcome" are different events.
     if (!result.ok) {
       const tag = result.error._tag;
@@ -879,15 +879,24 @@ export const useResultMutation = <
     }
     return result;
   });
+  // Fire-and-forget, so there is no promise for a caller to leave unhandled.
+  // A claimed failure is the shell's to react to and this state's to report;
+  // rejecting here would make `onClick={() => m.mutateAsync(...)}` — the shape every
+  // example uses — an unhandled rejection the moment anything claims.
+  const [mutate] = useState(
+    () => (input: ProcedureClientInput<TProcedureClient>) =>
+      void mutateAsync(input).catch(() => undefined),
+  );
   // On shell resume a held mutation RESETS instead of replaying: the failure
   // was already delivered to the caller as the claimed rejection, and firing
   // a side effect again is never the shell's call. Resetting ends the pause
   // arc so holdings (and the connection banner) drain on reconnect.
   const claim = useAmbientClaim(claimObserver, state.state === "failure" ? state.error : undefined);
-  if (!claim) return { ...state, mutate };
+  if (!claim) return { ...state, mutate, mutateAsync };
   return {
     ...(state.variables === undefined ? {} : { variables: state.variables }),
     mutate,
+    mutateAsync,
     cancel: state.cancel,
     reset: state.reset,
     state: "idle" as const,

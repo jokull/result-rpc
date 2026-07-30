@@ -106,7 +106,7 @@ describe("attack-12 subscriptions vs entity index", () => {
     });
 
     const mutation = runtime.mutation(client.setName);
-    await mutation.getCurrentState().mutate({ name: "mutated" });
+    await mutation.getCurrentState().mutateAsync({ name: "mutated" });
     await sleep(20);
 
     const result = live.getCurrentState().result;

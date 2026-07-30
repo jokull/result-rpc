@@ -171,11 +171,7 @@ export function AssignControls({ issue }: { issue: IssueView }) {
             <select
               value={issue.assigneeId ?? ""}
               onChange={(event) =>
-                // claimed/cancelled rejections are control flow — the
-                // owning shell already reacted; there is nothing to handle.
-                void assign
-                  .mutate({ issueId: issue.id, assigneeId: event.target.value })
-                  .catch(() => undefined)
+                assign.mutate({ issueId: issue.id, assigneeId: event.target.value })
               }
             >
               <option value="" disabled>
@@ -201,7 +197,7 @@ export function CloseButton({ issueId }: { issueId: string }) {
     <div>
       {/* claimed/cancelled rejections are control flow — the owning shell
           already reacted; there is nothing to handle. */}
-      <button onClick={() => void close.mutate({ issueId }).catch(() => undefined)}>
+      <button onClick={() => void close.mutateAsync({ issueId }).catch(() => undefined)}>
         Close issue
       </button>
       {close.state === "failure" && (
@@ -333,7 +329,7 @@ export function NewIssueForm({ projectId }: { projectId: string }) {
     }
     setFieldErrors({});
     try {
-      const result = await create.mutate(validated.value);
+      const result = await create.mutateAsync(validated.value);
       if (result.ok) setTitle("");
     } catch {
       // claimed/cancelled are control flow: the owning shell already reacted

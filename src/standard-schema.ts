@@ -63,7 +63,7 @@ export type StandardValidation<Output> =
  * ```ts
  * const validated = validateStandard(createIssueSchema, { id, title })
  * if (!validated.ok) return setFieldErrors(validated.fields)
- * await create.mutate(validated.value)
+ * await create.mutateAsync(validated.value)
  * ```
  *
  * Throws on async schemas — validation that suspends cannot run during a

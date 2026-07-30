@@ -218,7 +218,7 @@ describe("RSC hydration boundary", () => {
     function Detail() {
       const q = useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
       const m = useResultMutation(world.client.rename);
-      renameFn = (input) => void m.mutate(input);
+      renameFn = (input) => void m.mutateAsync(input);
       if (q.state === "success") names.push((q.value as { name: string }).name);
       return createElement("span", null, q.state);
     }

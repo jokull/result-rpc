@@ -220,7 +220,7 @@ describe("React bindings", () => {
     });
     expect(queryState?.state).toBe("success");
     await act(async () => {
-      await mutationState!.mutate({ title: "renamed" });
+      await mutationState!.mutateAsync({ title: "renamed" });
     });
     expect(mutationState?.state).toBe("success");
     expect(mutationState?.value).toBe("renamed");
@@ -274,7 +274,7 @@ describe("React bindings", () => {
     });
     let rejection: unknown;
     await act(async () => {
-      await mutationState!.mutate({ title: "expired" }).catch((reason: unknown) => {
+      await mutationState!.mutateAsync({ title: "expired" }).catch((reason: unknown) => {
         rejection = reason;
       });
       await settle();
@@ -332,7 +332,7 @@ describe("React bindings", () => {
     });
     let rejection: unknown;
     await act(async () => {
-      await mutationState!.mutate({ title: "expired" }).catch((reason: unknown) => {
+      await mutationState!.mutateAsync({ title: "expired" }).catch((reason: unknown) => {
         rejection = reason;
       });
       await settle();
@@ -383,7 +383,7 @@ describe("React bindings", () => {
     });
     let result: Result<string, ResidualRenameFailure> | undefined;
     await act(async () => {
-      result = await mutationState!.mutate({ title: "conflict" });
+      result = await mutationState!.mutateAsync({ title: "conflict" });
       await settle();
     });
     expect(result?.ok).toBe(false);
@@ -451,7 +451,7 @@ describe("React bindings", () => {
       let outcome: Result<string, RenameFailure> | undefined;
       let rejection: unknown;
       await act(async () => {
-        await mutationState!.mutate({ title }).then(
+        await mutationState!.mutateAsync({ title }).then(
           (result) => {
             outcome = result;
           },
@@ -596,7 +596,7 @@ describe("React bindings", () => {
         });
         let rejection: unknown;
         await act(async () => {
-          await mutationState!.mutate({ title: "expired" }).catch((reason: unknown) => {
+          await mutationState!.mutateAsync({ title: "expired" }).catch((reason: unknown) => {
             rejection = reason;
           });
           await settle();
@@ -693,7 +693,7 @@ describe("React bindings", () => {
       await settle();
     });
     await act(async () => {
-      await mutationState!.mutate({ title: "renamed" });
+      await mutationState!.mutateAsync({ title: "renamed" });
       await settle();
     });
     expect(successCalls).toEqual(["gen-2"]);
@@ -933,7 +933,7 @@ describe("React bindings", () => {
     let rejection: unknown;
     await act(async () => {
       // Input the client's own codec rejects — never reaches the wire.
-      await mutationState!.mutate({ wrong: true } as never).catch((reason: unknown) => {
+      await mutationState!.mutateAsync({ wrong: true } as never).catch((reason: unknown) => {
         rejection = reason;
       });
       await settle();
