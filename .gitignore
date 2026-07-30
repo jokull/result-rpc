@@ -6,5 +6,5 @@ dist/
 website/dist/
 /temp/
 WAVES.md
+PLAN.md
 src/**/*.d.ts
-!PLAN.md
