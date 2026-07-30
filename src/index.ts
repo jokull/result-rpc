@@ -219,6 +219,7 @@ export type {
   WithProcedureInput,
   WithProcedureKinds,
   WithProcedureMappedInput,
+  WithProcedureMiddleware,
   WithProcedureOutput,
   WritesEntry,
 } from "./server/contract.js";

@@ -1394,7 +1394,7 @@ export class ProcedureBuilder<TTypes extends AnyProcedureTypes> {
     // (undocumented)
     subscription(this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "subscription">): ProcedureContract<ContractProcedureTypes<TTypes["rootContext"], TTypes["input"], TTypes["output"], TTypes["definitions"], "subscription", UnaryProcedureCapability<TTypes["writesHeaders"]>>>;
     // (undocumented)
-    use<TMiddlewareTypes extends AnyMiddlewareTypes>(middleware: Middleware<TMiddlewareTypes> & MiddlewareContextCompatibility<TTypes["context"], TMiddlewareTypes["inputContext"]> & DefinitionSourcesCompatibility<TTypes["definitions"], NoInfer<TMiddlewareTypes["definitionSources"]>>): ProcedureBuilder<WithProcedureContext<TTypes, TMiddlewareTypes["outputContext"], MergeDefinitionMaps<TTypes["definitions"], MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>>, UnaryProcedureCapability<BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>>>>;
+    use<TMiddlewareTypes extends AnyMiddlewareTypes>(middleware: Middleware<TMiddlewareTypes> & MiddlewareContextCompatibility<TTypes["context"], TMiddlewareTypes["inputContext"]> & DefinitionSourcesCompatibility<TTypes["definitions"], NoInfer<TMiddlewareTypes["definitionSources"]>>): ProcedureBuilder<WithProcedureMiddleware<TTypes, TMiddlewareTypes["outputContext"], MergeDefinitionMaps<TTypes["definitions"], MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>>, BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>>>;
     writes<TModel extends AnyModel>(model: TModel, map: (input: TTypes["input"]) => ModelKeyInput<TModel>): ProcedureBuilder<WithProcedureMappedInput<WithProcedureKinds<TTypes, Extract<TTypes["kind"], "mutation">>>>;
 }
 
@@ -1537,7 +1537,7 @@ export class ProcedureImplementer<TContractTypes extends AnyProcedureTypes, TCon
     // (undocumented)
     stream(this: TContractTypes["kind"] extends "subscription" ? ProcedureImplementer<TContractTypes, TContext> : never, handler: (args: SubscriptionHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>) => MaybePromise<AsyncIterable<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>>): SubscriptionProcedure<ImplementedProcedureTypes<TContractTypes, TContext, "subscription">>;
     // (undocumented)
-    use<TMiddlewareTypes extends AnyMiddlewareTypes>(middleware: Middleware<TMiddlewareTypes> & ProcedureImplementationMiddlewareConstraint<TContractTypes, TContext, NoInfer<TMiddlewareTypes>>): ProcedureImplementer<TContractTypes, TMiddlewareTypes["outputContext"]>;
+    use<TMiddlewareTypes extends AnyMiddlewareTypes>(middleware: Middleware<TMiddlewareTypes> & ProcedureImplementationMiddlewareConstraint<TContractTypes, TContext, NoInfer<TMiddlewareTypes>>): ProcedureImplementer<TContractTypes, ImplementationContext<TMiddlewareTypes["outputContext"], TContractTypes>>;
 }
 
 // @public (undocumented)
@@ -2073,10 +2073,15 @@ export type WithProcedureKinds<TTypes extends AnyProcedureTypes, TKind extends P
 // @public (undocumented)
 export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TTypes["output"], TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["input"]>;
 
+// @public
+export type WithProcedureMiddleware<TTypes extends AnyProcedureTypes, TOutputContext, TDefinitions extends ErrorDefinitionMap, TWritesHeaders extends boolean> = WithProcedureContext<TWritesHeaders extends true ? WithProcedureKinds<TTypes, Exclude<TTypes["kind"], "subscription">> : TTypes, TWritesHeaders extends true ? TOutputContext & {
+    readonly headers: Headers;
+} : TOutputContext, TDefinitions, UnaryProcedureCapability<TWritesHeaders>>;
+
 // @public (undocumented)
 export type WithProcedureOutput<TTypes extends AnyProcedureTypes, TOutput> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TOutput, TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["mappedInput"]>;
 
-// @public
+// @public (undocumented)
 export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<TTypes, Extract<TTypes["kind"], "subscription">>;
 
 // @public (undocumented)

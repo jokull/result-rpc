@@ -1346,10 +1346,15 @@ export type WithProcedureKinds<TTypes extends AnyProcedureTypes, TKind extends P
 // @public (undocumented)
 export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TTypes["output"], TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["input"]>;
 
+// @public
+export type WithProcedureMiddleware<TTypes extends AnyProcedureTypes, TOutputContext, TDefinitions extends ErrorDefinitionMap, TWritesHeaders extends boolean> = WithProcedureContext<TWritesHeaders extends true ? WithProcedureKinds<TTypes, Exclude<TTypes["kind"], "subscription">> : TTypes, TWritesHeaders extends true ? TOutputContext & {
+    readonly headers: Headers;
+} : TOutputContext, TDefinitions, UnaryProcedureCapability<TWritesHeaders>>;
+
 // @public (undocumented)
 export type WithProcedureOutput<TTypes extends AnyProcedureTypes, TOutput> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TOutput, TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["mappedInput"]>;
 
-// @public
+// @public (undocumented)
 export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<TTypes, Extract<TTypes["kind"], "subscription">>;
 
 // @public (undocumented)
