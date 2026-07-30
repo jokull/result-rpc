@@ -186,5 +186,8 @@ return (
 
 The cache format is versioned and each hydrated success is validated against
 its procedure output codec before use. Invalid data removes only the affected
-entry. Failed queries are not dehydrated by default. Cancellation and
-transient connection state are never persisted.
+entry. A query that failed with a **declared** error is dehydrated too — that
+error is the answer, and it is reified through the procedure's registry on the
+way back in; framework and transport failures are left out, because they
+describe one attempt on one machine. Cancellation and transient connection
+state are never persisted.

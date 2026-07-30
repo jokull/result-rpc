@@ -27,7 +27,7 @@ invalidation and automatic updates by model + id.
 On the client, the full extent of the wiring is the mutation call itself:
 
 ```tsx
-<select onChange={(e) => void assign.mutate({ issueId, assigneeId: e.target.value })}>
+<select onChange={(e) => assign.mutate({ issueId, assigneeId: e.target.value })}>
 ```
 
 The list row, the detail header, and this very select all update in place.

@@ -1032,10 +1032,10 @@ claims nothing.
 
 Projection rules for a claimed error:
 
-| Effect     | Query                                                             | Mutation                                                                      | Subscription                             |
-| ---------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------- |
-| `pause`    | `fetch: "paused"`; stale success is retained, otherwise `pending` | no retry; state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
-| `escalate` | reified `TaggedError` thrown during render                        | same                                                                          | same                                     |
+| Effect     | Query                                                             | Mutation                                                                           | Subscription                             |
+| ---------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------- |
+| `pause`    | `fetch: "paused"`; stale success is retained, otherwise `pending` | no retry; state returns to `idle`, `mutateAsync` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
+| `escalate` | reified `TaggedError` thrown during render                        | same                                                                               | same                                     |
 
 Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
 fallback can `matchError` on it. It creates no holding, calls no shell

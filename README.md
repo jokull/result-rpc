@@ -1218,10 +1218,10 @@ With `effect: "pause"` (the default):
 - **Query** — returns to a non-terminal state with `fetch: "paused"`. If a
   cached success exists it keeps rendering as `state: "success"`, stale, so a
   session blip does not blank the screen. If not, `state: "pending"`.
-- **Mutation** — state returns to `"idle"` and the pending `mutate` promise
-  rejects with a **`claimed` control signal**: the caller's continuation was
-  written against the narrowed union, so an outcome owned above it must not
-  run it. The signal is the same _family_ as cancellation — control flow,
+- **Mutation** — state returns to `"idle"`, and `mutateAsync` rejects with a
+  **`claimed` control signal**: the caller's continuation was written against
+  the narrowed union, so an outcome owned above it must not run it. `mutate`
+  is fire-and-forget and never rejects — there is no continuation to stop. The signal is the same _family_ as cancellation — control flow,
   never part of a recoverable union — but deliberately distinguishable,
   because "you cancelled" and "a shell owns this outcome" are different
   events. `isClaimed(reason)` identifies it and carries the claimed tag and
@@ -1232,7 +1232,7 @@ With `effect: "pause"` (the default):
   import { isCancelled, isClaimed } from "result-rpc/client";
 
   try {
-    await rename.mutate({ id, title });
+    await rename.mutateAsync({ id, title });
   } catch (reason) {
     if (isClaimed(reason))
       reason.data; // { tag: "auth/session-expired", owner: "auth" }
@@ -1411,7 +1411,7 @@ by refinement:
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: wire.union([UserCodec, wire.null]),
+  provides: wire.nullable(UserCodec),
   errors: {}, // optional: cannot fail
 });
 
@@ -1610,7 +1610,7 @@ function RenameDoc({ id }: { id: string }) {
   });
 
   async function submit(title: string) {
-    const result = await rename.mutate({ id, title });
+    const result = await rename.mutateAsync({ id, title });
 
     if (!result.ok && result.error._tag === "doc/title-conflict") {
       focusTitleField();
@@ -1621,18 +1621,36 @@ function RenameDoc({ id }: { id: string }) {
 }
 ```
 
+### `mutate` or `mutateAsync`
+
+Two calls, the split TanStack Query established, and the difference is whether
+anything is waiting on the outcome.
+
+`mutate(input)` returns `void` and **never rejects**. It is the right call from
+an event handler, where there is no continuation to protect and nowhere for a
+rejection to go.
+
+`mutateAsync(input)` returns `Promise<Result<…>>` and rejects with the
+`cancelled` and `claimed` control signals. Reach for it when the next lines
+depend on the answer — focusing a field on a conflict, closing a dialog on
+success.
+
+The rejection is not an error channel; it is the answer to "should my
+continuation run?", and only a caller can be told that. A declared failure
+still arrives as a `Result`, never as a throw.
+
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
 `onFailure`, failure `onSettled`, or the returned state—and never make another
 request, whether retry was configured as a callback, a count, or inherited
 from error policy. `onCancel` still runs with the optimistic context so local
-work can be rolled back, and the `mutate` promise rejects with the
-distinguishable `claimed` signal, as described under
+work can be rolled back, and `mutateAsync` rejects with the distinguishable
+`claimed` signal, as described under
 [What a claimed error does](#what-a-claimed-error-does-to-the-operation).
 
 Optimistic rollback runs before observers receive the final failure state.
 Cancellation is explicit because cancelling a request cannot guarantee that a
 server-side mutation did not happen: call `rename.cancel()`. Cancellation
-resets lifecycle state and rejects the pending `mutate` promise with the
+resets lifecycle state and rejects a pending `mutateAsync` with the
 `cancelled` control sentinel; it never appears as an operation `Err`.
 
 ### Declared invalidation
@@ -1694,7 +1712,7 @@ feature: **automatic invalidation and automatic updates by model + id**.
 On the client, the full extent of the wiring is the mutation call itself:
 
 ```tsx
-<select onChange={(e) => void assign.mutate({ issueId, assigneeId: e.target.value })}>
+<select onChange={(e) => assign.mutate({ issueId, assigneeId: e.target.value })}>
 ```
 
 The list row, the detail header, and this very select all update in place.
@@ -1860,7 +1878,10 @@ export const TourContent = defineModel("tour-content", {
 ```
 
 `$satisfies<Source>()` allows extra source fields but requires every model
-field to exist with exactly the same TypeScript type and nullability. It
+field to exist with exactly the same TypeScript type and nullability.
+`readonly` is not a difference in values, so it is compared modulo `readonly`:
+wire codecs decode readonly by design, and a source column typed `string[]`
+matches a field decoding to `readonly string[]`. It
 returns the same model and performs no runtime reflection. The type-only
 schema import is erased, so Drizzle, table metadata, and private column names
 never enter the browser graph. The model remains the reviewed public wire
@@ -1930,7 +1951,7 @@ import { validateStandard } from "result-rpc";
 
 const validated = validateStandard(RenameInput, { id, title });
 if (!validated.ok) return setFieldErrors(validated.fields); // dot-joined keys
-await rename.mutate(validated.value);
+await rename.mutateAsync(validated.value);
 ```
 
 **Server rejections land on fields.** Whatever validates the form, the
@@ -1939,7 +1960,7 @@ codec still validates the wire — and when a request fails there,
 keys:
 
 ```tsx
-const result = await rename.mutate(toInput(form.values));
+const result = await rename.mutateAsync(toInput(form.values));
 if (!result.ok && result.error._tag === "server/bad-request") {
   setFieldErrors(fieldIssues(result.error));
   // { "title": ["Expected a string"], "author.email": ["Expected an email"] }
@@ -2100,6 +2121,20 @@ const RichDoc = wire.object({
 });
 ```
 
+A nullable field is common enough to have a name: `wire.nullable(codec)` is
+exactly the union you would otherwise spell by hand.
+
+```ts
+const Author = wire.object({
+  name: wire.string,
+  avatarUrl: wire.nullable(wire.url), // wire.union([wire.url, wire.null])
+});
+```
+
+It builds that same union, so the encoding — and therefore the contract digest
+— is unchanged. It is shorter, and it says "this field may be absent" rather
+than making the reader infer it from a two-member union.
+
 For a recursive or otherwise richer application type, supply an actual type
 guard. Serializer support alone cannot prove an application shape:
 
@@ -2209,8 +2244,11 @@ return (
 
 The cache format is versioned and each hydrated success is validated against
 its procedure output codec before use. Invalid data removes only the affected
-entry. Failed queries are not dehydrated by default. Cancellation and
-transient connection state are never persisted.
+entry. A query that failed with a **declared** error is dehydrated too — that
+error is the answer, and it is reified through the procedure's registry on the
+way back in; framework and transport failures are left out, because they
+describe one attempt on one machine. Cancellation and transient connection
+state are never persisted.
 
 ## Test procedures without a network
 
@@ -2414,10 +2452,10 @@ Named here so they are not discovered at 2am:
   (every call, failure, retry, and claim, with its owning shell); a dedicated
   devtools panel — including "which shell claimed this error and why" — is
   planned but not shipped.
-- **Control-flow rejections.** `await mutate(...)` can reject with
+- **Control-flow rejections.** `await mutateAsync(...)` can reject with
   `cancelled` or `claimed`. Call sites that await mutations need the same
-  `try/catch` discipline they need for aborts; fire-and-forget call sites
-  (`void mutate(...)`) should `.catch(() => {})` the control signals.
+  `try/catch` discipline they need for aborts. Fire-and-forget call sites want
+  `mutate(...)`, which returns `void` and never rejects.
 - **The contract is a value.** Unlike tRPC's type-only client, the browser
   bundle carries the contract's codecs and the devalue serializer. That is
   the price of rich values and client-side validation; it is a real number of

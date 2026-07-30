@@ -23,7 +23,7 @@ function RenameDoc({ id }: { id: string }) {
   });
 
   async function submit(title: string) {
-    const result = await rename.mutate({ id, title });
+    const result = await rename.mutateAsync({ id, title });
 
     if (!result.ok && result.error._tag === "doc/title-conflict") {
       focusTitleField();
@@ -40,18 +40,36 @@ callbacks never resubscribe it, and the current render's callbacks are the
 ones that fire. (`MutationOptions` and `QueryCache` are exported from
 `result-rpc/react` when you want to hoist an options object anyway.)
 
+## `mutate` or `mutateAsync`
+
+Two calls, the split TanStack Query established, and the difference is whether
+anything is waiting on the outcome.
+
+`mutate(input)` returns `void` and **never rejects**. It is the right call from
+an event handler, where there is no continuation to protect and nowhere for a
+rejection to go.
+
+`mutateAsync(input)` returns `Promise<Result<…>>` and rejects with the
+`cancelled` and `claimed` control signals. Reach for it when the next lines
+depend on the answer — focusing a field on a conflict, closing a dialog on
+success.
+
+The rejection is not an error channel; it is the answer to "should my
+continuation run?", and only a caller can be told that. A declared failure
+still arrives as a `Result`, never as a throw.
+
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
 `onFailure`, failure `onSettled`, or the returned state—and never make another
 request, whether retry was configured as a callback, a count, or inherited
 from error policy. `onCancel` still runs with the optimistic context so local
-work can be rolled back, and the `mutate` promise rejects with the
-distinguishable `claimed` signal, as described under
+work can be rolled back, and `mutateAsync` rejects with the distinguishable
+`claimed` signal, as described under
 [What a claimed error does](/concepts/shells/#what-a-claimed-error-does-to-the-operation).
 
 Optimistic rollback runs before observers receive the final failure state.
 Cancellation is explicit because cancelling a request cannot guarantee that a
 server-side mutation did not happen: call `rename.cancel()`. Cancellation
-resets lifecycle state and rejects the pending `mutate` promise with the
+resets lifecycle state and rejects a pending `mutateAsync` with the
 `cancelled` control sentinel; it never appears as an operation `Err`.
 
 ## Declared invalidation

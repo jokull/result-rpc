@@ -226,10 +226,10 @@ With `effect: "pause"` (the default):
 - **Query** — returns to a non-terminal state with `fetch: "paused"`. If a
   cached success exists it keeps rendering as `state: "success"`, stale, so a
   session blip does not blank the screen. If not, `state: "pending"`.
-- **Mutation** — state returns to `"idle"` and the pending `mutate` promise
-  rejects with a **`claimed` control signal**: the caller's continuation was
-  written against the narrowed union, so an outcome owned above it must not
-  run it. The signal is the same _family_ as cancellation — control flow,
+- **Mutation** — state returns to `"idle"`, and `mutateAsync` rejects with a
+  **`claimed` control signal**: the caller's continuation was written against
+  the narrowed union, so an outcome owned above it must not run it. `mutate`
+  is fire-and-forget and never rejects — there is no continuation to stop. The signal is the same _family_ as cancellation — control flow,
   never part of a recoverable union — but deliberately distinguishable,
   because "you cancelled" and "a shell owns this outcome" are different
   events. `isClaimed(reason)` identifies it and carries the claimed tag and
@@ -240,7 +240,7 @@ With `effect: "pause"` (the default):
   import { isCancelled, isClaimed } from "result-rpc/client";
 
   try {
-    await rename.mutate({ id, title });
+    await rename.mutateAsync({ id, title });
   } catch (reason) {
     if (isClaimed(reason))
       reason.data; // { tag: "auth/session-expired", owner: "auth" }

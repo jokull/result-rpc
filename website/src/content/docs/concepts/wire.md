@@ -41,6 +41,20 @@ const RichDoc = wire.object({
 });
 ```
 
+A nullable field is common enough to have a name: `wire.nullable(codec)` is
+exactly the union you would otherwise spell by hand.
+
+```ts
+const Author = wire.object({
+  name: wire.string,
+  avatarUrl: wire.nullable(wire.url), // wire.union([wire.url, wire.null])
+});
+```
+
+It builds that same union, so the encoding — and therefore the contract digest
+— is unchanged. It is shorter, and it says "this field may be absent" rather
+than making the reader infer it from a two-member union.
+
 For a recursive or otherwise richer application type, supply an actual type
 guard. Serializer support alone cannot prove an application shape:
 

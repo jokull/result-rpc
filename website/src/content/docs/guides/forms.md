@@ -47,7 +47,7 @@ import { validateStandard } from "result-rpc";
 
 const validated = validateStandard(RenameInput, { id, title });
 if (!validated.ok) return setFieldErrors(validated.fields); // dot-joined keys
-await rename.mutate(validated.value);
+await rename.mutateAsync(validated.value);
 ```
 
 **Server rejections land on fields.** Whatever validates the form, the
@@ -56,7 +56,7 @@ codec still validates the wire — and when a request fails there,
 keys:
 
 ```tsx
-const result = await rename.mutate(toInput(form.values));
+const result = await rename.mutateAsync(toInput(form.values));
 if (!result.ok && result.error._tag === "server/bad-request") {
   setFieldErrors(fieldIssues(result.error));
   // { "title": ["Expected a string"], "author.email": ["Expected an email"] }

@@ -90,7 +90,7 @@ by refinement:
 export const SessionLayer = defineLayer({
   name: "session",
   key: "viewer",
-  provides: wire.union([UserCodec, wire.null]),
+  provides: wire.nullable(UserCodec),
   errors: {}, // optional: cannot fail
 });
 

@@ -177,8 +177,9 @@ redirect to login, hold and drain) only means something in a live browser.
 So a server component sees the complete union and handles it itself. You have
 three honest options:
 
-1. **Ignore the failure.** Legitimate, and usually right. A failed prefetch is
-   not dehydrated (see below), so the client mounts that query cold, fetches
+1. **Ignore the failure.** Legitimate, and usually right. A declared domain
+   failure hydrates (see below), so the browser paints it without asking. A
+   transport failure does not, so the client mounts that query cold, fetches
    once, and the shells own the failure _there_ — live, and retryable.
 2. **Handle the outcomes that belong to the response.** Some failures deserve a
    server answer: `notFound()` on `doc/not-found`, `redirect("/login")` on
@@ -199,15 +200,31 @@ server. The write lands; the browser's cache learns nothing about it. Refresh
 the route, or perform the mutation from the client where the machinery lives.
 :::
 
-## Only successes hydrate
+## Declared failures hydrate; transport failures do not
 
-`dehydrate()` carries successful queries only — a prefetch that _failed_ on the
-server is deliberately not persisted. A server-rendered failure is a snapshot of
-one request's bad luck; replaying it on the client would show a stale error the
-user cannot retry past. Instead the client starts that query cold and fetches
-once, so the failure is live and its [shell](/concepts/shells/) owns it. Plan
-for a not-found detail page to render its skeleton briefly and cost one client
-call.
+The split follows from the library's first pillar: **a declared domain error is
+a value**, and `dehydrate()` carries values.
+
+`doc/not-found` is not a failed prefetch. It is the answer — the same answer the
+client would get, arrived at on the server, and it hydrates like any success. A
+detail page for a row that does not exist renders "not found" on **first paint,
+at zero client requests**. It comes back reified through the procedure's error
+registry, so it narrows, matches, and is [claimed by a
+shell](/concepts/shells/) exactly as a live failure would be.
+
+`client/network-failure` is the opposite in kind. It describes one attempt on
+one machine — the server's — and baking it into the payload would replace a
+fetch the browser can retry with a verdict it cannot. So framework and transport
+failures are still left out, and that query mounts cold and fetches once.
+
+The rule is the tag: every error _you_ declared on the procedure hydrates; the
+built-in `client/*` and `server/*` failures do not.
+
+Two details worth knowing if you inspect a payload. A retry detail about one
+attempt (`fetchFailureReason`) is dropped rather than translated — it is
+bookkeeping about a machine that is now gone. And the error crosses as its wire
+form, the same shape the transport would have sent, because the serializer
+rejects class instances by design; it is reconstructed on the way back in.
 
 ## Pass values through component props, not Results
 

@@ -20,7 +20,7 @@ export const User = defineModel("user", {
   shape: {
     id: wire.string,
     name: wire.string,
-    avatarUrl: wire.union([wire.string, wire.null]),
+    avatarUrl: wire.nullable(wire.string),
   },
 }).$satisfies<UserRow>();
 ```
@@ -28,7 +28,9 @@ export const User = defineModel("user", {
 The assertion enforces one precise relationship:
 
 - Every model field must exist in the source.
-- Its TypeScript type and nullability must match exactly.
+- Its TypeScript type and nullability must match exactly. (`readonly` is not a
+  difference in values, so it is compared modulo `readonly` — wire codecs
+  decode readonly by design, and a source column typed `string[]` matches.)
 - The source may contain additional fields. They do not join the model.
 - The method returns the same model and performs no runtime reflection.
 

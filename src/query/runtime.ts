@@ -1880,8 +1880,6 @@ export const createQueryRuntime = <TClient>(
       // ride along; the serializer rejects class instances by design. Send the
       // same wire form the transport would, and reify on the way back in.
       // A success carries `error: null`, not `undefined`, so test for the thing
-      // being converted rather than for absence.
-      // A success carries `error: null`, not `undefined`, so test for the thing
       // being converted rather than for absence. `fetchFailureReason` holds the
       // same instance and is a retry detail about one attempt, not part of the
       // answer, so it is dropped rather than translated.

@@ -19,10 +19,10 @@ Named here so they are not discovered at 2am:
   (every call, failure, retry, and claim, with its owning shell); a dedicated
   devtools panel — including "which shell claimed this error and why" — is
   planned but not shipped.
-- **Control-flow rejections.** `await mutate(...)` can reject with
+- **Control-flow rejections.** `await mutateAsync(...)` can reject with
   `cancelled` or `claimed`. Call sites that await mutations need the same
-  `try/catch` discipline they need for aborts; fire-and-forget call sites
-  (`void mutate(...)`) should `.catch(() => {})` the control signals.
+  `try/catch` discipline they need for aborts. Fire-and-forget call sites want
+  `mutate(...)`, which returns `void` and never rejects.
 - **The contract is a value.** Unlike tRPC's type-only client, the browser
   bundle carries the contract's codecs and the devalue serializer. That is
   the price of rich values and client-side validation; it is a real number of
