@@ -8,6 +8,15 @@ import { makeWorld, router, RouterApp } from "./app.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+// These tests render outside a DOM. TanStack Router's scroll restoration runs
+// in a passive effect and calls `scrollTo`, which does not exist here — the
+// resulting ReferenceError escalates to the defect boundary and the assertion
+// sees "Broken:" instead of the route. Latent on some machines and fatal on
+// others, so the affordance is provided explicitly rather than left to luck.
+if (typeof (globalThis as { scrollTo?: unknown }).scrollTo !== "function") {
+  (globalThis as { scrollTo?: unknown }).scrollTo = () => undefined;
+}
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 const boot = async (session?: string) => {
