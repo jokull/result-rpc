@@ -118,6 +118,21 @@ For Suspense, use `useResultSuspenseQuery`. It suspends only while pending and
 returns the same success-or-failure state after settlement; tagged failures
 remain ordinary Result values rather than becoming a second thrown error type.
 
+When a shell can claim one of those failures, use `ResultSuspense` instead of a
+plain React `Suspense` boundary:
+
+```tsx
+<ResultSuspense fallback={<DocumentSkeleton />}>
+  <Document />
+</ResultSuspense>
+```
+
+The committed boundary owns the shell lease because a child that suspends on
+its first render cannot install effect cleanup. Give independently removable
+branches their own boundaries. If a retained boundary switches to a different
+conditional subtree, pass that identity as `resetKey` so the old branch's
+claims are released.
+
 ## Failed background refreshes preserve stale data
 
 A refetch can fail while a cached value remains useful. That is represented

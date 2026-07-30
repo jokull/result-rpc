@@ -1253,7 +1253,7 @@ export interface TransportResponse {
     readonly body: string;
     // (undocumented)
     readonly contentType: string | null;
-    readonly contract?: string;
+    readonly contract: string | null;
     // (undocumented)
     readonly status: number;
 }

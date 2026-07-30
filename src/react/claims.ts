@@ -28,12 +28,56 @@ export interface ClaimEntry {
   readonly effect: "pause" | "escalate";
   readonly registry: ClaimRegistry;
   readonly acquire: (
-    id: string,
+    operationId: string,
+    leaseId: ClaimLease,
     error: AnyTaggedError,
     retry?: () => void | Promise<void>,
   ) => ClaimAcquisition;
-  readonly release: (id: string) => void;
+  readonly release: (operationId: string, leaseId: ClaimLease) => void;
 }
+
+/** Opaque lifecycle identity for one committed claim owner. */
+export type ClaimLease = object;
+
+/** A committed Suspense boundary owns claims for children that cannot commit. */
+export interface SuspenseClaimLease {
+  readonly token: ClaimLease;
+  readonly activate: () => void;
+  readonly isActive: () => boolean;
+  readonly retain: (entry: ClaimEntry, operationId: string) => void;
+  readonly release: () => void;
+}
+
+export const createSuspenseClaimLease = (): SuspenseClaimLease => {
+  const token: ClaimLease = Object.freeze({});
+  const holdings = new Map<ClaimEntry, Set<string>>();
+  let active = true;
+  return {
+    token,
+    activate: () => {
+      active = true;
+    },
+    isActive: () => active,
+    retain: (entry, operationId) => {
+      if (!active) return;
+      const operations = holdings.get(entry) ?? new Set<string>();
+      operations.add(operationId);
+      holdings.set(entry, operations);
+    },
+    release: () => {
+      active = false;
+      for (const [entry, operations] of holdings) {
+        for (const operationId of operations) entry.release(operationId, token);
+      }
+      holdings.clear();
+    },
+  };
+};
+
+export const SuspenseClaimLeaseContext = createContext<SuspenseClaimLease | null>(null);
+
+export const useSuspenseClaimLease = (): SuspenseClaimLease | null =>
+  useContext(SuspenseClaimLeaseContext);
 
 export interface ClaimAcquisition {
   /** Whether this exact operation/error pair was newly acquired. */
@@ -56,8 +100,6 @@ export interface ClaimObserver {
   readonly render: (error: AnyTaggedError | undefined) => AmbientClaim | undefined;
   /** Reconciles a state emitted by an external observer before React is notified. */
   readonly notify: (error: AnyTaggedError | undefined) => void;
-  /** Reconciles an asynchronously settled Suspense request and waits if claimed. */
-  readonly settle: (error: AnyTaggedError | undefined) => Promise<void>;
   /** Releases this operation from every owner in its current scope. */
   readonly release: () => void;
 }
@@ -83,10 +125,13 @@ export const useClaimObserver = (
   onClaimed?: (entry: ClaimEntry, error: AnyTaggedError) => void,
   retry?: () => void | Promise<void>,
   operationId?: string,
+  suspenseLease?: SuspenseClaimLease | null,
 ): ClaimObserver => {
   const entries = useContext(ClaimScopeContext);
   const reactId = useId();
-  const id = operationId ?? reactId;
+  const aggregateId = operationId ?? reactId;
+  const localLease = useRef<ClaimLease>({});
+  const leaseId = suspenseLease?.token ?? localLease.current;
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const onClaimedRef = useRef(onClaimed);
@@ -99,13 +144,13 @@ export const useClaimObserver = (
     let currentError: AnyTaggedError | undefined;
 
     const release = () => {
-      current?.release(id);
+      current?.release(aggregateId, leaseId);
       current = undefined;
       currentError = undefined;
       // A previous initial-Suspense attempt can have the same React operation
       // id but a discarded local bridge. Releasing across the mounted scope is
       // therefore intentional and idempotent.
-      for (const entry of entriesRef.current) entry.release(id);
+      for (const entry of entriesRef.current) entry.release(aggregateId, leaseId);
     };
 
     const acquire = (error: AnyTaggedError | undefined): ClaimAcquisition | undefined => {
@@ -114,10 +159,19 @@ export const useClaimObserver = (
         release();
         return undefined;
       }
-      if (current && (current !== owner || currentError !== error)) current.release(id);
+      if (suspenseLease === null) {
+        throw new TypeError(
+          "A shell-claimed useResultSuspenseQuery must be rendered inside <ResultSuspense>",
+        );
+      }
+      if (suspenseLease && !suspenseLease.isActive()) return undefined;
+      if (current && (current !== owner || currentError !== error)) {
+        current.release(aggregateId, leaseId);
+      }
       current = owner;
       currentError = error;
-      const acquired = owner.acquire(id, error, () => retryRef.current?.());
+      const acquired = owner.acquire(aggregateId, leaseId, error, () => retryRef.current?.());
+      suspenseLease?.retain(owner, aggregateId);
       if (acquired.fresh) onClaimedRef.current?.(owner, error);
       return acquired;
     };
@@ -129,19 +183,22 @@ export const useClaimObserver = (
         if (owner.effect === "escalate") throw error;
         return {
           entry: owner,
-          wait: () => Promise.resolve().then(() => acquire(error)?.resumed),
+          wait: () => {
+            if (suspenseLease === null) {
+              throw new TypeError(
+                "A shell-claimed useResultSuspenseQuery must be rendered inside <ResultSuspense>",
+              );
+            }
+            return Promise.resolve().then(() => acquire(error)?.resumed);
+          },
         };
       },
       notify: (error) => {
         acquire(error);
       },
-      settle: async (error) => {
-        const acquired = acquire(error);
-        if (acquired) await acquired.resumed;
-      },
       release,
     };
-  }, [id]);
+  }, [aggregateId, leaseId, suspenseLease]);
 
   useEffect(() => () => observer.release(), [observer]);
   return observer;

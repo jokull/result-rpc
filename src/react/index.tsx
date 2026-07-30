@@ -4,6 +4,7 @@ import {
   createContext,
   createElement,
   Fragment,
+  Suspense,
   useContext,
   useEffect,
   useMemo,
@@ -11,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type SuspenseProps,
 } from "react";
 import type { AnyTaggedError } from "../error.js";
 import type { EmptyObject } from "../wire.js";
@@ -23,11 +25,15 @@ import {
 } from "../client/client.js";
 import {
   claimOwner,
+  createSuspenseClaimLease,
   pauseQueryProjection,
+  SuspenseClaimLeaseContext,
   useAmbientClaim,
   useClaimObserver,
   useClaimScope,
+  useSuspenseClaimLease,
   type AmbientClaim,
+  type SuspenseClaimLease,
 } from "./claims.js";
 import { serialize } from "../serializer.js";
 import { bindLayerShell, type LayerShellFactory } from "./shell.js";
@@ -503,6 +509,7 @@ const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedure
   procedure: NarrowProcedureClient<TProcedureClient>,
   input: ProcedureClientInput<TProcedureClient>,
   options: QueryOptions<ProcedureClientError<TProcedureClient>>,
+  suspenseLease?: SuspenseClaimLease | null,
 ): [
   QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>,
   AmbientClaim | undefined,
@@ -531,7 +538,7 @@ const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedure
   );
   const observerRef = useRef(observer);
   observerRef.current = observer;
-  const committedObserverRef = useRef(false);
+  const committedObserverRef = useRef<typeof observer | undefined>(undefined);
   const notifyClaim = useClaimNotifier(procedure);
   const [retryHeld] = useState(() => async () => {
     await observerRef.current.refetch();
@@ -540,6 +547,7 @@ const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedure
     notifyClaim,
     retryHeld,
     queryClaimId(runtime, observer.key),
+    suspenseLease,
   );
   const subscribe = useMemo(
     () => (listener: () => void) =>
@@ -554,9 +562,9 @@ const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedure
     [observer, claimObserver],
   );
   useEffect(() => {
-    committedObserverRef.current = true;
+    committedObserverRef.current = observer;
     return () => {
-      committedObserverRef.current = false;
+      if (committedObserverRef.current === observer) committedObserverRef.current = undefined;
       observer.destroy();
     };
   }, [observer]);
@@ -567,14 +575,18 @@ const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedure
   const [settleForSuspense] = useState(() => async () => {
     const suspenseObserver = observerRef.current;
     try {
-      const next = await suspenseObserver.refetch();
-      await claimObserver.settle(next.state === "failure" ? next.error : undefined);
+      // Settlement may populate the cache, but it never owns a shell claim.
+      // React decides whether this suspended render is still relevant: a
+      // still-mounted retry observes the cached failure and acquires through
+      // `claim.wait()` below; abandoned or superseded work is never retried and
+      // therefore cannot manufacture an ownerless holding or reaction.
+      await suspenseObserver.refetch();
     } finally {
       // React discards hook memoization when an initial mount suspends. Such
       // an observer can never receive an effect cleanup; retire it once its
       // request/claim lifecycle has finished. A committed observer is retained
       // across update suspensions and stays live.
-      if (!committedObserverRef.current) suspenseObserver.destroy();
+      if (committedObserverRef.current !== suspenseObserver) suspenseObserver.destroy();
     }
   });
   return [claim ? pauseQueryProjection(state) : state, claim, settleForSuspense];
@@ -591,7 +603,7 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
     ProcedureClientInput<TProcedureClient>,
     QueryOptions<ProcedureClientError<TProcedureClient>>
   >(rest, {});
-  const [state, claim] = useResultQueryResolvedWithClaim(procedure, input, options);
+  const [state, claim] = useResultQueryResolvedWithClaim(procedure, input, options, undefined);
   return [state, claim];
 };
 
@@ -697,6 +709,29 @@ export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
   { readonly state: "pending" }
 >;
 
+export interface ResultSuspenseProps extends SuspenseProps {
+  /** Replaces the claim lease when a conditional subtree changes identity. */
+  readonly resetKey?: unknown;
+}
+
+/**
+ * Suspense plus a committed lifecycle owner for shell-claimed failures.
+ * A child that suspends before commit cannot install its own cleanup, so a
+ * result-rpc suspense query which may be claimed belongs inside this boundary.
+ */
+export const ResultSuspense = ({ resetKey, children, ...props }: ResultSuspenseProps) => {
+  const scope = useMemo(() => ({ resetKey, lease: createSuspenseClaimLease() }), [resetKey]);
+  useEffect(() => {
+    scope.lease.activate();
+    return () => scope.lease.release();
+  }, [scope]);
+  return createElement(
+    Suspense,
+    props,
+    createElement(SuspenseClaimLeaseContext.Provider, { value: scope.lease }, children),
+  );
+};
+
 export const useResultSuspenseQuery = <const TProcedureClient extends QueryProcedureClientLike>(
   procedure: NarrowProcedureClient<TProcedureClient>,
   ...rest: QueryHookArgs<TProcedureClient>
@@ -708,14 +743,20 @@ export const useResultSuspenseQuery = <const TProcedureClient extends QueryProce
     ProcedureClientInput<TProcedureClient>,
     QueryOptions<ProcedureClientError<TProcedureClient>>
   >(rest, {});
-  const [state, claim, settle] = useResultQueryResolvedWithClaim(procedure, input, {
-    ...options,
-    enabled: true,
-  });
+  const suspenseLease = useSuspenseClaimLease();
+  const [state, claim, settle] = useResultQueryResolvedWithClaim(
+    procedure,
+    input,
+    {
+      ...options,
+      enabled: true,
+    },
+    suspenseLease,
+  );
   if (state.state === "pending") {
-    // A claim-paused operation waits on its exact acquisition. An initial
-    // request settles through the same observer-to-shell bridge before this
-    // promise wakes React, so the shell can render its recovery affordance.
+    // A claim-paused render waits on its exact acquisition. A request promise
+    // only settles cache state; React retrying a still-relevant render is what
+    // acquires ownership and lets the shell render its recovery affordance.
     throw claim ? claim.wait() : settle();
   }
   return state;
@@ -830,11 +871,20 @@ export const useResultSubscription = <
   const runtime = useRuntime();
   const encodedInput = serialize(input);
   if (!encodedInput.ok) throw new TypeError("Subscription input is not wire-serializable");
-  const observer = useMemo(
-    () => runtime.subscription(procedure, input, options),
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- encoded input and selected option values define observer identity
-    [runtime, procedure, encodedInput.value, options.retry, options.retryDelayMs],
-  );
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const observer = useMemo(() => {
+    const dynamicOptions: SubscriptionOptions<SubscriptionClientError<TProcedureClient>> = {
+      get retry() {
+        return optionsRef.current.retry;
+      },
+      get retryDelayMs() {
+        return optionsRef.current.retryDelayMs;
+      },
+    };
+    return runtime.subscription(procedure, input, dynamicOptions);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- encoded input represents input identity; callbacks are current through optionsRef
+  }, [runtime, procedure, encodedInput.value]);
   const observerRef = useRef(observer);
   observerRef.current = observer;
   const notifyClaim = useClaimNotifier(procedure);
@@ -853,7 +903,6 @@ export const useResultSubscription = <
       }),
     [observer, claimObserver],
   );
-  useEffect(() => () => observer.close(), [observer]);
   const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
   const failure = state.result && !state.result.ok ? state.result.error : undefined;
   const claim = useAmbientClaim(claimObserver, failure);

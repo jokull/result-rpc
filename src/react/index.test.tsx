@@ -7,6 +7,7 @@ import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
 import {
   type MutationState,
+  type PaginatedState,
   type QueryRuntime,
   type QueryState,
   type SubscriptionState,
@@ -17,6 +18,7 @@ import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../f
 import {
   ResultRpcProvider,
   useResultMutation,
+  useResultPaginatedQuery,
   useResultQuery,
   useResultRuntime,
   useResultSubscription,
@@ -304,6 +306,213 @@ describe("React bindings", () => {
     });
     expect(successCalls).toEqual(["gen-2"]);
     expect(mutationState?.state).toBe("success");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("inline subscription retry callbacks do not replace or loop the observer", async () => {
+    let streamStarts = 0;
+    const app = rpc.context<{}>();
+    const eventDeclaration = app
+      .procedure()
+      .input(wire.object({}))
+      .output(wire.string)
+      .subscription();
+    const eventStream = app.implement(eventDeclaration).stream(async function* () {
+      streamStarts += 1;
+      yield ok("first");
+      await Promise.resolve();
+      yield ok("second");
+    });
+    const eventRouter = app.router({ events: eventStream });
+    const eventHandler = createFetchHandler({
+      router: eventRouter,
+      createContext: () => ({}),
+    });
+    const eventClient = createFixtureClient({
+      router: eventRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          eventHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: eventClient });
+    let subscriptionState: SubscriptionState<string, FrameworkFailure> | undefined;
+    let rerender: () => void = () => undefined;
+
+    function Probe({ generation }: { generation: number }) {
+      subscriptionState = useResultSubscription(
+        eventClient.events,
+        {},
+        {
+          retry: () => generation < 0,
+          retryDelayMs: () => generation,
+        },
+      );
+      return null;
+    }
+    function Host() {
+      const [generation, setGeneration] = useState(0);
+      rerender = () => setGeneration((current) => current + 1);
+      return <Probe generation={generation} />;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Host />
+        </ResultRpcProvider>,
+      );
+      await settle();
+      rerender();
+      rerender();
+      await settle();
+    });
+    expect(streamStarts).toBe(1);
+    expect(subscriptionState?.eventCount).toBe(2);
+    expect(subscriptionState?.result).toEqual(ok("second"));
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("inline paginated retry callbacks do not replace the observer", async () => {
+    let pageRequests = 0;
+    const app = rpc.context<{}>();
+    const feed = app
+      .procedure()
+      .input(wire.object({ q: wire.string }))
+      .output(wire.string)
+      .paginate({ cursor: wire.string }, ({ input }) => {
+        pageRequests += 1;
+        return ok({ items: [input.list.q], nextCursor: null });
+      });
+    const pageRouter = app.router({ feed });
+    const pageHandler = createFetchHandler({ router: pageRouter, createContext: () => ({}) });
+    const pageClient = createFixtureClient({
+      router: pageRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          pageHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: pageClient });
+    let state: PaginatedState<string, FrameworkFailure> | undefined;
+    let rerender: () => void = () => undefined;
+
+    function Probe({ generation }: { generation: number }) {
+      state = useResultPaginatedQuery(
+        pageClient.feed,
+        { q: "one" },
+        {
+          retry: () => generation < 0,
+        },
+      );
+      return null;
+    }
+    function Host() {
+      const [generation, setGeneration] = useState(0);
+      rerender = () => setGeneration((current) => current + 1);
+      return <Probe generation={generation} />;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Host />
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    await act(async () => {
+      rerender();
+      rerender();
+      await settle();
+    });
+    expect(state?.state).toBe("success");
+    expect(state?.rows).toEqual(["one"]);
+    expect(pageRequests).toBe(1);
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("an active subscription reads the latest render's retry callback", async () => {
+    let releaseFailure: () => void = () => undefined;
+    const failureGate = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
+    let streamStarts = 0;
+    const Retryable = error({ tag: "subscription/retryable", retry: "transient" });
+    const app = rpc.context<{}>();
+    const eventDeclaration = app
+      .procedure()
+      .input(wire.object({}))
+      .output(wire.string)
+      .errors({ Retryable })
+      .subscription();
+    const eventStream = app.implement(eventDeclaration).stream(async function* () {
+      streamStarts += 1;
+      await failureGate;
+      yield err(Retryable());
+    });
+    const eventRouter = app.router({ events: eventStream });
+    const eventHandler = createFetchHandler({
+      router: eventRouter,
+      createContext: () => ({}),
+    });
+    const eventClient = createFixtureClient({
+      router: eventRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          eventHandler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: eventClient });
+    const retryCalls: number[] = [];
+    let rerender: () => void = () => undefined;
+
+    function Probe({ generation }: { generation: number }) {
+      useResultSubscription(
+        eventClient.events,
+        {},
+        {
+          retry: () => {
+            retryCalls.push(generation);
+            return false;
+          },
+        },
+      );
+      return null;
+    }
+    function Host() {
+      const [generation, setGeneration] = useState(0);
+      rerender = () => setGeneration(1);
+      return <Probe generation={generation} />;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <Host />
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    await act(async () => {
+      rerender();
+      await settle();
+    });
+    await act(async () => {
+      releaseFailure();
+      await settle();
+    });
+    expect(streamStarts).toBe(1);
+    expect(retryCalls).toEqual([1]);
     await act(async () => renderer?.unmount());
     runtime.clear();
   });

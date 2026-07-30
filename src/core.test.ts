@@ -14,7 +14,8 @@ import {
   wire,
 } from "./index.js";
 import { rpc } from "./server/contract.js";
-import type { WireCodec, WireValue } from "./wire.js";
+import { encodeUnknownWireValue } from "./wire.js";
+import type { AnyWireCodec, WireCodec, WireValue } from "./wire.js";
 
 const NotFound = error({
   tag: "test/not-found",
@@ -104,6 +105,64 @@ describe("wire codecs", () => {
     }
   });
 
+  test("equal built-in schemas have equivalent boundary acceptance", () => {
+    const pairs: readonly (readonly [AnyWireCodec, AnyWireCodec, readonly unknown[]])[] = [
+      [
+        wire.integer({ min: -1, max: 3 }),
+        wire.integer({ min: -1, max: 3 }),
+        [-2, -1, 0, 3, 4, 1.5, "1", Number.NaN],
+      ],
+      [
+        wire.array(wire.optional(wire.string)),
+        wire.array(wire.optional(wire.string)),
+        [[], ["a", undefined], [1], {}, null],
+      ],
+      [
+        wire.record(wire.finiteNumber),
+        wire.record(wire.finiteNumber),
+        [{}, { one: 1 }, { bad: Number.NaN }, [], new (class RecordLike {})()],
+      ],
+      [
+        wire.union([wire.literal("ready"), wire.null]),
+        wire.union([wire.literal("ready"), wire.null]),
+        ["ready", "other", null, undefined, {}],
+      ],
+      [
+        wire.object({
+          count: wire.integer({ min: 0 }),
+          label: wire.string,
+          note: wire.optional(wire.string),
+        }),
+        wire.object({
+          note: wire.optional(wire.string),
+          label: wire.string,
+          count: wire.integer({ min: 0 }),
+        }),
+        [
+          { count: 1, label: "one" },
+          { count: 1, label: "one", note: "ok" },
+          { count: -1, label: "one" },
+          { count: 1, label: "one", extra: true },
+          Object.assign(Object.create(null), { count: 1, label: "one" }),
+          new (class Row {
+            count = 1;
+            label = "one";
+          })(),
+        ],
+      ],
+    ];
+
+    for (const [left, right, candidates] of pairs) {
+      expect(left.schema).toBe(right.schema);
+      for (const candidate of candidates) {
+        expect(encodeUnknownWireValue(left, candidate).ok).toBe(
+          encodeUnknownWireValue(right, candidate).ok,
+        );
+        expect(left.decode(candidate).ok).toBe(right.decode(candidate).ok);
+      }
+    }
+  });
+
   test("round trips rich values, cycles, and repeated references", () => {
     const shared = { createdAt: new Date("2026-01-01T00:00:00.000Z") };
     const value: {
@@ -148,6 +207,27 @@ describe("wire codecs", () => {
 });
 
 describe("tagged errors", () => {
+  test("implicit empty data is exactly the strict empty-object codec", () => {
+    const Implicit = error({ tag: "test/implicit-empty" });
+    const Explicit = error({
+      tag: "test/explicit-empty",
+      data: wire.object({}),
+    });
+    expect(Implicit.codec.schema).toBe(Explicit.codec.schema);
+    for (const data of [
+      {},
+      Object.create(null),
+      { unexpected: true },
+      [],
+      null,
+      new (class Empty {})(),
+    ]) {
+      expect(Implicit.codec.encode(data as never).ok).toBe(Explicit.codec.encode(data as never).ok);
+      expect(Implicit.codec.decode(data).ok).toBe(Explicit.codec.decode(data).ok);
+    }
+    expect(Implicit.decode({ _tag: Implicit.tag, data: { unexpected: true } }).ok).toBe(false);
+  });
+
   test("catalogs narrow unknown values to their exact error union", () => {
     const message = errorCatalog(
       { NotFound, Offline },

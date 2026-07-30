@@ -937,6 +937,21 @@ For Suspense, use `useResultSuspenseQuery`. It suspends only while pending and
 returns the same success-or-failure state after settlement; tagged failures
 remain ordinary Result values rather than becoming a second thrown error type.
 
+When a shell can claim one of those failures, use `ResultSuspense` instead of a
+plain React `Suspense` boundary:
+
+```tsx
+<ResultSuspense fallback={<DocumentSkeleton />}>
+  <Document />
+</ResultSuspense>
+```
+
+The committed boundary owns the shell lease because a child that suspends on
+its first render cannot install effect cleanup. Give independently removable
+branches their own boundaries. If a retained boundary switches to a different
+conditional subtree, pass that identity as `resetKey` so the old branch's
+claims are released.
+
 ### Failed background refreshes preserve stale data
 
 A refetch can fail while a cached value remains useful. That is represented
@@ -1497,6 +1512,13 @@ result-rpc makes the window a detected, owned state:
    reclassified as `client/stale`, carrying the original tag. Matching
    digests change nothing — a real defect stays a defect, and successful
    calls are never touched.
+
+The stamp is required protocol evidence, not optional metadata. A missing or
+empty `x-result-rpc-contract` is a `client/protocol-violation` for unary,
+batched, and streaming responses. The built-in transports preserve it. Custom
+`ClientTransport` implementations must return it as `response.contract`, and
+proxies must forward or expose the header; the client fails closed if either
+drops it.
 
 And `client/stale` has a built-in owner: the boundary's `StaleShell` claims
 it, holds the affected operations, and reacts — by default with a page

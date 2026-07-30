@@ -38,6 +38,7 @@ import {
   type ClientProcedurePagination,
   type ClientProcedureSource,
   type ClientErrors,
+  type TransportResponse,
 } from "../src/client/index.js";
 import { createServerClient, serverRpc } from "../src/server/index.js";
 import { defineModel, type ModelProjection, type ModelValue } from "../src/model.js";
@@ -53,6 +54,8 @@ import {
   type QueryState,
   type QueryOptions,
   type QueryStateOf,
+  ResultSuspense,
+  type ResultSuspenseProps,
   type SubscriptionState,
   type SubscriptionOptions,
   useResultClient,
@@ -62,6 +65,12 @@ import {
   useResultSubscription,
   useResultSuspenseQuery,
 } from "../src/react/index.js";
+
+const resultSuspenseProps: ResultSuspenseProps = {
+  fallback: null,
+  resetKey: "document-route",
+};
+ResultSuspense(resultSuspenseProps);
 import { createQueryRuntime } from "../src/query/runtime.js";
 // @ts-expect-error the React entry is `use client`; runtime construction belongs to result-rpc/query
 import { createQueryRuntime as unsafeReactRuntime } from "../src/react/index.js";
@@ -104,6 +113,10 @@ import {
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
+
+export type _TransportResponseRequiresContractEvidence = Assert<
+  Equal<TransportResponse["contract"], string | null>
+>;
 
 const Missing = error({
   tag: "type/missing",

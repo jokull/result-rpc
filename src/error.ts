@@ -1,11 +1,12 @@
-import type {
-  AnyWireCodec,
-  DecodeResult,
-  EmptyObject,
-  EncodedOf,
-  InputOf,
-  WireCodec,
-  WireValue,
+import {
+  wire,
+  type AnyWireCodec,
+  type DecodeResult,
+  type EmptyObject,
+  type EncodedOf,
+  type InputOf,
+  type WireCodec,
+  type WireValue,
 } from "./wire.js";
 import { DEFAULT_MAX_ERROR_BYTES, serialize } from "./serializer.js";
 import { err, type Err } from "./result.js";
@@ -222,18 +223,7 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
   return value;
 };
 
-const emptyDataCodec: WireCodec<EmptyObject, EmptyObject> = {
-  kind: "object",
-  schema: '["object",[]]',
-  encode: (value) =>
-    value !== null && typeof value === "object" && !Array.isArray(value)
-      ? { ok: true, value: {} }
-      : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
-  decode: (value) =>
-    value !== null && typeof value === "object" && !Array.isArray(value)
-      ? { ok: true, value: {} }
-      : { ok: false, issues: [{ path: [], message: "Expected an object" }] },
-};
+const emptyDataCodec: WireCodec<EmptyObject, EmptyObject> = wire.object({});
 
 const createErrorDefinition = <
   const Tag extends string,

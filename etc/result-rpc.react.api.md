@@ -7,6 +7,7 @@
 import { FragmentProps } from 'react';
 import { FunctionComponentElement } from 'react';
 import { ReactNode } from 'react';
+import { SuspenseProps } from 'react';
 
 // @public (undocumented)
 export interface AffectsEntry {
@@ -1082,6 +1083,14 @@ export interface ResultSubscriptionObserver<out T, out E extends AnyTaggedError>
     readonly subscribe: (listener: () => void) => () => void;
 }
 
+// @public
+export const ResultSuspense: (input: ResultSuspenseProps) => FunctionComponentElement<SuspenseProps>;
+
+// @public (undocumented)
+export interface ResultSuspenseProps extends SuspenseProps {
+    readonly resetKey?: unknown;
+}
+
 // @public (undocumented)
 export type RetryPolicy = "never" | "transient" | "after";
 
@@ -1250,9 +1259,9 @@ options?: SubscriptionOptions<SubscriptionClientError<NoInfer<TProcedureClient>>
 // @public (undocumented)
 export interface SubscriptionOptions<in E extends AnyTaggedError> {
     // (undocumented)
-    readonly retry?: false | number | ((error: E, failureCount: number) => boolean);
+    readonly retry?: false | number | ((error: E, failureCount: number) => boolean) | undefined;
     // (undocumented)
-    readonly retryDelayMs?: number | ((failureCount: number) => number);
+    readonly retryDelayMs?: number | ((failureCount: number) => number) | undefined;
 }
 
 // @public (undocumented)

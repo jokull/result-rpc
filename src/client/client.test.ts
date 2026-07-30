@@ -373,10 +373,16 @@ describe("unary client and server", () => {
   test("maps an intermediary HTML 502 to an HTTP failure", async () => {
     const intermediary = createFixtureClient({
       router,
+      contractVersion: "intermediary-test",
       transport: {
         request: async () => ({
           ok: true,
-          response: { status: 502, contentType: "text/html", body: "bad gateway" },
+          response: {
+            status: 502,
+            contentType: "text/html",
+            body: "bad gateway",
+            contract: "intermediary-test",
+          },
         }),
       },
     });
@@ -404,6 +410,7 @@ describe("unary client and server", () => {
       if (!encoded.ok) throw new Error("test envelope did not serialize");
       const hostile = createFixtureClient({
         router,
+        contractVersion: "hostile-test",
         transport: {
           request: async () => ({
             ok: true,
@@ -411,6 +418,7 @@ describe("unary client and server", () => {
               status: testCase.envelope.ok === false ? 404 : 200,
               contentType: "application/result-rpc+devalue; sv=1",
               body: encoded.value,
+              contract: "hostile-test",
             },
           }),
         },
@@ -665,6 +673,63 @@ describe("contract skew", () => {
       handler(new Request(input, init))) as typeof globalThis.fetch;
     return { serverRouter, staleRouter, localFetch };
   };
+
+  test("missing unary and batch contract stamps fail closed as version violations", async () => {
+    const encoded = serialize({
+      v: 1,
+      ok: true,
+      value: { id: "one", value: "first" },
+    });
+    if (!encoded.ok) throw new Error("unary fixture did not serialize");
+    for (const missingContract of [null, "", " "]) {
+      const unstamped = createFixtureClient({
+        router,
+        contractVersion: "required-stamp",
+        transport: {
+          request: async () => ({
+            ok: true,
+            response: {
+              status: 200,
+              contentType: "application/result-rpc+devalue; sv=1",
+              body: encoded.value,
+              contract: missingContract,
+            },
+          }),
+        },
+      });
+      const unary = await unstamped.value.byId({ id: "one" });
+      expect(unary.ok).toBe(false);
+      if (!unary.ok) {
+        expect(unary.error._tag).toBe("client/protocol-violation");
+        expect(unary.error.data).toEqual({ reason: "version" });
+      }
+    }
+
+    const noContractHeader = (async (input: string | URL | Request, init?: RequestInit) => {
+      const response = await handler(new Request(input, init));
+      const headers = new Headers(response.headers);
+      headers.delete("x-result-rpc-contract");
+      return new Response(response.body, { status: response.status, headers });
+    }) as typeof globalThis.fetch;
+    const batched = createFixtureClient({
+      router,
+      transport: batchFetchTransport({
+        url: "https://example.test/rpc",
+        fetch: noContractHeader,
+      }),
+    });
+    const batch = await Promise.all([
+      batched.value.byId({ id: "one" }),
+      batched.value.byId({ id: "missing" }),
+    ]);
+    for (const result of batch) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error._tag).toBe("client/protocol-violation");
+        expect(result.error.data).toEqual({ reason: "version" });
+      }
+    }
+  });
 
   test("a stale client's contract failure becomes client/stale, once-per-client skew event included", async () => {
     const { staleRouter, localFetch } = makeSkewWorld();

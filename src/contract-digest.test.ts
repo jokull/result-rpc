@@ -49,6 +49,19 @@ describe("contractDigest", () => {
     expect(contractDigest(router)).toBe(contractDigest(contract));
   });
 
+  test("equal empty-data schemas have equal strict validation semantics", () => {
+    const Implicit = error({ tag: "digest/empty" });
+    const Explicit = error({ tag: "digest/empty", data: wire.object({}) });
+    const withError = (definition: typeof Implicit | typeof Explicit) =>
+      app.contract({
+        probe: app.procedure().output(wire.string).errors({ Empty: definition }).query(),
+      });
+    expect(Implicit.codec.schema).toBe(Explicit.codec.schema);
+    expect(contractDigest(withError(Implicit))).toBe(contractDigest(withError(Explicit)));
+    expect(Implicit.codec.decode({ unexpected: true }).ok).toBe(false);
+    expect(Explicit.codec.decode({ unexpected: true }).ok).toBe(false);
+  });
+
   test("changes when the error union, a path, or a codec schema changes", () => {
     const base = contractDigest(build());
     const Extra = error({ tag: "digest/extra", httpStatus: 409 });

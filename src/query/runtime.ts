@@ -530,8 +530,8 @@ export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTagge
 export type SubscriptionConnection = "connecting" | "open" | "reconnecting" | "paused" | "closed";
 
 export interface SubscriptionOptions<in E extends AnyTaggedError> {
-  readonly retry?: false | number | ((error: E, failureCount: number) => boolean);
-  readonly retryDelayMs?: number | ((failureCount: number) => number);
+  readonly retry?: false | number | ((error: E, failureCount: number) => boolean) | undefined;
+  readonly retryDelayMs?: number | ((failureCount: number) => number) | undefined;
 }
 
 export interface SubscriptionState<out T, out E extends AnyTaggedError> {

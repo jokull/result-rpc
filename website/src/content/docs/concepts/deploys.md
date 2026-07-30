@@ -25,6 +25,13 @@ result-rpc makes the window a detected, owned state:
    digests change nothing — a real defect stays a defect, and successful
    calls are never touched.
 
+The stamp is required protocol evidence, not optional metadata. A missing or
+empty `x-result-rpc-contract` is a `client/protocol-violation` in unary,
+batched, and streaming responses. The built-in transports preserve it. A
+custom `ClientTransport` must return the server stamp as `response.contract`,
+and a proxy must forward or expose the header; otherwise the client fails
+closed instead of silently disabling skew detection.
+
 And `client/stale` has a built-in owner: the boundary's `StaleShell` claims
 it, holds the affected operations, and reacts — by default with a page
 reload, because the reload fetches the current client, which _is_ the fix.

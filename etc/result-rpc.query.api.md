@@ -1305,9 +1305,9 @@ export type SubscriptionConnection = "connecting" | "open" | "reconnecting" | "p
 // @public (undocumented)
 export interface SubscriptionOptions<in E extends AnyTaggedError> {
     // (undocumented)
-    readonly retry?: false | number | ((error: E, failureCount: number) => boolean);
+    readonly retry?: false | number | ((error: E, failureCount: number) => boolean) | undefined;
     // (undocumented)
-    readonly retryDelayMs?: number | ((failureCount: number) => number);
+    readonly retryDelayMs?: number | ((failureCount: number) => number) | undefined;
 }
 
 // @public (undocumented)

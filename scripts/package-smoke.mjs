@@ -299,6 +299,41 @@ export type EveryPublicSubpath = readonly [
     !statSync(join(installedPackage, "src"), { throwIfNoEntry: false }),
     "Published package unexpectedly contains src/",
   );
+  const declarationMaps = filesBelow(join(installedPackage, "dist")).filter((path) =>
+    path.endsWith(".d.ts.map"),
+  );
+  assert(
+    declarationMaps.length === 0,
+    `Published package unexpectedly contains declaration maps without shipped sources:\n${declarationMaps
+      .map((path) => relative(installedPackage, path))
+      .join("\n")}`,
+  );
+  for (const mapPath of declarationMaps) {
+    const map = JSON.parse(readFileSync(mapPath, "utf8"));
+    for (const [index, source] of map.sources.entries()) {
+      const embedded = map.sourcesContent?.[index];
+      const resolvedSource = resolve(dirname(mapPath), source);
+      assert(
+        typeof embedded === "string" ||
+          statSync(resolvedSource, { throwIfNoEntry: false })?.isFile(),
+        `Declaration map points to unavailable source: ${relative(installedPackage, mapPath)} -> ${source}`,
+      );
+    }
+  }
+  const runtimeMaps = filesBelow(join(installedPackage, "dist")).filter((path) =>
+    path.endsWith(".js.map"),
+  );
+  assert(runtimeMaps.length > 0, "Published package unexpectedly contains no runtime source maps");
+  for (const mapPath of runtimeMaps) {
+    const map = JSON.parse(readFileSync(mapPath, "utf8"));
+    assert(
+      Array.isArray(map.sources) &&
+        Array.isArray(map.sourcesContent) &&
+        map.sources.length === map.sourcesContent.length &&
+        map.sourcesContent.every((source) => typeof source === "string"),
+      `Runtime source map lacks embedded sources: ${relative(installedPackage, mapPath)}`,
+    );
+  }
 
   const supportedTypeScriptCompilers = [
     ["5.4", resolve(root, "node_modules/typescript-5-4/bin/tsc")],

@@ -20,7 +20,12 @@ import type {
 import type { EmptyObject } from "../wire.js";
 import type { RpcConstraintError } from "../type-diagnostics.js";
 import type { AnyLayer, LayerShape } from "../layer.js";
-import { ClaimScopeContext, type ClaimEntry, type ClaimRegistry } from "./claims.js";
+import {
+  ClaimScopeContext,
+  type ClaimEntry,
+  type ClaimLease,
+  type ClaimRegistry,
+} from "./claims.js";
 import type { ErrorDefinitionMap, ErrorUnion } from "../server/contract.js";
 import type {
   MutationOptions,
@@ -147,11 +152,12 @@ export interface AnyShell {
 
 interface ShellNode<TError extends AnyTaggedError> {
   readonly acquire: (
-    id: string,
+    operationId: string,
+    leaseId: ClaimLease,
     error: AnyTaggedError,
     retry?: () => void | Promise<void>,
   ) => { readonly fresh: boolean; readonly resumed: Promise<void> };
-  readonly release: (id: string) => void;
+  readonly release: (operationId: string, leaseId: ClaimLease) => void;
   readonly clear: () => void;
   readonly subscribe: (listener: () => void) => () => void;
   readonly snapshot: () => ShellHoldings<TError>;
@@ -349,7 +355,7 @@ const createNode = <TError extends AnyTaggedError, TValue>(
     string,
     {
       readonly error: TError;
-      readonly retry?: () => void | Promise<void>;
+      readonly leases: Map<ClaimLease, (() => void | Promise<void>) | undefined>;
       readonly resumed: Promise<void>;
       readonly resolve: () => void;
     }
@@ -361,8 +367,11 @@ const createNode = <TError extends AnyTaggedError, TValue>(
     entries.clear();
     recompute();
     for (const holding of holdings) {
+      const retry = [...holding.leases.values()].find(
+        (candidate): candidate is () => void | Promise<void> => candidate !== undefined,
+      );
       try {
-        Promise.resolve(holding.retry?.()).then(holding.resolve, holding.resolve);
+        Promise.resolve(retry?.()).then(holding.resolve, holding.resolve);
       } catch {
         holding.resolve();
       }
@@ -384,38 +393,46 @@ const createNode = <TError extends AnyTaggedError, TValue>(
     };
     for (const listener of listeners) listener();
   };
-  const release = (id: string) => {
-    const holding = entries.get(id);
+  const release = (operationId: string, leaseId: ClaimLease) => {
+    const holding = entries.get(operationId);
     if (!holding) return;
-    entries.delete(id);
+    holding.leases.delete(leaseId);
+    if (holding.leases.size !== 0) return;
+    entries.delete(operationId);
     recompute();
     holding.resolve();
   };
   return {
-    acquire: (id, error, retry) => {
+    acquire: (operationId, leaseId, error, retry) => {
       if (!registry.is(error)) {
         throw new TypeError(
           `Shell ${name} received ${error._tag} from a different error definition`,
         );
       }
-      const existing = entries.get(id);
-      if (existing?.error === error) return { fresh: false, resumed: existing.resumed };
-      if (existing) release(id);
+      const existing = entries.get(operationId);
+      if (existing?.error === error) {
+        existing.leases.set(leaseId, retry);
+        return { fresh: false, resumed: existing.resumed };
+      }
+      if (existing) {
+        entries.delete(operationId);
+        existing.resolve();
+      }
       let resolve: () => void = () => undefined;
       const resumed = new Promise<void>((resume) => {
         resolve = resume;
       });
-      entries.set(
-        id,
-        retry === undefined ? { error, resumed, resolve } : { error, retry, resumed, resolve },
-      );
+      entries.set(operationId, { error, leases: new Map([[leaseId, retry]]), resumed, resolve });
       recompute();
       onError?.(error, valueRef.current);
       return { fresh: true, resumed };
     },
     release,
     clear: () => {
-      for (const id of [...entries.keys()]) release(id);
+      const holdings = [...entries.values()];
+      entries.clear();
+      recompute();
+      for (const holding of holdings) holding.resolve();
     },
     subscribe: (listener) => {
       listeners.add(listener);

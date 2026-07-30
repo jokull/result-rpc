@@ -119,6 +119,7 @@ import { createBrowserClient, fetchTransport, batchFetchTransport } from "result
 import {
   createQueryRuntime,
   ResultRpcProvider,
+  ResultSuspense,
   useResultQuery,
   useResultSuspenseQuery,
   useResultMutation,
@@ -974,6 +975,10 @@ Every response carries the server's contract digest (`x-result-rpc-contract`),
 computed from procedure paths, capabilities, complete structural codec schemas,
 and error schemas with policies — identical for a router and the contract it
 implements, replaceable with a `contractVersion` build stamp on both sides.
+The stamp is required protocol evidence. Unary, batch, and stream clients turn
+a missing or empty stamp into `client/protocol-violation`; custom transports
+must preserve it and proxies must forward or expose the header. There is no
+unstamped compatibility mode.
 External Standard Schema/guard codecs supply an application-owned stable schema
 id because their internals cannot be fingerprinted portably. The client compares
 per response:
@@ -995,6 +1000,12 @@ beneath its owner, regardless of which hook observed it — the shell is a
 monitor on all procedure activity below it. Tags index the registry; exact
 definition predicates establish ownership. `useHeld()` aggregates
 everything absorbed, not just shell-hook traffic.
+
+Every pause holding also has a committed lease owner. Ordinary hooks use their
+own effect lifetime. First-render Suspense children cannot commit cleanup, so
+`ResultSuspense` owns their lease at the boundary; unmounting or resetting that
+boundary retires all claims in its scope. Request settlement only populates the
+cache and never acquires ownership asynchronously.
 
 **Narrowing is carried by the shell _value_, not by tree position:**
 

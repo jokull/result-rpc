@@ -212,7 +212,7 @@ const decodeEnvelope = (
 interface SkewMonitor {
   reconcile(
     result: Result<unknown, AnyTaggedError>,
-    serverContract: string | undefined,
+    serverContract: string | null,
   ): Result<unknown, AnyTaggedError>;
   reconcileStream(serverContract: string | null): Result<void, AnyTaggedError>;
 }
@@ -232,14 +232,17 @@ const createSkewMonitor = (
   };
   return {
     reconcile: (result, serverContract) => {
-      if (serverContract === undefined || !mismatch(serverContract)) return result;
+      if (typeof serverContract !== "string" || serverContract.trim().length === 0) {
+        return err(ClientProtocolViolation({ reason: "version" }));
+      }
+      if (!mismatch(serverContract)) return result;
       if (!result.ok && STALE_RECLASSIFIABLE_TAGS.has(result.error._tag)) {
         return err(ClientStale({ reclassifiedFrom: result.error._tag }));
       }
       return result;
     },
     reconcileStream: (serverContract) => {
-      if (serverContract === null) {
+      if (typeof serverContract !== "string" || serverContract.trim().length === 0) {
         return err(ClientProtocolViolation({ reason: "version" }));
       }
       if (!mismatch(serverContract)) return ok(undefined);
