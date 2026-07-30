@@ -21,7 +21,7 @@ const client = createBrowserClient({
   onEvent: (event) =>
     Sentry.addBreadcrumb({
       category: `rpc.${event.type}`,
-      message: event.path,
+      message: "path" in event ? event.path : event.type,
       level: event.type === "failure" ? "warning" : "info",
       data: event,
     }),

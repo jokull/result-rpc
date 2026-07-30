@@ -85,7 +85,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
         </div>
         <figure class="pillar-code">
           <pre><code><span class="c">// SERVER — the layer proves write access</span>
-<span class="k">const</span> rename = app.procedure()
+<span class="k">const</span> rename = server.procedure()
   .use(requireWriteAccess)
   <span class="c">// context.writer + WriteAccessRequired</span>
   .errors(&#123; DocLocked &#125;)
@@ -109,7 +109,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
           <a class="pillar-link" href="/concepts/wire/">Rich types on the wire <span>→</span></a>
         </div>
         <figure class="pillar-code">
-          <pre><code><span class="k">const</span> search = app.procedure()
+          <pre><code><span class="k">const</span> search = server.procedure()
   .output(wire.object(&#123;
     hotel:  Hotel.pick(<span class="s">"id"</span>, <span class="s">"name"</span>), <span class="c">// entity — patches by id</span>
     openAt: wire.date,                <span class="c">// a real Date, not a string</span>
@@ -153,14 +153,14 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
         </div>
         <figure class="pillar-code">
           <pre><code><span class="c">// FREE — return the entity, every view patches by id</span>
-rename: app.procedure()
+rename: server.procedure()
   .output(User.pick(<span class="s">"id"</span>, <span class="s">"name"</span>)).mutation(handler)
 
 <span class="c">// MEMBERSHIP — which lists change, declared once</span>
-comment: app.procedure().affects(commentsFor).mutation(handler)
+comment: server.procedure().affects(commentsFor).mutation(handler)
 
 <span class="c">// CASCADES the output can't name — the server touches them</span>
-archive: app.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
+archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
   touch(Task, id); <span class="c">/* … */</span>
 &#125;)</code></pre>
         </figure>

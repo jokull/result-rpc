@@ -66,7 +66,7 @@ Fetch the `.md` version (append `.md`) of the page you need:
 | Testing (parity client, counter-pins)         | `/guides/testing`                                    |
 | Sentry/observability                          | `/guides/observability`                              |
 | Coming from tRPC                              | `/guides/migrating-from-trpc`                        |
-| Worked examples (01–08)                       | `/reference/examples`                                |
+| Worked examples (01–11)                       | `/reference/examples`                                |
 | Known sharp edges                             | `/reference/sharp-edges`                             |
 
 ## Non-negotiables when writing result-rpc code

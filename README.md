@@ -1481,7 +1481,7 @@ type Assert<T extends true> = T;
 
 // doc.byId resolves a dozen possible failures; with shells mounted the page sees one.
 const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" });
-type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"];
+type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["error"];
 export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>;
 ```
 
@@ -1665,7 +1665,7 @@ export const User = defineModel("user", {
   shape: { id: wire.string, name: wire.string, avatarUrl: wire.url },
 })
 
-const setAvatar = app.procedure()
+const setAvatar = server.procedure()
   .input(wire.object({ key: wire.string }))   // a bucket reference; bytes are out of band
   .output(UserCard)                            // ← returns WHO changed
   .mutation(...)
@@ -1766,7 +1766,7 @@ cached list re-sorts locally — no list invalidation for reorders, ever.
 
 ### What the coherence oracle pins
 
-The entity system is tested by an adversarial suite (26 attack probes,
+The entity system is tested by an adversarial suite (30 attack probes,
 `tests/entity/`) and a **coherence oracle**: seeded-random interleavings of
 mounts, unmounts, mutations, and invalidations against a reference database,
 asserting after every settle that active observers match the oracle exactly
@@ -2263,7 +2263,7 @@ const client = createBrowserClient({
   onEvent: (event) =>
     Sentry.addBreadcrumb({
       category: `rpc.${event.type}`,
-      message: event.path,
+      message: "path" in event ? event.path : event.type,
       level: event.type === "failure" ? "warning" : "info",
       data: event,
     }),

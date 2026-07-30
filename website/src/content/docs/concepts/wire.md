@@ -80,7 +80,7 @@ usually with a presigned URL, and let the RPC contract carry only the
 
 ```ts
 // 1. A tiny RPC to mint an upload target (or mount a plain POST route for it).
-const createUpload = app
+const createUpload = server
   .procedure()
   .input(wire.object({ contentType: wire.string }))
   .output(wire.object({ uploadUrl: wire.url, key: wire.string }))
@@ -90,7 +90,7 @@ const createUpload = app
 await fetch(uploadUrl, { method: "PUT", body: file });
 
 // 3. The RPC that finishes the job carries only the reference.
-const setAvatar = app
+const setAvatar = server
   .procedure()
   .input(wire.object({ userId: wire.string, key: wire.string }))
   .output(UserCard)

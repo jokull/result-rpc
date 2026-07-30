@@ -29,7 +29,7 @@ output becomes `{ items: Message[], nextCursor: string | null }`. The handler
 returns one page; `nextCursor: null` means "this is the last page":
 
 ```ts
-const feed = rpc
+const feed = server
   .procedure()
   .input(wire.object({ q: wire.string }))
   .output(MessageRow)

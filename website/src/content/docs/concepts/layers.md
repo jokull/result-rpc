@@ -176,7 +176,7 @@ type Assert<T extends true> = T;
 
 // doc.byId resolves a dozen possible failures; with shells mounted the page sees one.
 const probeDoc = () => ViewerShell.useQuery(client.doc.byId, { id: "x" });
-type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["result"]["error"];
+type DocQueryError = Extract<ReturnType<typeof probeDoc>, { state: "failure" }>["error"];
 export type _DocPageSeesOnlyNotFound = Assert<Equal<DocQueryError["_tag"], "doc/not-found">>;
 ```
 

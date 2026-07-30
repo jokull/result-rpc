@@ -161,7 +161,7 @@ const RatesUnavailable = error({
   retry: "transient",
 });
 
-const quote = app
+const quote = server
   .procedure()
   .input(wire.object({ currency: wire.string }))
   .output(wire.object({ currency: wire.string, rate: wire.number }))
@@ -222,7 +222,7 @@ const session = defineLayer({
   errors: { SessionExpired, SessionRevoked },
 });
 
-const sessionMiddleware = session.middleware(app, ({ context, errors }) =>
+const sessionMiddleware = session.middleware(server, ({ context, errors }) =>
   gen(async function* () {
     const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>

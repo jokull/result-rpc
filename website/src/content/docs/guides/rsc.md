@@ -15,7 +15,7 @@ Three steps, each a value crossing one boundary:
 
 1. **Server**: a per-request runtime over an in-process server client prefetches
    queries.
-2. **Boundary**: `runtime.dehydrate()` returns `{ v, serializer, payload }` — a
+2. **Boundary**: `runtime.dehydrate()` returns `{ v, serializer, contract, payload }` — a
    plain object with a string payload, so it crosses the RSC server→client
    boundary as an ordinary prop.
 3. **Client**: `<ResultRpcHydrationBoundary state={...}>` merges it into the one
