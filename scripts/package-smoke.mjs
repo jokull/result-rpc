@@ -43,11 +43,21 @@ const canary = "RESULT_RPC_SERVER_GRAPH_MUST_NOT_SHIP";
 // `async function executeProcedure` — so a quarter of the boundary check was
 // silently vacuous. Matching the name survives a refactor changing how it is
 // declared, and `assertMarkersAreLive` fails loudly if one ever stops matching.
+// Identifiers, not declaration forms: `"const executeProcedure ="` matched
+// nothing for as long as it existed — the symbol is emitted as
+// `async function executeProcedure` — so a quarter of the boundary check was
+// silently vacuous.
+//
+// Each name must also be distinctive enough to mean *our* server runtime.
+// `createRouter` was tried and is not: Next ships its own
+// (`next/dist/client/router.js`), so it fired on a clean Next browser bundle.
+// `assertMarkersAreLive` catches a marker that stops matching; nothing catches
+// one that matches too much except choosing names nobody else uses.
 const serverRuntimeMarkers = [
   "ProcedureImplementer",
   "MiddlewareBuilder",
-  "createRouter",
   "executeProcedure",
+  "executeSubscription",
 ];
 
 /**
