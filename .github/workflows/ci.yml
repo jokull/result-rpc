@@ -30,21 +30,67 @@ jobs:
           version: 11.9.0
           run_install: false
 
-      - name: Install Node 20
+      # Tooling runs on a Node pnpm supports: pnpm 11.9.0 declares
+      # engines.node ">=22.13" and aborts on Node 20 with
+      # ERR_UNKNOWN_BUILTIN_MODULE. The package under test still gets exercised
+      # on 20.19.5 below — only the build of it needs a newer Node.
+      - name: Install Node 24 for tooling
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20.19.5
+          node-version: 24.18.1
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build package
-        run: pnpm build
+      - name: Build and pack the artifact
+        run: |
+          pnpm build
+          mkdir -p artifacts
+          npm pack --ignore-scripts --pack-destination artifacts
 
-      - name: Verify installed consumers
-        run: pnpm test:package
+      - name: Install Node 20.19.5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20.19.5
+
+      # package.json declares engines.node ">=20.19.5". This is the step that
+      # makes that a tested claim rather than an assertion: the packed tarball
+      # is installed with npm — which ships with Node 20, unlike pnpm — and
+      # every published entry point is imported on the minimum supported Node.
+      - name: Load every entry point on the minimum supported Node
+        run: |
+          node --version
+          consumer="$(mktemp -d)"
+          cd "$consumer"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund --loglevel=error \
+            react react-dom "$GITHUB_WORKSPACE"/artifacts/*.tgz
+          node --input-type=module -e '
+            const entries = [
+              "result-rpc",
+              "result-rpc/server",
+              "result-rpc/client",
+              "result-rpc/db",
+              "result-rpc/query",
+              "result-rpc/react",
+              "result-rpc/testing",
+            ];
+            let failed = false;
+            for (const entry of entries) {
+              try {
+                const loaded = await import(entry);
+                const count = Object.keys(loaded).length;
+                if (count === 0) throw new Error("resolved to an empty module");
+                console.log(`ok  ${entry} (${count} exports)`);
+              } catch (cause) {
+                failed = true;
+                console.error(`FAIL ${entry}: ${cause.message}`);
+              }
+            }
+            if (failed) process.exit(1);
+          '
 
   release-gate:
     name: Complete release gate · Node 24
