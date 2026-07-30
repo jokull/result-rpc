@@ -27,6 +27,7 @@ import {
   claimOwner,
   createSuspenseClaimLease,
   pauseQueryProjection,
+  resolveClaimOwner,
   SuspenseClaimLeaseContext,
   useAmbientClaim,
   useClaimObserver,
@@ -63,6 +64,7 @@ import type {
 } from "../query/runtime.js";
 
 import { createQueryRuntime } from "../query/runtime.js";
+import { shouldRetryMutation } from "../query/mutation-retry.js";
 export { SERIALIZER_VERSION, toResult } from "../query/runtime.js";
 export type {
   AnyModel,
@@ -483,7 +485,7 @@ export const createResultRpcReact = <TClient extends object>(): Readonly<
   });
 };
 
-/** Builds the claim breadcrumb notifier for a procedure, if a listener exists. */
+/** Builds the pause-holding breadcrumb notifier for a procedure, if a listener exists. */
 const useClaimNotifier = (procedure: Function) => {
   const runtime = useRuntime();
   const identity = getClientIdentity(runtime.client);
@@ -789,6 +791,11 @@ export const useResultMutation = <
   // codebases naturally write them — must never resubscribe or loop.
   const optionsRef = useRef(options);
   optionsRef.current = options;
+  const definitions = useMemo(() => {
+    const metadata = getProcedureClientMetadata(procedure);
+    if (!metadata) throw new TypeError("Expected a registered result-rpc mutation client");
+    return metadata.procedure._def.definitions;
+  }, [procedure]);
   const observer = useMemo(() => {
     const dynamicOptions: MutationOptions<
       ProcedureClientInput<TProcedureClient>,
@@ -797,27 +804,31 @@ export const useResultMutation = <
       TContext
     > = {
       get retry() {
-        const retry = optionsRef.current.retry;
-        if (typeof retry !== "function") return retry;
-        return (error: ProcedureClientError<TProcedureClient>, failureCount: number) =>
-          claimOwner(scopeRef.current, error) ? false : retry(error, failureCount);
+        return (error: ProcedureClientError<TProcedureClient>, failureCount: number) => {
+          const ownership = resolveClaimOwner(scopeRef.current, error);
+          if (ownership.state !== "unclaimed") return false;
+          return shouldRetryMutation(definitions, optionsRef.current.retry, failureCount, error);
+        };
       },
       optimistic: (input, cache) => optionsRef.current.optimistic?.(input, cache),
       onSuccess: (value, input) => optionsRef.current.onSuccess?.(value, input),
       onFailure: (error, input, context, cache) => {
-        if (claimOwner(scopeRef.current, error)) {
+        const ownership = resolveClaimOwner(scopeRef.current, error);
+        if (ownership.state !== "unclaimed") {
           return optionsRef.current.onCancel?.(input, context, cache);
         }
         return optionsRef.current.onFailure?.(error, input, context, cache);
       },
       onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
       onSettled: (result, input, context, cache) => {
-        if (!result.ok && claimOwner(scopeRef.current, result.error)) return undefined;
+        if (!result.ok && resolveClaimOwner(scopeRef.current, result.error).state !== "unclaimed") {
+          return undefined;
+        }
         return optionsRef.current.onSettled?.(result, input, context, cache);
       },
     };
     return runtime.mutation(procedure, dynamicOptions);
-  }, [runtime, procedure]);
+  }, [runtime, procedure, definitions]);
   const observerRef = useRef(observer);
   observerRef.current = observer;
   const notifyClaim = useClaimNotifier(procedure);

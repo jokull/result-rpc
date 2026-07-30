@@ -255,12 +255,15 @@ With `effect: "pause"` (the default):
 
 With `effect: "escalate"`, the tagged value is thrown to the nearest React
 error boundary as the reified `TaggedError` instance, so ordinary `Error`
-tooling and `matchError` both work on it. Escalate is the bridge back to
-the machinery React already has.
+tooling and `matchError` both work on it. Escalation creates no holding, does
+not call the shell's `onError`, and emits no `claimed` breadcrumb: the error
+boundary owns that observation.
 
-`onError` fires once per newly claimed error per observer. One logical event —
-a revoked session — arrives on every in-flight operation at once, so handlers
-must be idempotent (a redirect, a `signOut()`, a toast keyed by tag).
+For a pausing shell, `onError` fires once per newly held error per observer.
+One logical event — a revoked session — can arrive on every in-flight
+operation at once, so handlers must be idempotent (a redirect, a `signOut()`,
+a toast keyed by tag). Calling `resume()` starts a fresh attempt; if it fails
+with the same owned error, that new holding may call `onError` again.
 
 ## The pause arc ends in resume
 

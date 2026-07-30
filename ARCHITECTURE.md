@@ -285,10 +285,14 @@ union includes and `defectErrors` claims.
 One structured stream per tier, values excluded by construction:
 
 - **Client** — `createBrowserClient({ onEvent })`: `call`/`success`/`failure`/`retry`
-  from the call pipeline (paths, tags, durations), plus `claimed` when a shell
-  takes ownership of a failure (path, tag, owner, effect). Claim events emit at
-  the same dedupe point as shell `onError` — once per held error per observer.
-- **Shells** — `onError` per shell: the ownership reaction itself.
+  from the call pipeline (paths, tags, durations), plus `claimed` when a
+  pausing shell holds a failure (path, tag, owner, `effect: "pause"`). Claim
+  events emit at the same dedupe point as shell `onError` — once per newly held
+  error per observer.
+- **Pausing shells** — `onError` is the holding reaction. A failed recovery is
+  a fresh attempt and may report the same owned error again.
+- **Escalating shells** — the nearest React error boundary observes the exact
+  tagged instance; there is no holding, shell reaction, or `claimed` event.
 - **Server, declared** — `createFetchHandler({ onError })`: every declared
   error response with its `ErrorPolicy`, path, and status; `severity` exists
   for this tap.
@@ -1026,20 +1030,23 @@ claims nothing.
 
 Projection rules for a claimed error:
 
-| Effect     | Query                                                             | Mutation                                                            | Subscription                             |
-| ---------- | ----------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
-| `pause`    | `fetch: "paused"`; stale success is retained, otherwise `pending` | state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
-| `escalate` | reified `TaggedError` thrown during render                        | same                                                                | same                                     |
+| Effect     | Query                                                             | Mutation                                                                      | Subscription                             |
+| ---------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------- |
+| `pause`    | `fetch: "paused"`; stale success is retained, otherwise `pending` | no retry; state returns to `idle`, `mutate` rejects with the control sentinel | `connection: "paused"`, `result` cleared |
+| `escalate` | reified `TaggedError` thrown during render                        | same                                                                          | same                                     |
 
 Escalation throws the `TaggedError` itself rather than a wrapper, so a boundary
-fallback can `matchError` on it. The library does not introduce a second public
-wrapper error shape.
+fallback can `matchError` on it. It creates no holding, calls no shell
+`onError`, and emits no pause `claimed` event. The library does not introduce a
+second public wrapper error shape.
 
 Each shell instance owns a small store of the errors it is currently holding —
 each with the retry handle its observer registered (query refetch, subscription
 reconnect; mutations register none). `useHeld()` exposes the aggregate plus
 `resume()`, which retries every holding. Layer shells resume automatically when
 their context procedure's `updatedAt` advances (the value was re-established).
+If a recovery attempt fails with an owned error, it creates a fresh holding and
+may invoke the idempotent pause reaction again.
 
 Teardown is specified: holdings release via each claim effect's cleanup as
 observers unmount (child-first, so the node drains before the provider goes),

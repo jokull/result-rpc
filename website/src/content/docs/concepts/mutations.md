@@ -41,7 +41,10 @@ ones that fire. (`MutationOptions` and `QueryCache` are exported from
 `result-rpc/react` when you want to hoist an options object anyway.)
 
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
-`onFailure` or the returned state, and the `mutate` promise rejects with the
+`onFailure`, failure `onSettled`, or the returned state—and never make another
+request, whether retry was configured as a callback, a count, or inherited
+from error policy. `onCancel` still runs with the optimistic context so local
+work can be rolled back, and the `mutate` promise rejects with the
 distinguishable `claimed` signal, as described under
 [What a claimed error does](/concepts/shells/#what-a-claimed-error-does-to-the-operation).
 

@@ -150,6 +150,14 @@ export const useClaimObserver = (
     let current: ClaimEntry | undefined;
     let currentError: AnyTaggedError | undefined;
 
+    const ownerForExternalNotification = (
+      error: AnyTaggedError | undefined,
+    ): ClaimEntry | undefined => {
+      if (!error) return undefined;
+      const resolution = resolveClaimOwner(entriesRef.current, error);
+      return resolution.state === "owned" ? resolution.owner : undefined;
+    };
+
     const releaseFrom = (entry: ClaimEntry) => {
       entry.release(aggregateId, leaseId);
       suspenseLease?.forget(entry, aggregateId);
@@ -166,7 +174,10 @@ export const useClaimObserver = (
     };
 
     const acquire = (error: AnyTaggedError | undefined): ClaimAcquisition | undefined => {
-      const owner = ownerOf(entriesRef.current, error);
+      // External cache/retry callbacks must be total. An incompatible
+      // definition is surfaced by `render` or the imperative mutation promise,
+      // never thrown through TanStack's notification machinery.
+      const owner = ownerForExternalNotification(error);
       if (!owner || !error || owner.effect === "escalate") {
         release();
         return undefined;
@@ -235,22 +246,40 @@ export const useAmbientClaim = (
 /** Reads the mounted scope for imperative checks (mutation promises). */
 export const useClaimScope = (): readonly ClaimEntry[] => useContext(ClaimScopeContext);
 
-/** Innermost mounted owner of a tag, if any (scope is outermost-first). */
-export const claimOwner = (
+export type ClaimOwnerResolution =
+  | { readonly state: "unclaimed" }
+  | { readonly state: "owned"; readonly owner: ClaimEntry }
+  | { readonly state: "incompatible"; readonly error: TypeError };
+
+/** Total exact-definition lookup for use inside external callback machinery. */
+export const resolveClaimOwner = (
   entries: readonly ClaimEntry[],
   error: AnyTaggedError,
-): ClaimEntry | undefined => {
+): ClaimOwnerResolution => {
   const tag = error._tag;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
     const definition = entry.registry.definitions.get(tag);
     if (!definition) continue;
     if (!entry.registry.is(error)) {
-      throw new TypeError(`Shell ${entry.name} claims ${tag} with a different error definition`);
+      return {
+        state: "incompatible",
+        error: new TypeError(`Shell ${entry.name} claims ${tag} with a different error definition`),
+      };
     }
-    return entry;
+    return { state: "owned", owner: entry };
   }
-  return undefined;
+  return { state: "unclaimed" };
+};
+
+/** Innermost mounted exact owner, throwing a fail-loud identity diagnostic. */
+export const claimOwner = (
+  entries: readonly ClaimEntry[],
+  error: AnyTaggedError,
+): ClaimEntry | undefined => {
+  const resolution = resolveClaimOwner(entries, error);
+  if (resolution.state === "incompatible") throw resolution.error;
+  return resolution.state === "owned" ? resolution.owner : undefined;
 };
 
 /**

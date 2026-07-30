@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { StrictMode, Suspense, useState } from "react";
+import { Component, StrictMode, Suspense, useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { err, error, ok, wire, type Result } from "../index.js";
 import { createFixtureClient } from "../testing/index.js";
@@ -37,12 +37,37 @@ const value = r
   .output(wire.string)
   .query(({ input }) => ok(input.id));
 const SessionExpired = error({ tag: "session/expired", httpStatus: 401 });
+const SessionRefreshing = error({
+  tag: "session/refreshing",
+  data: wire.object({ retryAfterMs: wire.number }),
+  retry: "after",
+  httpStatus: 401,
+});
+const TitleConflict = error({ tag: "doc/title-conflict", httpStatus: 409 });
+const TemporaryConflict = error({
+  tag: "doc/temporary-conflict",
+  data: wire.object({ retryAfterMs: wire.number }),
+  retry: "after",
+  httpStatus: 409,
+});
+const renameAttempts = new Map<string, number>();
 const rename = r
   .procedure()
   .input(wire.object({ title: wire.string }))
   .output(wire.string)
-  .errors({ SessionExpired })
-  .mutation(({ input }) => (input.title === "expired" ? err(SessionExpired()) : ok(input.title)));
+  .errors({ SessionExpired, SessionRefreshing, TitleConflict, TemporaryConflict })
+  .mutation(({ input }) => {
+    renameAttempts.set(input.title, (renameAttempts.get(input.title) ?? 0) + 1);
+    if (input.title === "expired") return err(SessionExpired());
+    if (input.title === "refreshing") {
+      return err(SessionRefreshing({ retryAfterMs: 0 }));
+    }
+    if (input.title === "conflict") return err(TitleConflict());
+    if (input.title === "temporary") {
+      return err(TemporaryConflict({ retryAfterMs: 0 }));
+    }
+    return ok(input.title);
+  });
 const eventContract = r
   .procedure()
   .input(wire.object({ id: wire.string }))
@@ -60,9 +85,35 @@ const client = createFixtureClient({
   transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
 });
 type FrameworkFailure = ServerInternal | ServerBadRequest | ClientBoundaryError;
-type RenameFailure = FrameworkFailure | ReturnType<typeof SessionExpired>;
+type RenameFailure =
+  | FrameworkFailure
+  | ReturnType<typeof SessionExpired>
+  | ReturnType<typeof SessionRefreshing>
+  | ReturnType<typeof TitleConflict>
+  | ReturnType<typeof TemporaryConflict>;
+type ResidualRenameFailure =
+  | FrameworkFailure
+  | ReturnType<typeof SessionRefreshing>
+  | ReturnType<typeof TitleConflict>
+  | ReturnType<typeof TemporaryConflict>;
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+class TestBoundary extends Component<
+  { readonly children?: ReactNode; readonly onCaught: (error: unknown) => void },
+  { readonly caught?: unknown }
+> {
+  override state: { readonly caught?: unknown } = {};
+  static getDerivedStateFromError(caught: unknown) {
+    return { caught };
+  }
+  override componentDidCatch(caught: unknown) {
+    this.props.onCaught(caught);
+  }
+  override render() {
+    return this.state.caught === undefined ? this.props.children : null;
+  }
+}
 
 describe("React bindings", () => {
   test("provider ownership clears only owned runtimes across Strict replay and client replacement", async () => {
@@ -183,15 +234,29 @@ describe("React bindings", () => {
     const failures: RenameFailure[] = [];
     const settled: Result<string, RenameFailure>[] = [];
     const controls: string[] = [];
+    const retryCalls: number[] = [];
+    let optimisticValue = "original";
     let mutationState:
-      | MutationState<{ readonly title: string }, string, FrameworkFailure>
+      | MutationState<{ readonly title: string }, string, ResidualRenameFailure>
       | undefined;
 
     function Probe() {
       mutationState = SessionShell.useMutation(client.demo.rename, {
+        optimistic: ({ title }) => {
+          const previous = optimisticValue;
+          optimisticValue = title;
+          return { rollback: () => (optimisticValue = previous) };
+        },
+        retry: (_failure, count) => {
+          retryCalls.push(count);
+          return true;
+        },
         onFailure: (failure) => void failures.push(failure),
         onSettled: (result) => void settled.push(result),
-        onCancel: () => void controls.push("cleanup"),
+        onCancel: (_input, context) => {
+          controls.push("cleanup");
+          context?.rollback();
+        },
       });
       return null;
     }
@@ -224,10 +289,335 @@ describe("React bindings", () => {
     expect(failures).toEqual([]);
     expect(settled).toEqual([]);
     expect(controls).toEqual(["cleanup"]);
+    expect(retryCalls).toEqual([]);
+    expect(optimisticValue).toBe("original");
     // the outcome is owned above: the mutation projects idle, not failure
     expect(mutationState?.state).toBe("idle");
     await act(async () => renderer?.unmount());
     runtime.clear();
+  });
+
+  test("plain mutation hooks discharge owned callbacks through an ambient shell", async () => {
+    const SessionShell = defineShell({ name: "ambient-session-owner", claims: { SessionExpired } });
+    const runtime = createQueryRuntime({ client });
+    const failures: RenameFailure[] = [];
+    const settled: Result<string, RenameFailure>[] = [];
+    const controls: string[] = [];
+    const retryCalls: number[] = [];
+    let mutationState: MutationState<{ readonly title: string }, string, RenameFailure> | undefined;
+
+    function Probe() {
+      mutationState = useResultMutation(client.demo.rename, {
+        retry: (_failure, count) => {
+          retryCalls.push(count);
+          return true;
+        },
+        onFailure: (failure) => void failures.push(failure),
+        onSettled: (result) => void settled.push(result),
+        onCancel: () => void controls.push("cleanup"),
+      });
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <SessionShell.Provider>
+            <Probe />
+          </SessionShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    let rejection: unknown;
+    await act(async () => {
+      await mutationState!.mutate({ title: "expired" }).catch((reason: unknown) => {
+        rejection = reason;
+      });
+      await settle();
+    });
+    expect(isClaimed(rejection)).toBe(true);
+    expect(failures).toEqual([]);
+    expect(settled).toEqual([]);
+    expect(retryCalls).toEqual([]);
+    expect(controls).toEqual(["cleanup"]);
+    expect(mutationState?.state).toBe("idle");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("shell mutations preserve callbacks for ordinary residual failures", async () => {
+    const SessionShell = defineShell({
+      name: "residual-session-owner",
+      claims: { SessionExpired },
+    });
+    const runtime = createQueryRuntime({ client });
+    const failures: ResidualRenameFailure[] = [];
+    const settled: Result<string, ResidualRenameFailure>[] = [];
+    const controls: string[] = [];
+    let mutationState:
+      | MutationState<{ readonly title: string }, string, ResidualRenameFailure>
+      | undefined;
+
+    function Probe() {
+      mutationState = SessionShell.useMutation(client.demo.rename, {
+        retry: false,
+        onFailure: (failure) => void failures.push(failure),
+        onSettled: (result) => void settled.push(result),
+        onCancel: () => void controls.push("cleanup"),
+      });
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <SessionShell.Provider>
+            <Probe />
+          </SessionShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    let result: Result<string, ResidualRenameFailure> | undefined;
+    await act(async () => {
+      result = await mutationState!.mutate({ title: "conflict" });
+      await settle();
+    });
+    expect(result?.ok).toBe(false);
+    expect(failures.map((failure) => failure._tag)).toEqual(["doc/title-conflict"]);
+    expect(settled.map((entry) => (entry.ok ? "ok" : entry.error._tag))).toEqual([
+      "doc/title-conflict",
+    ]);
+    expect(controls).toEqual([]);
+    expect(mutationState?.state).toBe("failure");
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("mutation ownership precedes every retry form for shell and ambient hooks", async () => {
+    const RetryShell = defineShell({
+      name: "retry-session-owner",
+      claims: { SessionExpired, SessionRefreshing },
+    });
+    type RetryOption =
+      | false
+      | number
+      | ((error: RenameFailure, failureCount: number) => boolean)
+      | undefined;
+
+    const run = async (
+      hook: "shell" | "plain",
+      title: "expired" | "refreshing" | "conflict" | "temporary",
+      retry: RetryOption,
+    ) => {
+      renameAttempts.set(title, 0);
+      const runtime = createQueryRuntime({ client });
+      const failures: RenameFailure[] = [];
+      const settled: Result<string, RenameFailure>[] = [];
+      let cancellations = 0;
+      let mutationState:
+        | MutationState<{ readonly title: string }, string, RenameFailure>
+        | undefined;
+      const options = {
+        ...(retry === undefined ? {} : { retry }),
+        onFailure: (failure: RenameFailure) => void failures.push(failure),
+        onSettled: (result: Result<string, RenameFailure>) => void settled.push(result),
+        onCancel: () => void (cancellations += 1),
+      };
+
+      function ShellProbe() {
+        mutationState = RetryShell.useMutation(client.demo.rename, options);
+        return null;
+      }
+      function PlainProbe() {
+        mutationState = useResultMutation(client.demo.rename, options);
+        return null;
+      }
+
+      let renderer: ReactTestRenderer | undefined;
+      await act(async () => {
+        renderer = create(
+          <ResultRpcProvider runtime={runtime}>
+            <RetryShell.Provider>
+              {hook === "shell" ? <ShellProbe /> : <PlainProbe />}
+            </RetryShell.Provider>
+          </ResultRpcProvider>,
+        );
+        await settle();
+      });
+      let outcome: Result<string, RenameFailure> | undefined;
+      let rejection: unknown;
+      await act(async () => {
+        await mutationState!.mutate({ title }).then(
+          (result) => {
+            outcome = result;
+          },
+          (reason: unknown) => {
+            rejection = reason;
+          },
+        );
+        await settle();
+      });
+      const snapshot = {
+        attempts: renameAttempts.get(title),
+        cancellations,
+        failures: failures.map((failure) => failure._tag),
+        settled: settled.map((result) => (result.ok ? "ok" : result.error._tag)),
+        state: mutationState?.state,
+        outcome,
+        rejection,
+      };
+      await act(async () => renderer?.unmount());
+      runtime.clear();
+      return snapshot;
+    };
+
+    for (const hook of ["shell", "plain"] as const) {
+      let callbackCalls = 0;
+      const callback = (_failure: RenameFailure, failureCount: number) => {
+        callbackCalls += 1;
+        return failureCount < 2;
+      };
+      for (const [title, retry] of [
+        ["expired", false],
+        ["expired", 2],
+        ["expired", callback],
+        ["refreshing", undefined],
+      ] as const) {
+        callbackCalls = 0;
+        const result = await run(hook, title, retry);
+        expect(result.attempts).toBe(1);
+        expect(result.cancellations).toBe(1);
+        expect(result.failures).toEqual([]);
+        expect(result.settled).toEqual([]);
+        expect(result.state).toBe("idle");
+        expect(result.outcome).toBeUndefined();
+        expect(isClaimed(result.rejection)).toBe(true);
+        expect(callbackCalls).toBe(0);
+      }
+    }
+
+    let callbackCounts: number[] = [];
+    const retryResidual = (_failure: RenameFailure, failureCount: number) => {
+      callbackCounts.push(failureCount);
+      return failureCount < 1;
+    };
+    for (const [title, retry, attempts, expectedCallbackCounts] of [
+      ["conflict", false, 1, []],
+      ["conflict", 2, 3, []],
+      ["conflict", retryResidual, 2, [0, 1]],
+      ["temporary", undefined, 4, []],
+    ] as const) {
+      callbackCounts = [];
+      const result = await run("shell", title, retry);
+      expect(result.attempts).toBe(attempts);
+      expect(result.cancellations).toBe(0);
+      expect(result.failures).toEqual([
+        title === "temporary" ? "doc/temporary-conflict" : "doc/title-conflict",
+      ]);
+      expect(result.settled).toEqual(result.failures);
+      expect(result.state).toBe("failure");
+      expect(result.outcome?.ok).toBe(false);
+      expect(result.rejection).toBeUndefined();
+      expect(callbackCounts).toEqual([...expectedCallbackCounts]);
+    }
+  });
+
+  test("same-tag mutation collisions reject and render through controlled boundaries", async () => {
+    const CollidingSessionExpired = error({
+      tag: "session/expired",
+      data: wire.object({ count: wire.number }),
+    });
+
+    for (const hook of ["shell", "plain"] as const) {
+      const reactions: string[] = [];
+      const CollisionShell = defineShell({
+        name: `collision-${hook}`,
+        claims: { CollidingSessionExpired },
+        onError: (failure) => void reactions.push(`${failure._tag}:${failure.data.count}`),
+      });
+      const runtime = createQueryRuntime({ client });
+      renameAttempts.set("expired", 0);
+      const failures: RenameFailure[] = [];
+      const settled: Result<string, RenameFailure>[] = [];
+      let cleanups = 0;
+      let rolledBack = false;
+      let affected = 0;
+      let caught: unknown;
+      let mutationState:
+        | MutationState<{ readonly title: string }, string, RenameFailure>
+        | undefined;
+      const options = {
+        retry: false as const,
+        optimistic: () => ({ rollback: () => (rolledBack = true) }),
+        onFailure: (failure: RenameFailure) => void failures.push(failure),
+        onSettled: (result: Result<string, RenameFailure>) => void settled.push(result),
+        onCancel: (
+          _input: { readonly title: string },
+          context: { rollback: () => boolean } | undefined,
+        ) => {
+          cleanups += 1;
+          context?.rollback();
+        },
+      };
+
+      function Holdings() {
+        affected = CollisionShell.useHeld().affected;
+        return null;
+      }
+      function ShellProbe() {
+        mutationState = CollisionShell.useMutation(client.demo.rename, options);
+        return null;
+      }
+      function PlainProbe() {
+        mutationState = useResultMutation(client.demo.rename, options);
+        return null;
+      }
+
+      let renderer: ReactTestRenderer | undefined;
+      const originalConsoleError = console.error;
+      console.error = () => undefined;
+      try {
+        await act(async () => {
+          renderer = create(
+            <ResultRpcProvider runtime={runtime}>
+              <CollisionShell.Provider>
+                <Holdings />
+                <TestBoundary onCaught={(error) => (caught = error)}>
+                  {hook === "shell" ? <ShellProbe /> : <PlainProbe />}
+                </TestBoundary>
+              </CollisionShell.Provider>
+            </ResultRpcProvider>,
+          );
+          await settle();
+        });
+        let rejection: unknown;
+        await act(async () => {
+          await mutationState!.mutate({ title: "expired" }).catch((reason: unknown) => {
+            rejection = reason;
+          });
+          await settle();
+        });
+        expect(renameAttempts.get("expired")).toBe(1);
+        expect(rejection).toBeInstanceOf(TypeError);
+        expect((rejection as Error).message).toContain("different error definition");
+        expect(caught).toBeInstanceOf(TypeError);
+        expect((caught as Error).message).toContain("different error definition");
+        expect(failures).toEqual([]);
+        expect(settled).toEqual([]);
+        expect(cleanups).toBe(1);
+        expect(rolledBack).toBe(true);
+        expect(reactions).toEqual([]);
+        expect(affected).toBe(0);
+      } finally {
+        console.error = originalConsoleError;
+        await act(async () => renderer?.unmount());
+        runtime.clear();
+      }
+    }
   });
 
   test("mounts subscription and Suspense projections", async () => {

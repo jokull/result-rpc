@@ -11,7 +11,7 @@ import {
   type QueryObserverResult,
   type MutationObserverResult,
 } from "@tanstack/query-core";
-import { isTaggedError, type AnyTaggedError, type AnyErrorDefinition } from "../error.js";
+import { isTaggedError, type AnyTaggedError } from "../error.js";
 import { getOnlineSnapshot, subscribeConnectivity } from "../connectivity.js";
 import type { EffectiveContractVersion } from "../contract-digest.js";
 
@@ -35,7 +35,6 @@ const wireOnlineManager = () => {
     });
   });
 };
-import { frameworkErrorDefinitions } from "../framework-errors.js";
 import { err, ok, type Result } from "../result.js";
 import { encodeProcedureInput } from "../wire.js";
 import {
@@ -89,6 +88,7 @@ import type {
 import { isCancelled } from "../client/transport.js";
 import type { ErrorDefinitionMap } from "../server/contract.js";
 import type { RpcConstraintError } from "../type-diagnostics.js";
+import { definitionFor, shouldRetryMutation } from "./mutation-retry.js";
 
 export type * from "../client/base-client.js";
 export type { EffectiveContractVersion } from "../contract-digest.js";
@@ -465,8 +465,10 @@ export interface MutationOptions<
   ) => void | Promise<void>;
   /**
    * Cleans up local optimistic work when control flow interrupts the consumer:
-   * an explicit cancellation, or a mounted React shell claiming the failure.
-   * The rejected mutation promise distinguishes `cancelled` from `claimed`.
+   * an explicit cancellation, a mounted React shell claiming the failure, or
+   * a shell definition-identity mismatch failing loudly before typed failure
+   * callbacks. The rejected mutation promise distinguishes `cancelled` from
+   * `claimed`; a definition mismatch rejects with its diagnostic `TypeError`.
    */
   readonly onCancel?: (
     input: TInput,
@@ -578,14 +580,6 @@ export interface ResultSubscriptionObserver<out T, out E extends AnyTaggedError>
   readonly close: () => void;
 }
 
-const definitionFor = (
-  definitions: ErrorDefinitionMap,
-  failure: AnyTaggedError,
-): AnyErrorDefinition | undefined =>
-  [...Object.values(definitions), ...Object.values(frameworkErrorDefinitions)].find(
-    (definition) => definition.tag === failure._tag,
-  );
-
 const defaultShouldRetry = (
   definitions: ErrorDefinitionMap,
   failureCount: number,
@@ -612,16 +606,6 @@ const defaultShouldRetry = (
  * Callers with idempotent mutations can opt back in via `retry:`;
  * idempotency keys are the roadmap for making full retry the default.
  */
-const defaultShouldRetryMutation = (
-  definitions: ErrorDefinitionMap,
-  failureCount: number,
-  failure: unknown,
-): boolean => {
-  if (!isTaggedError(failure) || failureCount >= 3) return false;
-  if (failure._tag === "client/offline") return getOnlineSnapshot();
-  return definitionFor(definitions, failure)?.policy.retry === "after";
-};
-
 const defaultRetryDelay = (
   definitions: ErrorDefinitionMap,
   failureCount: number,
@@ -1494,14 +1478,8 @@ export const createQueryRuntime = <TClient>(
       // Read retry lazily on every attempt: React callers hand in a fresh
       // options object per render, and the current value must win.
       const retry = (failureCount: number, failure: unknown) => {
-        const configured = mutationOptions.retry;
-        if (configured === undefined) {
-          return defaultShouldRetryMutation(definitions, failureCount, failure);
-        }
-        if (typeof configured === "function") {
-          return metadata.errors.is(failure) && configured(failure, failureCount);
-        }
-        return configured !== false && failureCount < configured;
+        if (!metadata.errors.is(failure)) return false;
+        return shouldRetryMutation(definitions, mutationOptions.retry, failureCount, failure);
       };
 
       let lastTouched: readonly EntityCacheKey[] | undefined;

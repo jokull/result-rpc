@@ -768,7 +768,7 @@ export default async function Page({
   }
 
   console.log(
-    "package smoke: TS 5.4/5.9/7 declarations, React 18.3/19.2 claims, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
+    "package smoke: TS 5.4/5.9/7 declarations, React 18.3/19.2 claims and mutation retries, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
   );
 } finally {
   rmSync(temporary, { recursive: true, force: true });

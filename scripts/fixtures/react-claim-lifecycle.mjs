@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import React, { Component, StrictMode, Suspense, createElement, useState } from "react";
 import TestRenderer from "react-test-renderer";
 import { err, error, ok, wire } from "result-rpc";
-import { fetchTransport } from "result-rpc/client";
+import { fetchTransport, isClaimed } from "result-rpc/client";
 import { createQueryRuntime } from "result-rpc/query";
 import {
   ResultRpcProvider,
   ResultSuspense,
   defineShell,
+  useResultMutation,
   useResultSuspenseQuery,
 } from "result-rpc/react";
 import { createFetchHandler, serverRpc } from "result-rpc/server";
@@ -25,9 +26,52 @@ const SessionExpired = error({
   retry: "never",
   visibility: "public",
 });
+const SessionRefreshing = error({
+  tag: "auth/session-refreshing",
+  data: wire.object({ retryAfterMs: wire.number }),
+  retry: "after",
+  visibility: "public",
+});
+const TitleConflict = error({
+  tag: "doc/title-conflict",
+  data: wire.object({}),
+  retry: "never",
+  visibility: "public",
+});
+const TemporaryConflict = error({
+  tag: "doc/temporary-conflict",
+  data: wire.object({ retryAfterMs: wire.number }),
+  retry: "after",
+  visibility: "public",
+});
+const CollidingSessionExpired = error({
+  tag: "auth/session-expired",
+  data: wire.object({ count: wire.number }),
+  retry: "never",
+  visibility: "public",
+});
 
-const createHarness = () => {
+class CaptureBoundary extends Component {
+  state = { caught: undefined };
+  static getDerivedStateFromError(caught) {
+    return { caught };
+  }
+  componentDidCatch(caught) {
+    this.props.onCaught(caught);
+  }
+  render() {
+    return this.state.caught === undefined ? this.props.children : null;
+  }
+}
+
+const createHarness = ({ collision = false } = {}) => {
   let sessionValid = false;
+  const mutationAttempts = {
+    never: 0,
+    after: 0,
+    "residual-never": 0,
+    "residual-after": 0,
+  };
   const app = serverRpc.context();
   const guarded = app
     .procedure()
@@ -37,7 +81,34 @@ const createHarness = () => {
     .query(({ input, errors }) =>
       sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})),
     );
-  const router = app.router({ guarded });
+  const mutateOwned = app
+    .procedure()
+    .input(
+      wire.object({
+        mode: wire.union([
+          wire.literal("never"),
+          wire.literal("after"),
+          wire.literal("residual-never"),
+          wire.literal("residual-after"),
+        ]),
+      }),
+    )
+    .output(wire.string)
+    .errors({ SessionExpired, SessionRefreshing, TitleConflict, TemporaryConflict })
+    .mutation(({ input, errors }) => {
+      mutationAttempts[input.mode] += 1;
+      switch (input.mode) {
+        case "after":
+          return err(errors.SessionRefreshing({ retryAfterMs: 0 }));
+        case "residual-never":
+          return err(errors.TitleConflict({}));
+        case "residual-after":
+          return err(errors.TemporaryConflict({ retryAfterMs: 0 }));
+        default:
+          return err(errors.SessionExpired({}));
+      }
+    });
+  const router = app.router({ guarded, mutateOwned });
   const handler = createFetchHandler({ router, createContext: () => ({}) });
   const client = createFixtureClient({
     router,
@@ -50,18 +121,261 @@ const createHarness = () => {
   const reactions = [];
   const AuthShell = defineShell({
     name: `package-smoke-auth-${sequence++}`,
-    claims: { SessionExpired },
+    claims: collision ? { CollidingSessionExpired } : { SessionExpired, SessionRefreshing },
     onError: (failure) => reactions.push(failure._tag),
   });
   return {
     AuthShell,
     client,
+    mutationAttempts,
     reactions,
     runtime,
     validateSession: () => {
       sessionValid = true;
     },
   };
+};
+
+const mutationRetryMatrix = async () => {
+  for (const hook of ["shell", "plain"]) {
+    for (const retryCase of ["false", "number", "callback", "policy"]) {
+      const harness = createHarness();
+      const failures = [];
+      const settled = [];
+      let cancellations = 0;
+      let retryCalls = 0;
+      let rolledBack = false;
+      let mutation;
+      const mode = retryCase === "policy" ? "after" : "never";
+      const retry =
+        retryCase === "false"
+          ? false
+          : retryCase === "number"
+            ? 2
+            : retryCase === "callback"
+              ? () => {
+                  retryCalls += 1;
+                  return true;
+                }
+              : undefined;
+      const options = {
+        ...(retry === undefined ? {} : { retry }),
+        optimistic: () => ({ rollback: () => (rolledBack = true) }),
+        onFailure: (failure) => failures.push(failure._tag),
+        onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+        onCancel: (_input, context) => {
+          cancellations += 1;
+          context?.rollback();
+        },
+      };
+      function ShellProbe() {
+        mutation = harness.AuthShell.useMutation(harness.client.mutateOwned, options);
+        return null;
+      }
+      function PlainProbe() {
+        mutation = useResultMutation(harness.client.mutateOwned, options);
+        return null;
+      }
+      const mounted = await mountHarness(
+        harness,
+        createElement(hook === "shell" ? ShellProbe : PlainProbe),
+      );
+      let rejection;
+      await act(async () => {
+        await mutation.mutate({ mode }).catch((reason) => {
+          rejection = reason;
+        });
+        await settle();
+      });
+      assert.equal(harness.mutationAttempts[mode], 1, `${hook}/${retryCase} retried`);
+      assert.equal(retryCalls, 0);
+      assert.equal(cancellations, 1);
+      assert.equal(rolledBack, true);
+      assert.deepEqual(failures, []);
+      assert.deepEqual(settled, []);
+      assert.equal(isClaimed(rejection), true);
+      assert.equal(mutation.state, "idle");
+      assert.equal(mounted.affected(), 1);
+      assert.deepEqual(harness.reactions, [
+        mode === "after" ? "auth/session-refreshing" : "auth/session-expired",
+      ]);
+      await unmountHarness(harness, mounted);
+    }
+  }
+};
+
+const residualMutationRetryMatrix = async () => {
+  for (const hook of ["shell", "plain"]) {
+    for (const [retryCase, mode, expectedAttempts, expectedRetryCounts] of [
+      ["false", "residual-never", 1, []],
+      ["number", "residual-never", 3, []],
+      ["callback", "residual-never", 2, [0, 1]],
+      ["policy", "residual-after", 4, []],
+    ]) {
+      const harness = createHarness();
+      const failures = [];
+      const settled = [];
+      const retryCounts = [];
+      let cancellations = 0;
+      let mutation;
+      const retry =
+        retryCase === "false"
+          ? false
+          : retryCase === "number"
+            ? 2
+            : retryCase === "callback"
+              ? (_failure, failureCount) => {
+                  retryCounts.push(failureCount);
+                  return failureCount < 1;
+                }
+              : undefined;
+      const options = {
+        ...(retry === undefined ? {} : { retry }),
+        onFailure: (failure) => failures.push(failure._tag),
+        onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+        onCancel: () => {
+          cancellations += 1;
+        },
+      };
+      function ShellProbe() {
+        mutation = harness.AuthShell.useMutation(harness.client.mutateOwned, options);
+        return null;
+      }
+      function PlainProbe() {
+        mutation = useResultMutation(harness.client.mutateOwned, options);
+        return null;
+      }
+      const mounted = await mountHarness(
+        harness,
+        createElement(hook === "shell" ? ShellProbe : PlainProbe),
+      );
+      let outcome;
+      await act(async () => {
+        outcome = await mutation.mutate({ mode });
+        await settle();
+      });
+      const expectedTag =
+        mode === "residual-after" ? "doc/temporary-conflict" : "doc/title-conflict";
+      assert.equal(harness.mutationAttempts[mode], expectedAttempts);
+      assert.deepEqual(retryCounts, expectedRetryCounts);
+      assert.deepEqual(failures, [expectedTag]);
+      assert.deepEqual(settled, [expectedTag]);
+      assert.equal(cancellations, 0);
+      assert.equal(outcome.ok, false);
+      assert.equal(mutation.state, "failure");
+      assert.equal(mounted.affected(), 0);
+      assert.deepEqual(harness.reactions, []);
+      await unmountHarness(harness, mounted);
+    }
+  }
+};
+
+const mutationRetryCallbackFreshness = async () => {
+  const harness = createHarness();
+  const retryGenerations = [];
+  const failureGenerations = [];
+  let mutation;
+  let advance = () => undefined;
+  let resolveFirstRetry;
+  const firstRetry = new Promise((resolve) => {
+    resolveFirstRetry = resolve;
+  });
+  function Host() {
+    const [generation, setGeneration] = useState(0);
+    advance = () => setGeneration(1);
+    mutation = harness.AuthShell.useMutation(harness.client.mutateOwned, {
+      retry: (_failure, failureCount) => {
+        retryGenerations.push(generation);
+        if (failureCount === 0) resolveFirstRetry();
+        return failureCount < 1;
+      },
+      onFailure: () => failureGenerations.push(generation),
+    });
+    return null;
+  }
+  const mounted = await mountHarness(harness, createElement(Host));
+  let pending;
+  await act(async () => {
+    pending = mutation.mutate({ mode: "residual-never" });
+    await firstRetry;
+  });
+  await act(async () => {
+    advance();
+    await settle();
+  });
+  let outcome;
+  await act(async () => {
+    outcome = await pending;
+    await settle();
+  });
+  assert.equal(harness.mutationAttempts["residual-never"], 2);
+  assert.deepEqual(retryGenerations, [0, 1]);
+  assert.deepEqual(failureGenerations, [1]);
+  assert.equal(outcome.ok, false);
+  await unmountHarness(harness, mounted);
+};
+
+const mutationDefinitionCollision = async () => {
+  for (const hook of ["shell", "plain"]) {
+    const harness = createHarness({ collision: true });
+    const failures = [];
+    const settled = [];
+    let cleanups = 0;
+    let rolledBack = false;
+    let caught;
+    let mutation;
+    const options = {
+      retry: false,
+      optimistic: () => ({ rollback: () => (rolledBack = true) }),
+      onFailure: (failure) => failures.push(failure._tag),
+      onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+      onCancel: (_input, context) => {
+        cleanups += 1;
+        context?.rollback();
+      },
+    };
+    function ShellProbe() {
+      mutation = harness.AuthShell.useMutation(harness.client.mutateOwned, options);
+      return null;
+    }
+    function PlainProbe() {
+      mutation = useResultMutation(harness.client.mutateOwned, options);
+      return null;
+    }
+    const mounted = await mountHarness(
+      harness,
+      createElement(
+        CaptureBoundary,
+        { onCaught: (error) => (caught = error) },
+        createElement(hook === "shell" ? ShellProbe : PlainProbe),
+      ),
+    );
+    let rejection;
+    const originalConsoleError = console.error;
+    console.error = () => undefined;
+    try {
+      await act(async () => {
+        await mutation.mutate({ mode: "never" }).catch((reason) => {
+          rejection = reason;
+        });
+        await settle();
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+    assert.equal(harness.mutationAttempts.never, 1);
+    assert(rejection instanceof TypeError);
+    assert.match(rejection.message, /different error definition/);
+    assert(caught instanceof TypeError);
+    assert.match(caught.message, /different error definition/);
+    assert.deepEqual(failures, []);
+    assert.deepEqual(settled, []);
+    assert.equal(cleanups, 1);
+    assert.equal(rolledBack, true);
+    assert.equal(mounted.affected(), 0);
+    assert.deepEqual(harness.reactions, []);
+    await unmountHarness(harness, mounted);
+  }
 };
 
 const mountHarness = async (harness, child) => {
@@ -269,5 +583,9 @@ await distinctRetirement();
 await resetKeyRetirement();
 await plainSuspenseFailure();
 await strictResume();
+await mutationRetryMatrix();
+await residualMutationRetryMatrix();
+await mutationRetryCallbackFreshness();
+await mutationDefinitionCollision();
 
-console.log(`React ${React.version} installed ResultSuspense lifecycle passed`);
+console.log(`React ${React.version} installed ResultSuspense and mutation retry lifecycle passed`);

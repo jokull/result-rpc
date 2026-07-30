@@ -37,6 +37,7 @@ import {
   type ClientProcedureOutput,
   type ClientProcedurePagination,
   type ClientProcedureSource,
+  type ClientEvent,
   type ClientErrors,
   type TransportResponse,
 } from "../src/client/index.js";
@@ -877,6 +878,20 @@ export type _SuspenseShellSubtractsExactlyTheClaimedErrors = Assert<
   Equal<ShellSuspenseError, ReturnType<typeof Missing>>
 >;
 
+// Plain hooks cannot infer React tree position, so their callbacks keep the
+// complete procedure union even though an ambient provider filters owned
+// failures at runtime.
+// oxlint-disable-next-line react-hooks/rules-of-hooks -- compile-time callback inference proof
+useResultMutation(client.example.mutation, {
+  onFailure: (failure) => {
+    const completeFailure: ExpectedError = failure;
+    void completeFailure;
+    // @ts-expect-error A plain hook cannot promise that mounted shells removed these members.
+    const onlyResidual: ReturnType<typeof Missing> = failure;
+    void onlyResidual;
+  },
+});
+
 // oxlint-disable-next-line react-hooks/rules-of-hooks -- compile-time callback inference proof
 const shellMutation = AuthShell.useMutation(client.example.mutation, {
   onFailure: (failure) => {
@@ -898,6 +913,16 @@ type ShellMutationError = Extract<typeof shellMutation, { readonly state: "failu
 export type _ShellMutationStateSubtractsClaimedTags = Assert<
   Equal<ShellMutationError, ReturnType<typeof Missing>>
 >;
+type ShellMutationResultError = Extract<
+  Awaited<ReturnType<typeof shellMutation.mutate>>,
+  { readonly ok: false }
+>["error"];
+export type _ShellMutationPromiseSubtractsClaimedTags = Assert<
+  Equal<ShellMutationResultError, ReturnType<typeof Missing>>
+>;
+
+type ClaimedClientEvent = Extract<ClientEvent, { readonly type: "claimed" }>;
+export type _ClaimBreadcrumbIsPauseOnly = Assert<Equal<ClaimedClientEvent["effect"], "pause">>;
 
 declare const useShellPaginated: typeof AuthShell.usePaginatedQuery;
 type ShellPaginatedState = ReturnType<typeof useShellPaginated<typeof client.example.paginated>>;

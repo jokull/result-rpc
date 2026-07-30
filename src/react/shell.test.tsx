@@ -454,7 +454,7 @@ describe("ambient claiming", () => {
     runtime.clear();
   });
 
-  test("one observer cannot release a shared query claim leased by its sibling", async () => {
+  test("a surviving lease remains held and a failed resume creates a fresh reaction", async () => {
     const client = clientFor(httpTransport);
     const runtime = createQueryRuntime({ client });
     const reactions: string[] = [];

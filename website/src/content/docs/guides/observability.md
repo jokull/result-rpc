@@ -27,7 +27,7 @@ const client = createBrowserClient({
     }),
 });
 // event: call | success | failure | retry | skew
-//      | claimed  ← a shell took ownership: { path, tag, owner, effect }
+//      | claimed  ← a pausing shell held it: { path, tag, owner, effect: "pause" }
 
 // 2. Ownership: a shell's reaction is a reporting moment.
 const AuthShell = layerShell(AuthLayer, {

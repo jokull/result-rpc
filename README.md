@@ -1235,14 +1235,17 @@ With `effect: "pause"` (the default):
 - **Subscription** — `connection` becomes `"paused"` and `result` stays
   `undefined`.
 
-With `effect: "escalate"`, the actual `TaggedError` instance is thrown to the nearest React
-error boundary, so standard error tooling and `matchError` both work on it.
-Escalate is the bridge back to
-the machinery React already has.
+With `effect: "escalate"`, the actual `TaggedError` instance is thrown to the
+nearest React error boundary, so standard error tooling and `matchError` both
+work on it. Escalation creates no holding, does not call the shell's `onError`,
+and emits no `claimed` breadcrumb: the error boundary and its
+`componentDidCatch`/framework equivalent own that observation.
 
-`onError` fires once per newly claimed error per observer. One logical event —
-a revoked session — arrives on every in-flight operation at once, so handlers
-must be idempotent (a redirect, a `signOut()`, a toast keyed by tag).
+For a pausing shell, `onError` fires once per newly held error per observer.
+One logical event — a revoked session — can arrive on every in-flight
+operation at once, so handlers must be idempotent (a redirect, a `signOut()`,
+a toast keyed by tag). Calling `resume()` starts a fresh attempt; if it fails
+with the same owned error, that new holding may call `onError` again.
 
 ### The pause arc ends in resume
 
@@ -1609,7 +1612,10 @@ function RenameDoc({ id }: { id: string }) {
 ```
 
 `AuthShell.useMutation` is the narrowed form: claimed failures never reach
-`onFailure` or the returned state, and the `mutate` promise rejects with the
+`onFailure`, failure `onSettled`, or the returned state—and never make another
+request, whether retry was configured as a callback, a count, or inherited
+from error policy. `onCancel` still runs with the optimistic context so local
+work can be rolled back, and the `mutate` promise rejects with the
 distinguishable `claimed` signal, as described under
 [What a claimed error does](#what-a-claimed-error-does-to-the-operation).
 
@@ -2269,7 +2275,7 @@ const client = createBrowserClient({
     }),
 });
 // event: call | success | failure | retry | skew
-//      | claimed  ← a shell took ownership: { path, tag, owner, effect }
+//      | claimed  ← a pausing shell held it: { path, tag, owner, effect: "pause" }
 
 // 2. Ownership: a shell's reaction is a reporting moment.
 const AuthShell = layerShell(AuthLayer, {
@@ -2433,15 +2439,15 @@ with its own tests:
    request (the mutation) with zero refetches.
 4. **04-router** — TanStack Router integration by hand: routes are shells.
    Pathless layouts mount the session and viewer layers, a route claims its
-   feature error, `errorComponent` receives escalated defects, `onError`
-   navigates, and layout loaders prefetch each layer's context procedure so
+   feature error, `errorComponent` receives escalated defects, a pausing
+   shell's `onError` navigates, and layout loaders prefetch each layer's context procedure so
    the first paint has no fallback states.
 5. **05-router-glue** — rung 4 rebuilt on app-owned glue
    (`router-glue.tsx`, ~60 lines): `routeShell` fragments spread into
    `createRoute`, so one declaration per layer produces both the provider
    component and the prefetch loader — proof the integration needs no package.
 6. **06-sentry** — the observability pillar end to end: a Sentry-shaped stub
-   receives wire breadcrumbs, the `claimed` trail with its owning shell,
+   receives wire breadcrumbs, the paused `claimed` trail with its owning shell,
    severity-routed server captures, and a defect whose captured exception
    carries the same incident id the client received — correlation with no
    request-id plumbing.

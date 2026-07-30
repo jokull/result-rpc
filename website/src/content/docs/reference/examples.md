@@ -68,8 +68,8 @@ a dozen possible failures presents exactly `doc/not-found`.
 
 TanStack Router integration by hand — **routes are shells**. Pathless
 layout routes mount the session and viewer layers, a route claims its
-feature error, `errorComponent` receives escalated defects, `onError`
-navigates, and layout loaders prefetch each layer's context procedure so
+feature error, `errorComponent` receives escalated defects, a pausing shell's
+`onError` navigates, and layout loaders prefetch each layer's context procedure so
 the first committed paint renders session, viewer, and content with no
 fallback states.
 
@@ -84,7 +84,7 @@ deliberate non-goal.
 ## 06-sentry
 
 The observability pillar end to end: a Sentry-shaped stub receives wire
-breadcrumbs, the `claimed` trail with its owning shell, severity-routed
+breadcrumbs, the paused `claimed` trail with its owning shell, severity-routed
 server captures, and a defect whose captured server exception carries the
 same incident id the client received — correlation across the wire with no
 request-id plumbing.

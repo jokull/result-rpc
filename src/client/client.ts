@@ -113,7 +113,7 @@ export type ClientEvent =
     }>
   | Readonly<{ type: "retry"; path: string; tag: string; attempt: number; delayMs: number }>
   | Readonly<{
-      /** A shell took ownership of a failure beneath it. */
+      /** A pausing shell held a failure beneath it. */
       type: "claimed";
       path: string;
       tag: string;
