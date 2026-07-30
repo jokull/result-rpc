@@ -60,8 +60,11 @@ export const dbErrors = defineErrors("db", {
 export type DbError = ReturnType<(typeof dbErrors)[keyof typeof dbErrors]>;
 
 const constraintFrom = (message: string): string => {
-  // SQLite: "UNIQUE constraint failed: table.column[, ...]"
-  const sqlite = /constraint failed: ([\w.,\s]+)/i.exec(message);
+  // SQLite: "UNIQUE constraint failed: table.column[, table.column ...]".
+  // Matches the column list and nothing after it. A looser class that admitted
+  // whitespace would run past the list into whatever the driver or ORM appended
+  // — including query parameters, which must never reach `data`.
+  const sqlite = /constraint failed: ([\w.]+(?:,\s*[\w.]+)*)/i.exec(message);
   if (sqlite?.[1]) return sqlite[1].trim();
   // Postgres: ... violates unique constraint "name"
   const pg = /constraint "([^"]+)"/.exec(message);

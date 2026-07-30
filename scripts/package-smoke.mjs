@@ -38,12 +38,32 @@ const fixture = join(temporary, "consumer");
 const nextFixture = join(temporary, "next-consumer");
 const packDirectory = join(temporary, "pack");
 const canary = "RESULT_RPC_SERVER_GRAPH_MUST_NOT_SHIP";
+// Identifiers, not declaration forms. `"const executeProcedure ="` matched
+// nothing for as long as it existed — the symbol is emitted as
+// `async function executeProcedure` — so a quarter of the boundary check was
+// silently vacuous. Matching the name survives a refactor changing how it is
+// declared, and `assertMarkersAreLive` fails loudly if one ever stops matching.
 const serverRuntimeMarkers = [
-  "class ProcedureImplementer",
-  "class MiddlewareBuilder",
-  "const createRouter =",
-  "const executeProcedure =",
+  "ProcedureImplementer",
+  "MiddlewareBuilder",
+  "createRouter",
+  "executeProcedure",
 ];
+
+/**
+ * A canary that no longer matches anything is a check that stopped checking
+ * without telling anyone. Assert the markers are present where they are
+ * supposed to be before relying on their absence anywhere else.
+ */
+const assertMarkersAreLive = (serverDirectory) => {
+  const contents = contentsBelow(serverDirectory);
+  for (const marker of serverRuntimeMarkers) {
+    assert(
+      contents.includes(marker),
+      `server runtime marker no longer appears in the server build: ${marker}`,
+    );
+  }
+};
 
 const write = (path, contents) => {
   const target = join(fixture, path);
@@ -419,6 +439,9 @@ export type EveryPublicSubpath = readonly [
   } finally {
     await stopChild(devServer);
   }
+  // Prove the markers still match the shipped server build before trusting
+  // their absence from any browser output below.
+  assertMarkersAreLive(join(fixture, "node_modules/result-rpc/dist/server"));
   assertCleanBrowserOutput(
     "Vite 8 development dependency cache",
     join(fixture, "node_modules/.vite"),

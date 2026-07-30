@@ -91,3 +91,39 @@ describe("tryDb", () => {
     // sanitizes to server/internal — pinned indirectly by the error policy.
   });
 });
+
+describe("constraint extraction", () => {
+  // `data.constraint` is the wire payload of the tagged error. Anything the
+  // driver or ORM appended after the column list — including query parameters —
+  // must not be carried into it, and a handler matching on a constraint name
+  // must get the name rather than the name plus prose.
+  const extract = async (message: string) => {
+    const outcome = await tryDb(
+      Promise.reject(Object.assign(new Error(message), { code: "SQLITE_CONSTRAINT_UNIQUE" })),
+    );
+    if (outcome.ok) throw new Error("expected a database failure");
+    return (outcome.error.data as { readonly constraint?: string }).constraint;
+  };
+
+  test("reads the column list and stops there", async () => {
+    expect(await extract("UNIQUE constraint failed: things.label")).toBe("things.label");
+    expect(await extract("UNIQUE constraint failed: things.label, things.tenant")).toBe(
+      "things.label, things.tenant",
+    );
+  });
+
+  test("does not absorb trailing driver prose", async () => {
+    expect(await extract("UNIQUE constraint failed: things.label while inserting row 4")).toBe(
+      "things.label",
+    );
+  });
+
+  test("does not absorb query parameters that follow the message", async () => {
+    const constraint = await extract(
+      "UNIQUE constraint failed: things.label\nparams: hunter2, secret-token",
+    );
+    expect(constraint).toBe("things.label");
+    expect(constraint).not.toContain("hunter2");
+    expect(constraint).not.toContain("secret-token");
+  });
+});

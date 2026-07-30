@@ -189,7 +189,14 @@ const decodeEnvelope = (
     const definition = Object.values(definitions).find(
       (candidate) => candidate.tag === envelope.error._tag,
     );
-    if (!definition) return err(ClientProtocolViolation({ reason: "unknown-tag" }));
+    // A private definition is composition currency, never wire currency: the
+    // server sanitizes it to `server/internal` before it can leave. Accepting
+    // one here would mean trusting whoever answered — a rogue origin, or a
+    // proxy rewriting bodies — to have followed that rule, so treat it exactly
+    // like a tag the contract never declared.
+    if (!definition || definition.policy.visibility !== "public") {
+      return err(ClientProtocolViolation({ reason: "unknown-tag" }));
+    }
     const decoded = definition.decode(envelope.error);
     if (!decoded.ok) return err(ClientDecodeFailure({ target: "error" }));
     if (status !== definition.policy.httpStatus && status !== 200) {
