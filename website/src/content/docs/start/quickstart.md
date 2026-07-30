@@ -13,6 +13,16 @@ the component switches over one channel that includes the transport: there is
 no `query.error` on the side, and no `Result` buried inside `query.data`
 either.
 
+## Install
+
+```sh
+npm install result-rpc
+```
+
+This quickstart requires Node.js 20.19.5 or newer, TypeScript 5.4 or newer, and
+React 18.3 or newer. See [Installation](/start/installation/) for other package
+managers and the package's runtime entry points.
+
 ## Declare the error and the procedure
 
 ```ts

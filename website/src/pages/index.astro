@@ -277,7 +277,7 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Do I have to use Drizzle?</span></summary>
           <div class="faq-body">
-            <p>No. Models are plain wire codecs you can hand-write. Drizzle is one optional subpath that <em>derives</em> them from your tables so a column allowlist is the whole entity contract — but nothing requires it.</p>
+            <p>No. Models are plain wire codecs and result-rpc has no ORM adapter. The optional <code>.$satisfies&lt;Source&gt;()</code> check can prove that a model projection fits any source type without importing source code at runtime. That source can be a Drizzle row type, a domain type, or anything else structural.</p>
           </div>
         </details>
 
@@ -305,7 +305,7 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
         <details class="faq-item">
           <summary><span>Is it production-ready?</span></summary>
           <div class="faq-body">
-            <p><code>0.1.0</code> is on npm, published with provenance through a protected OIDC workflow, and every release is verified from packed consumers on Node 20 and 24 across TypeScript 5.4, 5.9 and 7.0. It is a 0.x release: the API surface can still move, and a minor version may break you. The implementation is exercised by runnable examples and end-to-end tests, so it is ready to build on — pin the version.</p>
+            <p><code>0.1.0</code> is published to npm with provenance. The implementation is exercised by runnable examples, packed-consumer tests, and end-to-end tests, but the project is pre-1.0 and its API can still move between minor releases. Adopt it with that constraint in mind.</p>
           </div>
         </details>
       </div>
