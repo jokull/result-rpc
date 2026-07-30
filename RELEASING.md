@@ -38,11 +38,12 @@ pnpm version 0.1.0-rc.1 --no-git-tag-version
 pnpm verify:release
 git add package.json pnpm-lock.yaml
 git commit -m "Release 0.1.0-rc.1"
-git tag -s v0.1.0-rc.1 -m "result-rpc 0.1.0-rc.1"
+git tag -a v0.1.0-rc.1 -m "result-rpc 0.1.0-rc.1"
 git push origin main
 git push origin v0.1.0-rc.1
 ```
 
+Use `git tag -s` instead when the release machine has a configured signing key.
 The tag workflow checks that the tag is exactly `v<package.version>`, reruns the
 complete release gate, packs once, uploads that tarball as a GitHub Actions
 artifact, and publishes the same bytes to npm under `next`.
