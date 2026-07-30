@@ -1644,3 +1644,46 @@ void [
   erasedShell,
   erasedLayerShell,
 ];
+
+// --- the headers capability survives every builder transition ---------------
+
+const capabilityApp = serverRpc.context<{ readonly userId: string }>();
+
+const capabilityTenant = capabilityApp
+  .middleware<{ readonly tenant: string }>()
+  .use(({ context, next }) => next({ context: { ...context, tenant: "acme" } }));
+
+const capabilityRotate = capabilityApp
+  .middleware()
+  .headers()
+  .use(({ context, next }) => {
+    context.headers.append("set-cookie", "rotated=1");
+    return next({ context });
+  });
+
+// `.headers()` before `.use()` must keep `context.headers`: the builder is not
+// allowed to be order-dependent, since middleware composes by requirement.
+capabilityApp
+  .procedure()
+  .headers()
+  .use(capabilityTenant)
+  .output(wire.string)
+  .mutation(({ context }) => {
+    context.headers.append("set-cookie", "session=1");
+    return ok(context.tenant);
+  });
+
+// A capability arriving through a middleware carries the same context.
+capabilityApp
+  .procedure()
+  .use(capabilityRotate)
+  .output(wire.string)
+  .mutation(({ context }) => {
+    context.headers.append("set-cookie", "session=2");
+    return ok("ok");
+  });
+
+// ...and the same kind narrowing: a stream's response headers are already sent
+// before any of its code runs, so this must fail here rather than at boot.
+// @ts-expect-error A header-writing middleware cannot produce a subscription.
+capabilityApp.procedure().use(capabilityRotate).output(wire.string).subscription();

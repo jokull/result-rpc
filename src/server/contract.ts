@@ -40,13 +40,13 @@ import type {
   ProcedureTypes,
   ProcedureTypesOf,
   QueryAffectsTarget,
-  WithProcedureContext,
   WithProcedureDefinitions,
   WithProcedureHeaders,
   WithProcedureResumable,
   WithProcedureInput,
   WithProcedureKinds,
   WithProcedureMappedInput,
+  WithProcedureMiddleware,
   WithProcedureOutput,
   WritesEntry,
 } from "../procedure-types.js";
@@ -88,6 +88,7 @@ export type {
   WithProcedureInput,
   WithProcedureKinds,
   WithProcedureMappedInput,
+  WithProcedureMiddleware,
   WithProcedureOutput,
   WithProcedureResumable,
   WritesEntry,
@@ -727,31 +728,27 @@ export class ProcedureBuilder<TTypes extends AnyProcedureTypes> {
         NoInfer<TMiddlewareTypes["definitionSources"]>
       >,
   ): ProcedureBuilder<
-    WithProcedureContext<
+    WithProcedureMiddleware<
       TTypes,
       TMiddlewareTypes["outputContext"],
       MergeDefinitionMaps<
         TTypes["definitions"],
         MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>
       >,
-      UnaryProcedureCapability<
-        BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
-      >
+      BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
     >
   > {
     const definitions = mergeDefinitionMaps(this.declaration.definitions, middleware.definitions);
     const writesHeaders = booleanOr(this.declaration.writesHeaders, middleware.writesHeaders);
     return new ProcedureBuilder<
-      WithProcedureContext<
+      WithProcedureMiddleware<
         TTypes,
         TMiddlewareTypes["outputContext"],
         MergeDefinitionMaps<
           TTypes["definitions"],
           MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>
         >,
-        UnaryProcedureCapability<
-          BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
-        >
+        BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
       >
     >(
       this.declaration.rebind<
@@ -1100,7 +1097,14 @@ export class ProcedureImplementer<TContractTypes extends AnyProcedureTypes, TCon
         TContext,
         NoInfer<TMiddlewareTypes>
       >,
-  ): ProcedureImplementer<TContractTypes, TMiddlewareTypes["outputContext"]> {
+    // A middleware replaces the context, which would drop the `headers` the
+    // contract's `.headers()` contributed. The contract is the authority on
+    // whether this procedure writes them, so re-apply the same rule `implement`
+    // used rather than trusting whatever the middleware happened to pass on.
+  ): ProcedureImplementer<
+    TContractTypes,
+    ImplementationContext<TMiddlewareTypes["outputContext"], TContractTypes>
+  > {
     assertDefinitionsAreDeclared(this.contract._def.definitions, middleware.definitions);
     if (middleware.writesHeaders === true && this.contract._def.writesHeaders !== true) {
       throw new TypeError(

@@ -176,6 +176,31 @@ export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = Procedu
  * context or capability — `lastEventId` is on every subscription's handler args
  * either way, so declaring resumability costs no type instantiations.
  */
+/**
+ * Context, kind and capability after `.use()`.
+ *
+ * A middleware replaces the context wholesale, which would otherwise drop the
+ * `headers` a prior `.headers()` contributed — making the builder
+ * order-dependent, so `.use(mw).headers()` worked and `.headers().use(mw)` did
+ * not. The capability is the source of truth instead: whenever the merged
+ * `writesHeaders` is true the context carries `headers` and the kind excludes
+ * `subscription`, whether that capability came from this procedure or arrived
+ * through the middleware.
+ */
+export type WithProcedureMiddleware<
+  TTypes extends AnyProcedureTypes,
+  TOutputContext,
+  TDefinitions extends ErrorDefinitionMap,
+  TWritesHeaders extends boolean,
+> = WithProcedureContext<
+  TWritesHeaders extends true
+    ? WithProcedureKinds<TTypes, Exclude<TTypes["kind"], "subscription">>
+    : TTypes,
+  TWritesHeaders extends true ? TOutputContext & { readonly headers: Headers } : TOutputContext,
+  TDefinitions,
+  UnaryProcedureCapability<TWritesHeaders>
+>;
+
 export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<
   TTypes,
   Extract<TTypes["kind"], "subscription">

@@ -182,10 +182,18 @@ Two consequences follow:
 share its headers, so their `set-cookie`s combine rather than overwrite. That is
 usually what you want; it does mean two logins in one batch set two cookies.
 
-**A subscription cannot declare `.headers()` at all** — it throws. Its response
-is on the wire before the stream, and therefore before any of its middleware or
-handler code runs, so there is no moment at which a write could land. Set the
-header in the request that opens the stream instead.
+**A subscription cannot write response headers at all** — a compile error,
+whether you declare `.headers()` directly or acquire it by `.use()`-ing a
+middleware that declares it. Its response is on the wire before the stream, and
+therefore before any of its middleware or handler code runs, so there is no
+moment at which a write could land. Set the header in the request that opens
+the stream instead.
+
+**The capability survives `.use()`.** A middleware replaces the context, but
+`headers` is re-applied from the capability rather than inherited from whatever
+the middleware passed on — so `.headers().use(mw)` and `.use(mw).headers()`
+behave identically. Builder order is not something you have to remember here,
+which is the same promise middleware composition makes above.
 
 The response is otherwise the protocol's. Status is derived from the failing
 error's declared `httpStatus` rather than chosen by a handler — that is what
