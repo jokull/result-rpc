@@ -332,10 +332,23 @@ export type ResultRpcProviderProps<TClient extends object = object> = (
 const useProvidedRuntime = <TClient extends object>(
   props: ResultRpcProviderProps<TClient>,
 ): QueryRuntime<TClient> => {
-  const owned = useMemo(
-    () => (props.runtime === undefined ? createQueryRuntime({ client: props.client }) : undefined),
-    [props.client, props.runtime],
-  );
+  // Deliberately a ref, not useMemo. `createQueryRuntime` mounts a QueryClient,
+  // which registers listeners on the global focus/online managers — so building
+  // one is a side effect, not a computation. A useMemo factory is re-invoked on
+  // Strict Mode's replayed render and may be dropped and recomputed at any
+  // time, either of which strands a mounted client that cleanup can no longer
+  // reach. Keyed on the client so a genuinely new client still gets a new
+  // runtime, with the old one released by the cleanup effect below.
+  const ownedRef = useRef<
+    { readonly client: unknown; readonly runtime: QueryRuntime<TClient> } | undefined
+  >(undefined);
+  if (props.runtime === undefined && ownedRef.current?.client !== props.client) {
+    ownedRef.current = {
+      client: props.client,
+      runtime: createQueryRuntime({ client: props.client }),
+    };
+  }
+  const owned = props.runtime === undefined ? ownedRef.current?.runtime : undefined;
   useOwnedRuntimeCleanup(owned);
   const runtime = props.runtime ?? owned;
   if (runtime === undefined) throw new TypeError("ResultRpcProvider requires client or runtime");

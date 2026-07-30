@@ -126,6 +126,12 @@ const streamProcedureResponse = (
         if (next.done || !next.value.ok) {
           settled = true;
           detachCaller();
+          // The generator is parked at its last `yield` and nothing will resume
+          // it, so returning it is the only thing that runs the handler's
+          // `finally` — a db cursor, a pub/sub unsubscribe, a lock. `cancel()`
+          // does the same for the client-disconnect path.
+          abortLifetime();
+          await closeIterator(iterator);
           controller.close();
         }
       } catch (cause) {

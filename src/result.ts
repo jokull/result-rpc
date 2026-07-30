@@ -263,7 +263,10 @@ export function gen(
   }
   const step = iterator.next();
   if (!step.done) {
-    void closeIterator(iterator);
+    // A sync generator whose `finally` throws would otherwise escape this
+    // synchronous path as an unhandled rejection — the block already resolved
+    // to its `Err`, so a cleanup failure has nowhere legitimate to surface.
+    void closeIterator(iterator).catch(() => undefined);
     return step.value;
   }
   return ok(step.value);
