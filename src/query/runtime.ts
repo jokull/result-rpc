@@ -291,11 +291,15 @@ const normalizePaginatedCursor = <TProcedureClient extends PaginatedProcedureCli
 const invokeSubscriptionClient = <TProcedureClient extends SubscriptionProcedureClientLike>(
   procedure: TProcedureClient,
   input: SubscriptionClientInput<TProcedureClient>,
+  lastEventId?: string,
 ): ResultSubscription<
   SubscriptionClientOutput<TProcedureClient>,
   SubscriptionClientError<TProcedureClient>
 > =>
-  procedure(input as never) as ResultSubscription<
+  procedure(
+    input as never,
+    lastEventId === undefined ? undefined : ({ lastEventId } as never),
+  ) as ResultSubscription<
     SubscriptionClientOutput<TProcedureClient>,
     SubscriptionClientError<TProcedureClient>
   >;
@@ -1649,6 +1653,12 @@ export const createQueryRuntime = <TClient>(
         throw new TypeError("Expected a result-rpc subscription procedure client");
       }
       const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
+      // Declared by `.resumable()`. Absent means every reconnect reopens the
+      // stream from the top, which is the pre-existing behaviour.
+      const eventIdOf = metadata.procedure._def.resumable?.eventId as
+        | ((value: TOutput) => string)
+        | undefined;
+      let lastEventId: string | undefined;
       const listeners = new Set<() => void>();
       let currentStream: ResultSubscription<TOutput, TError> | undefined;
       let generation = 0;
@@ -1674,6 +1684,9 @@ export const createQueryRuntime = <TClient>(
         removeOnlineListener?.();
         removeOnlineListener = undefined;
         const activeGeneration = generation;
+        // `reset` means a new subscription (first mount, changed input), not a
+        // recovered one — resuming another list's position would be wrong.
+        if (reset) lastEventId = undefined;
         currentStream?.close();
         currentStream = undefined;
         state = {
@@ -1697,7 +1710,7 @@ export const createQueryRuntime = <TClient>(
           removeOnlineListener = unsubscribe;
           return;
         }
-        currentStream = invokeSubscriptionClient(procedure, input);
+        currentStream = invokeSubscriptionClient(procedure, input, lastEventId);
         void (async () => {
           try {
             for await (const result of currentStream!) {
@@ -1742,7 +1755,13 @@ export const createQueryRuntime = <TClient>(
               // says so, not when something refetches. Events take a fresh
               // sequence at arrival: stream order is respected, and a slower
               // mutation response from before the event cannot regress it.
-              if (result.ok) applyEntityWrites(result.value, nextWriteSeq());
+              if (result.ok) {
+                applyEntityWrites(result.value, nextWriteSeq());
+                // Derived from the value the client just decoded, using the
+                // same declared function the server side would apply — which
+                // is why no event id has to ride the wire frame.
+                if (eventIdOf) lastEventId = eventIdOf(result.value);
+              }
               state = {
                 ...state,
                 connection: result.ok ? "open" : "closed",

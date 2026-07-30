@@ -17,6 +17,7 @@ export interface ContractDigestManifest {
     readonly item: { readonly schema: string };
   };
   readonly writesHeaders?: true;
+  readonly resumable?: unknown;
 }
 
 /** A router- or contract-shaped source accepted by {@link contractDigest}. */
@@ -58,7 +59,10 @@ export const contractDigest = (routerOrContract: ContractDigestSource): string =
       // In the digest because a client that disagrees about this would batch a
       // header-writing call the wrong way and drop its `set-cookie` silently.
       const headers = manifest.writesHeaders === true ? "|headers" : "";
-      return `${JSON.stringify(path)}|${manifest.kind}${paginated}${headers}|in:${manifest.input.schema}|out:${manifest.output.schema}|${errors}`;
+      // A client that disagrees about resumability either sends a resume point
+      // the server ignores, or sends none and silently re-receives events.
+      const resumable = manifest.resumable === undefined ? "" : "|resumable";
+      return `${JSON.stringify(path)}|${manifest.kind}${paginated}${headers}${resumable}|in:${manifest.input.schema}|out:${manifest.output.schema}|${errors}`;
     })
     .sort()
     .join("\n");

@@ -26,6 +26,7 @@ import type {
   WithProcedureContext,
   WithProcedureDefinitions,
   WithProcedureHeaders,
+  WithProcedureResumable,
   WithProcedureInput,
   WithProcedureKinds,
   WithProcedureMappedInput,
@@ -81,6 +82,12 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
     private readonly affectsEntries: readonly PendingAffectsEntry<TTypes["input"]>[],
     private readonly writesEntries: readonly PendingWritesEntry<TTypes["input"]>[],
     readonly writesHeaders: TTypes["writesHeaders"],
+    /**
+     * Set by `.resumable()`. Pure, and derived from the decoded output, so the
+     * client computes the same resume token from the value it just received —
+     * no event id rides the wire frame.
+     */
+    readonly resumableEventId: ((value: TTypes["output"]) => string) | undefined = undefined,
   ) {}
 
   input<TNewInput, TEncoded extends WireValue>(
@@ -96,6 +103,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       [],
       [],
       this.writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -109,6 +117,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       this.affectsEntries,
       this.writesEntries,
       this.writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -127,6 +136,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       this.affectsEntries,
       this.writesEntries,
       this.writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -138,6 +148,24 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       this.affectsEntries,
       this.writesEntries,
       true,
+      this.resumableEventId,
+    );
+  }
+
+  resumable(options: {
+    readonly eventId: (value: TTypes["output"]) => string;
+  }): ProcedureDeclaration<WithProcedureResumable<TTypes>> {
+    if (!this.outputCodec) {
+      throw new TypeError("resumable() must be declared after output(): it maps the event value");
+    }
+    return new ProcedureDeclaration<WithProcedureResumable<TTypes>>(
+      this.inputCodec,
+      this.outputCodec,
+      this.definitions,
+      this.affectsEntries,
+      this.writesEntries,
+      this.writesHeaders,
+      options.eventId as (value: unknown) => string,
     );
   }
 
@@ -156,6 +184,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       this.affectsEntries,
       [...this.writesEntries, { model, map }],
       this.writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -179,6 +208,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       [...this.affectsEntries, entry],
       this.writesEntries,
       this.writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -199,6 +229,7 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       this.affectsEntries,
       this.writesEntries,
       writesHeaders,
+      this.resumableEventId,
     );
   }
 
@@ -220,6 +251,9 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       ...(affects.length === 0 ? {} : { affects }),
       ...(writes.length === 0 ? {} : { writes }),
       ...(this.writesHeaders ? { writesHeaders: true as const } : {}),
+      ...(this.resumableEventId === undefined
+        ? {}
+        : { resumable: { eventId: this.resumableEventId } }),
     });
   }
 
@@ -259,6 +293,9 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
       >(this.writesHeaders),
       pagination,
       ...(this.writesHeaders ? { writesHeaders: true as const } : {}),
+      ...(this.resumableEventId === undefined
+        ? {}
+        : { resumable: { eventId: this.resumableEventId } }),
     });
   }
 
@@ -270,6 +307,12 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
     }
     if (this.writesEntries.length > 0 && kind !== "mutation") {
       throw new TypeError("Only mutations declare .writes()");
+    }
+    if (this.resumableEventId !== undefined && kind !== "subscription") {
+      throw new TypeError(
+        "Only a subscription declares .resumable(): a unary call has no interrupted stream to " +
+          "resume. Use .paginate() for a cursor over an ordered list.",
+      );
     }
     if (this.writesHeaders && kind === "subscription") {
       throw new TypeError(

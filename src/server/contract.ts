@@ -43,6 +43,7 @@ import type {
   WithProcedureContext,
   WithProcedureDefinitions,
   WithProcedureHeaders,
+  WithProcedureResumable,
   WithProcedureInput,
   WithProcedureKinds,
   WithProcedureMappedInput,
@@ -88,6 +89,7 @@ export type {
   WithProcedureKinds,
   WithProcedureMappedInput,
   WithProcedureOutput,
+  WithProcedureResumable,
   WritesEntry,
 } from "../procedure-types.js";
 import type { MaybePromise } from "../types.js";
@@ -130,6 +132,11 @@ export interface ExecutionOptions<TRootContext> {
    * makes the declaration enforceable rather than advisory.
    */
   readonly responseHeaders?: Headers;
+  /**
+   * The resume point a reconnecting client observed, delivered to a
+   * `.resumable()` subscription handler as `lastEventId`.
+   */
+  readonly lastEventId?: string;
 }
 
 /**
@@ -495,6 +502,20 @@ export class MiddlewareBuilder<TTypes extends AnyMiddlewareBuilderTypes> {
   }
 }
 
+/**
+ * A subscription handler's arguments. `lastEventId` is the resume point the
+ * client observed before this connection: `undefined` on a first connect, on
+ * every reconnect of a procedure that did not declare `.resumable()`, and
+ * whenever the client has not yet seen an event to derive one from.
+ */
+export interface SubscriptionHandlerArgs<
+  TContext,
+  TInput,
+  TDefinitions extends ErrorDefinitionMap,
+> extends ProcedureHandlerArgs<TContext, TInput, TDefinitions> {
+  readonly lastEventId: string | undefined;
+}
+
 export interface ProcedureHandlerArgs<TContext, TInput, TDefinitions extends ErrorDefinitionMap> {
   readonly context: TContext;
   readonly input: TInput;
@@ -560,7 +581,7 @@ export interface SubscriptionProcedureManifest<
 > extends ProcedureContractManifest<TTypes> {
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
-    args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    args: SubscriptionHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
   ) => MaybePromise<AsyncIterable<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>>;
 }
 
@@ -598,6 +619,7 @@ export interface AnySubscriptionProcedure extends ProcedureTypeCarrier<AnyProced
     readonly capability: ProcedureCapability;
     readonly pagination?: PaginationManifest;
     readonly writesHeaders?: true;
+    readonly resumable?: { readonly eventId: (value: never) => string };
     readonly middlewares: readonly RuntimeMiddleware[];
     readonly handler: (args: never) => unknown;
   };
@@ -624,6 +646,23 @@ export class ProcedureBuilder<TTypes extends AnyProcedureTypes> {
    */
   headers(): ProcedureBuilder<WithProcedureHeaders<TTypes>> {
     return new ProcedureBuilder(this.declaration.headers(), this.middlewares);
+  }
+
+  /**
+   * Declares that this subscription can resume after an interrupted
+   * connection. `eventId` derives a resume token from an event's value; the
+   * client remembers the last one it decoded and the handler receives it as
+   * `lastEventId` on the next connect, so the stream continues instead of
+   * replaying from the top.
+   *
+   * The token is derived on both sides from the same declared function, so no
+   * event id travels on the wire and the procedure's input codec — and the
+   * contract digest's view of it — is unchanged.
+   */
+  resumable(options: {
+    readonly eventId: (value: TTypes["output"]) => string;
+  }): ProcedureBuilder<WithProcedureResumable<TTypes>> {
+    return new ProcedureBuilder(this.declaration.resumable(options), this.middlewares);
   }
 
   /**
@@ -1105,7 +1144,11 @@ export class ProcedureImplementer<TContractTypes extends AnyProcedureTypes, TCon
       ? ProcedureImplementer<TContractTypes, TContext>
       : never,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>,
+      args: SubscriptionHandlerArgs<
+        TContext,
+        TContractTypes["input"],
+        TContractTypes["definitions"]
+      >,
     ) => MaybePromise<
       AsyncIterable<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>
     >,
@@ -1648,10 +1691,13 @@ export async function* executeSubscription(
 
   let iterable: AsyncIterable<unknown>;
   try {
-    const handlerArgs: ProcedureHandlerArgs<unknown, unknown, ErrorDefinitionMap> = {
+    const handlerArgs: SubscriptionHandlerArgs<unknown, unknown, ErrorDefinitionMap> = {
       context: prepared.value,
       input: decodedInput.value,
       errors: procedure._def.definitions,
+      // Undefined unless this subscription declared `.resumable()` — the HTTP
+      // layer refuses to forward a resume point to one that did not.
+      lastEventId: options.lastEventId,
       touch: <TModel extends AnyModel>(model: TModel, id: ModelKeyInput<TModel>) =>
         options.onTouch?.(touchedEntityKey(model, id)),
       signal: options.signal ?? neverAborted(),

@@ -445,10 +445,10 @@ const subscribeProcedure = (
       yield err(ClientProtocolViolation({ reason: "content-type" }));
       return;
     }
-    const outcome = await transport.stream(requestEnvelope(path, encodedInput.value), {
-      ...options,
-      signal,
-    });
+    const outcome = await transport.stream(
+      requestEnvelope(path, encodedInput.value, options.lastEventId),
+      { ...options, signal },
+    );
     if (!outcome.ok) {
       yield err(clientFailure(outcome));
       return;

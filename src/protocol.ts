@@ -27,6 +27,13 @@ export interface RequestEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
   readonly path: string;
   readonly input: WireValue;
+  /**
+   * Resume point for a subscription that declared `.resumable()`: the event id
+   * of the last event this client observed. Rides beside the input rather than
+   * inside it so the procedure's input codec — and therefore the contract
+   * digest — is unchanged by resumability.
+   */
+  readonly lastEventId?: string;
 }
 
 export interface BatchRequestItem extends RequestEnvelope {
@@ -86,7 +93,15 @@ export const decodeRequestEnvelope = (value: unknown): RequestEnvelope | undefin
     return undefined;
   }
   if (!("input" in value) || !isWireValue(value.input)) return undefined;
-  return { v: PROTOCOL_VERSION, path: value.path, input: value.input };
+  // Absent is the norm (every unary call, and a subscription's first connect);
+  // a non-string here is a malformed envelope, not a missing resume point.
+  if ("lastEventId" in value && typeof value.lastEventId !== "string") return undefined;
+  return {
+    v: PROTOCOL_VERSION,
+    path: value.path,
+    input: value.input,
+    ...(typeof value.lastEventId === "string" ? { lastEventId: value.lastEventId } : {}),
+  };
 };
 
 export const decodeBatchRequestEnvelope = (value: unknown): BatchRequestEnvelope | undefined => {

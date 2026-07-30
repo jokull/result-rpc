@@ -72,6 +72,12 @@ export interface TransportRequestOptions {
   readonly timeoutMs?: number;
   /** Direct-client operation retry. Query/subscription runtimes leave this unset. */
   readonly retry?: false | "from-error-policy";
+  /**
+   * Resume point for a `.resumable()` subscription. The subscription runtime
+   * sets this on reconnect; a direct caller may set it to resume a stream it
+   * was tracking itself.
+   */
+  readonly lastEventId?: string;
 }
 
 export interface ClientTransport {
@@ -382,4 +388,10 @@ export const batchFetchTransport = (options: BatchFetchTransportOptions): Client
 export const requestEnvelope = (
   path: string,
   input: RequestEnvelope["input"],
-): RequestEnvelope => ({ v: PROTOCOL_VERSION, path, input });
+  lastEventId?: string,
+): RequestEnvelope => ({
+  v: PROTOCOL_VERSION,
+  path,
+  input,
+  ...(lastEventId === undefined ? {} : { lastEventId }),
+});

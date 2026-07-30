@@ -98,6 +98,9 @@ export interface AnyProcedureContract extends ProcedureTypeCarrier<AnyProcedureT
         readonly writes?: readonly WritesEntry[];
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
     };
     // (undocumented)
     readonly _kind: "procedure-contract";
@@ -173,6 +176,9 @@ export interface AnySubscriptionProcedure extends ProcedureTypeCarrier<AnyProced
         readonly capability: ProcedureCapability;
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
         readonly middlewares: readonly RuntimeMiddleware[];
         readonly handler: (args: never) => unknown;
     };

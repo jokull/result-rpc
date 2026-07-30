@@ -96,6 +96,9 @@ export interface AnyProcedureContract extends ProcedureTypeCarrier<AnyProcedureT
         readonly writes?: readonly WritesEntry[];
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
     };
     // (undocumented)
     readonly _kind: "procedure-contract";
@@ -153,6 +156,9 @@ export interface AnySubscriptionProcedure extends ProcedureTypeCarrier<AnyProced
         readonly capability: ProcedureCapability;
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
         readonly middlewares: readonly RuntimeMiddleware[];
         readonly handler: (args: never) => unknown;
     };
@@ -963,6 +969,9 @@ export interface ProcedureContractManifest<TTypes extends AnyProcedureTypes> {
     readonly output: WireCodec<TTypes["output"], WireValue>;
     // (undocumented)
     readonly pagination?: PaginationManifest;
+    readonly resumable?: {
+        readonly eventId: (value: never) => string;
+    };
     // (undocumented)
     readonly writes?: readonly WritesEntry[];
     // (undocumented)
@@ -1041,6 +1050,7 @@ export type QueryAffectsTarget = {
 export interface RequestEnvelope {
     // (undocumented)
     readonly input: WireValue;
+    readonly lastEventId?: string;
     // (undocumented)
     readonly path: string;
     // (undocumented)
@@ -1240,6 +1250,7 @@ export type TransportOutcome = Readonly<{
 
 // @public (undocumented)
 export interface TransportRequestOptions {
+    readonly lastEventId?: string;
     readonly retry?: false | "from-error-policy";
     // (undocumented)
     readonly signal?: AbortSignal;
@@ -1337,6 +1348,9 @@ export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = Procedu
 
 // @public (undocumented)
 export type WithProcedureOutput<TTypes extends AnyProcedureTypes, TOutput> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TOutput, TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["mappedInput"]>;
+
+// @public
+export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<TTypes, Extract<TTypes["kind"], "subscription">>;
 
 // @public (undocumented)
 export interface WritesEntry {

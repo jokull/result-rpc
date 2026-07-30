@@ -170,6 +170,17 @@ export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = Procedu
   TTypes["input"]
 >;
 
+/**
+ * Narrows the kind to `subscription`: a resume point is only meaningful for a
+ * stream that can be interrupted and reopened. Deliberately adds nothing to the
+ * context or capability — `lastEventId` is on every subscription's handler args
+ * either way, so declaring resumability costs no type instantiations.
+ */
+export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<
+  TTypes,
+  Extract<TTypes["kind"], "subscription">
+>;
+
 export type WithProcedureHeaders<TTypes extends AnyProcedureTypes> = WithProcedureContext<
   WithProcedureKinds<TTypes, Exclude<TTypes["kind"], "subscription">>,
   TTypes["context"] & { readonly headers: Headers },
@@ -223,6 +234,8 @@ export interface ProcedureContractManifest<TTypes extends AnyProcedureTypes> {
   readonly writes?: readonly WritesEntry[];
   readonly pagination?: PaginationManifest;
   readonly writesHeaders?: true;
+  /** Declared by `.resumable()`: derives an event's resume token from its value. */
+  readonly resumable?: { readonly eventId: (value: never) => string };
 }
 
 declare const procedureTypes: unique symbol;
@@ -259,5 +272,7 @@ export interface AnyProcedureContract extends ProcedureTypeCarrier<AnyProcedureT
     readonly writes?: readonly WritesEntry[];
     readonly pagination?: PaginationManifest;
     readonly writesHeaders?: true;
+    /** Declared by `.resumable()`: derives an event's resume token from its value. */
+    readonly resumable?: { readonly eventId: (value: never) => string };
   };
 }

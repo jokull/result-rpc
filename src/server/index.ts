@@ -68,7 +68,12 @@ export type {
   ServerClientRecord,
   ServerProcedureClient,
 } from "./server-client.js";
-export type { ExecutionOptions, InternalErrorEvent, ProcedureHandlerArgs } from "./contract.js";
+export type {
+  ExecutionOptions,
+  InternalErrorEvent,
+  ProcedureHandlerArgs,
+  SubscriptionHandlerArgs,
+} from "./contract.js";
 export type { RpcFactory as ServerRpcFactory } from "./contract.js";
 export type { EffectiveContractVersion } from "../contract-digest.js";
 export { ServerBadRequest, ServerInternal } from "../framework-errors.js";

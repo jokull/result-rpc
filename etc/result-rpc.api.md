@@ -132,6 +132,9 @@ export interface AnyProcedureContract extends ProcedureTypeCarrier<AnyProcedureT
         readonly writes?: readonly WritesEntry[];
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
     };
     // (undocumented)
     readonly _kind: "procedure-contract";
@@ -211,6 +214,9 @@ export interface AnySubscriptionProcedure extends ProcedureTypeCarrier<AnyProced
         readonly capability: ProcedureCapability;
         readonly pagination?: PaginationManifest;
         readonly writesHeaders?: true;
+        readonly resumable?: {
+            readonly eventId: (value: never) => string;
+        };
         readonly middlewares: readonly RuntimeMiddleware[];
         readonly handler: (args: never) => unknown;
     };
@@ -415,6 +421,8 @@ export interface ContractDigestManifest {
             readonly schema: string;
         };
     };
+    // (undocumented)
+    readonly resumable?: unknown;
     // (undocumented)
     readonly writesHeaders?: true;
 }
@@ -1246,6 +1254,9 @@ export class ProcedureBuilder<TTypes extends AnyProcedureTypes> {
     query(this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">): ProcedureContract<ContractProcedureTypes<TTypes["rootContext"], TTypes["input"], TTypes["output"], TTypes["definitions"], "query", UnaryProcedureCapability<TTypes["writesHeaders"]>>>;
     // (undocumented)
     query(this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">, handler: (args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>): Procedure<CompleteProcedureTypes<TTypes, "query", UnaryProcedureCapability<TTypes["writesHeaders"]>>>;
+    resumable(options: {
+        readonly eventId: (value: TTypes["output"]) => string;
+    }): ProcedureBuilder<WithProcedureResumable<TTypes>>;
     // (undocumented)
     subscription(this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "subscription">): ProcedureContract<ContractProcedureTypes<TTypes["rootContext"], TTypes["input"], TTypes["output"], TTypes["definitions"], "subscription", UnaryProcedureCapability<TTypes["writesHeaders"]>>>;
     // (undocumented)
@@ -1280,6 +1291,9 @@ export interface ProcedureContractManifest<TTypes extends AnyProcedureTypes> {
     readonly output: WireCodec<TTypes["output"], WireValue>;
     // (undocumented)
     readonly pagination?: PaginationManifest;
+    readonly resumable?: {
+        readonly eventId: (value: never) => string;
+    };
     // (undocumented)
     readonly writes?: readonly WritesEntry[];
     // (undocumented)
@@ -1288,7 +1302,8 @@ export interface ProcedureContractManifest<TTypes extends AnyProcedureTypes> {
 
 // @public
 export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
-    constructor(inputCodec: WireCodec<TTypes["input"], WireValue>, outputCodec: WireCodec<TTypes["output"], WireValue> | undefined, definitions: TTypes["definitions"], affectsEntries: readonly PendingAffectsEntry<TTypes["input"]>[], writesEntries: readonly PendingWritesEntry<TTypes["input"]>[], writesHeaders: TTypes["writesHeaders"]);
+    constructor(inputCodec: WireCodec<TTypes["input"], WireValue>, outputCodec: WireCodec<TTypes["output"], WireValue> | undefined, definitions: TTypes["definitions"], affectsEntries: readonly PendingAffectsEntry<TTypes["input"]>[], writesEntries: readonly PendingWritesEntry<TTypes["input"]>[], writesHeaders: TTypes["writesHeaders"],
+    resumableEventId?: ((value: TTypes["output"]) => string) | undefined);
     // (undocumented)
     affects<const TTarget extends QueryAffectsTarget>(target: TTarget, map?: (input: TTypes["input"]) => ProcedureAffectsInput<TTarget>): ProcedureDeclaration<WithProcedureMappedInput<WithProcedureKinds<TTypes, Extract<TTypes["kind"], "mutation">>>>;
     // (undocumented)
@@ -1305,6 +1320,11 @@ export class ProcedureDeclaration<TTypes extends AnyProcedureTypes> {
     paginated<TCursor>(cursor: WireCodec<TCursor, WireValue>): ProcedureContractManifest<CompleteProcedureTypes<TTypes, "query", PaginatedProcedureCapability<TTypes["input"], TCursor, TTypes["output"], TTypes["writesHeaders"]>, PageRequest<TTypes["input"], TCursor>, Page<TTypes["output"], TCursor>>>;
     // (undocumented)
     rebind<TContext, TDefinitions extends ErrorDefinitionMap, TCapability extends ProcedureCapability>(definitions: TDefinitions, writesHeaders: TCapability["writesHeaders"]): ProcedureDeclaration<WithProcedureContext<TTypes, TContext, TDefinitions, TCapability>>;
+    // (undocumented)
+    resumable(options: {
+        readonly eventId: (value: TTypes["output"]) => string;
+    }): ProcedureDeclaration<WithProcedureResumable<TTypes>>;
+    readonly resumableEventId: ((value: TTypes["output"]) => string) | undefined;
     // (undocumented)
     unary<TKind extends ProcedureKind>(kind: TKind): ProcedureContractManifest<CompleteProcedureTypes<TTypes, TKind, UnaryProcedureCapability<TTypes["writesHeaders"]>>>;
     // (undocumented)
@@ -1343,7 +1363,7 @@ export class ProcedureImplementer<TContractTypes extends AnyProcedureTypes, TCon
     // (undocumented)
     handler(this: TContractTypes["kind"] extends "subscription" ? never : ProcedureImplementer<TContractTypes, TContext>, handler: (args: ProcedureHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>) => MaybePromise<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>): Procedure<ImplementedProcedureTypes<TContractTypes, TContext, Extract<TContractTypes["kind"], "query" | "mutation">>>;
     // (undocumented)
-    stream(this: TContractTypes["kind"] extends "subscription" ? ProcedureImplementer<TContractTypes, TContext> : never, handler: (args: ProcedureHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>) => MaybePromise<AsyncIterable<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>>): SubscriptionProcedure<ImplementedProcedureTypes<TContractTypes, TContext, "subscription">>;
+    stream(this: TContractTypes["kind"] extends "subscription" ? ProcedureImplementer<TContractTypes, TContext> : never, handler: (args: SubscriptionHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>) => MaybePromise<AsyncIterable<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>>): SubscriptionProcedure<ImplementedProcedureTypes<TContractTypes, TContext, "subscription">>;
     // (undocumented)
     use<TMiddlewareTypes extends AnyMiddlewareTypes>(middleware: Middleware<TMiddlewareTypes> & ProcedureImplementationMiddlewareConstraint<TContractTypes, TContext, NoInfer<TMiddlewareTypes>>): ProcedureImplementer<TContractTypes, TMiddlewareTypes["outputContext"]>;
 }
@@ -1763,6 +1783,12 @@ export type StandardValidation<Output> = Readonly<{
     fields: Readonly<Record<string, readonly string[]>>;
 }>;
 
+// @public
+export interface SubscriptionHandlerArgs<TContext, TInput, TDefinitions extends ErrorDefinitionMap> extends ProcedureHandlerArgs<TContext, TInput, TDefinitions> {
+    // (undocumented)
+    readonly lastEventId: string | undefined;
+}
+
 // @public (undocumented)
 export interface SubscriptionProcedure<TTypes extends AnyProcedureTypes & {
     readonly kind: "subscription";
@@ -1778,7 +1804,7 @@ export interface SubscriptionProcedureManifest<TTypes extends AnyProcedureTypes 
     readonly kind: "subscription";
 }> extends ProcedureContractManifest<TTypes> {
     // (undocumented)
-    readonly handler: (args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>) => MaybePromise<AsyncIterable<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>>;
+    readonly handler: (args: SubscriptionHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>) => MaybePromise<AsyncIterable<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>>;
     // (undocumented)
     readonly middlewares: readonly RuntimeMiddleware[];
 }
@@ -1952,6 +1978,9 @@ export type WithProcedureMappedInput<TTypes extends AnyProcedureTypes> = Procedu
 
 // @public (undocumented)
 export type WithProcedureOutput<TTypes extends AnyProcedureTypes, TOutput> = ProcedureTypes<TTypes["rootContext"], TTypes["context"], TTypes["input"], TOutput, TTypes["definitions"], TTypes["kind"], TTypes["capability"], TTypes["mappedInput"]>;
+
+// @public
+export type WithProcedureResumable<TTypes extends AnyProcedureTypes> = WithProcedureKinds<TTypes, Extract<TTypes["kind"], "subscription">>;
 
 // @public (undocumented)
 export interface WritesEntry {

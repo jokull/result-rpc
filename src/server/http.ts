@@ -60,6 +60,7 @@ const streamProcedureResponse = (
   context: unknown,
   path: string,
   callerSignal: AbortSignal,
+  lastEventId: string | undefined,
   onInternalError?: (event: InternalErrorEvent) => void,
   onError?: (failure: AnyTaggedError, httpStatus: number) => void,
 ): Response => {
@@ -74,6 +75,7 @@ const streamProcedureResponse = (
     context,
     procedurePath: path,
     signal: lifetime.signal,
+    ...(lastEventId === undefined ? {} : { lastEventId }),
     ...(onInternalError === undefined ? {} : { onInternalError }),
   })[Symbol.asyncIterator]();
   const encoder = new TextEncoder();
@@ -404,6 +406,10 @@ export const createFetchHandler = <TRouter extends AnyRouter>(
           context,
           envelope.path,
           request.signal,
+          // Only a declared resumable subscription may see a resume point; an
+          // undeclared one must not be handed client-supplied state it never
+          // asked for.
+          subscription._def.resumable === undefined ? undefined : envelope.lastEventId,
           options.onInternalError,
           (failure, status) => notify(failure, status, envelope.path),
         );
