@@ -117,7 +117,6 @@ import { createFetchHandler, createServerClient, serverRpc } from "result-rpc/se
 import { createBrowserClient, fetchTransport, batchFetchTransport } from "result-rpc/client";
 
 import {
-  createQueryRuntime,
   ResultRpcProvider,
   ResultSuspense,
   useResultQuery,
@@ -125,6 +124,9 @@ import {
   useResultMutation,
   useResultSubscription,
 } from "result-rpc/react";
+
+// The react-free entry, for server code that must not pull React in.
+import { createQueryRuntime } from "result-rpc/query";
 
 import { createParityClient } from "result-rpc/testing";
 ```
