@@ -1,23 +1,58 @@
-import type { AnyPublicErrorDefinition, AnyTaggedError } from "../error.js";
+import { isTaggedError, type AnyPublicErrorDefinition, type AnyTaggedError } from "../error.js";
+import type { RpcFactoryTypeCarrier, RpcFactoryTypes } from "../factory-types.js";
 import {
   mergeDefinitionMaps,
   type DefinitionMapCompatibility,
+  type DefinitionSourcesCompatibility,
   type ErrorDefinitionMap,
   type ErrorUnion,
+  type MaterializeDefinitionSources,
   type MergeDefinitionMaps,
+  type MergeDefinitionSources,
 } from "../error-map.js";
 import { badRequestFromIssues, ServerBadRequest, ServerInternal } from "../framework-errors.js";
-import { entityIdFor, type AnyModel, type ModelKeyInput } from "../model.js";
+import { entityIdFor, entityKey, type AnyModel, type ModelKeyInput } from "../model.js";
+import { closeIterator } from "../iterator.js";
 import {
   PaginatedProcedureCapability,
   type ProcedureCapability,
   type UnaryProcedureCapability,
-  unaryProcedureCapability,
 } from "../procedure-capability.js";
+import { procedureDeclaration, type ProcedureDeclaration } from "../procedure-declaration.js";
+import type {
+  AffectsEntry,
+  AnyProcedureContract,
+  AnyProcedureTypes,
+  CompleteProcedureTypes,
+  Page,
+  PageRequest,
+  PaginationManifest,
+  ProcedureAffectsInput,
+  ProcedureContract,
+  ProcedureContractManifest,
+  ProcedureError,
+  ProcedureInput,
+  ProcedureInputConstraint,
+  ProcedureKind,
+  ProcedureOutput,
+  ProcedureTypeCarrier,
+  ProcedureTerminalConstraint,
+  ProcedureTypes,
+  ProcedureTypesOf,
+  QueryAffectsTarget,
+  WithProcedureContext,
+  WithProcedureDefinitions,
+  WithProcedureHeaders,
+  WithProcedureInput,
+  WithProcedureKinds,
+  WithProcedureMappedInput,
+  WithProcedureOutput,
+  WritesEntry,
+} from "../procedure-types.js";
 import { err, ok, type Result } from "../result.js";
 import type { RpcConstraintError } from "../type-diagnostics.js";
-import { encodeProcedureInput, wire } from "../wire.js";
-import type { AnyWireCodec, EmptyObject, WireCodec, WireValue } from "../wire.js";
+import { encodeProcedureInput, encodeUnknownWireValue, wire } from "../wire.js";
+import type { EmptyObject, WireCodec, WireValue } from "../wire.js";
 
 export type { ErrorDefinitionMap, ErrorUnion, MergeDefinitionMaps } from "../error-map.js";
 export {
@@ -25,13 +60,50 @@ export {
   type ProcedureCapability,
   type UnaryProcedureCapability,
 } from "../procedure-capability.js";
-
-type MaybePromise<T> = T | Promise<T>;
-type BooleanOr<TLeft extends boolean, TRight extends boolean> = TLeft extends true
+export type {
+  AffectsEntry,
+  AnyProcedureContract,
+  AnyProcedureTypes,
+  CompleteProcedureTypes,
+  Page,
+  PageRequest,
+  PaginationManifest,
+  ProcedureAffectsInput,
+  ProcedureContract,
+  ProcedureContractManifest,
+  ProcedureInputConstraint,
+  ProcedureInput,
+  ProcedureKind,
+  ProcedureOutput,
+  ProcedureError,
+  ProcedureTypeCarrier,
+  ProcedureTerminalConstraint,
+  ProcedureTypes,
+  ProcedureTypesOf,
+  QueryAffectsTarget,
+  WithProcedureContext,
+  WithProcedureDefinitions,
+  WithProcedureHeaders,
+  WithProcedureInput,
+  WithProcedureKinds,
+  WithProcedureMappedInput,
+  WithProcedureOutput,
+  WritesEntry,
+} from "../procedure-types.js";
+import type { MaybePromise } from "../types.js";
+export type BooleanOr<TLeft extends boolean, TRight extends boolean> = TLeft extends true
   ? true
   : TRight extends true
     ? true
     : false;
+
+function booleanOr<TLeft extends boolean, TRight extends boolean>(
+  left: TLeft,
+  right: TRight,
+): BooleanOr<TLeft, TRight>;
+function booleanOr(left: boolean, right: boolean): boolean {
+  return left || right;
+}
 
 export interface InternalErrorEvent {
   readonly incidentId: string;
@@ -79,7 +151,7 @@ const touchedEntityKey = <TModel extends AnyModel>(
   if (resolved === undefined) {
     throw new TypeError(`Entity key for ${model.name} is missing key fields`);
   }
-  return `${model.name}:${resolved}`;
+  return entityKey(model.name, resolved);
 };
 
 /**
@@ -94,36 +166,39 @@ const contextWithHeaders = (
 ): unknown =>
   procedure._def.writesHeaders !== true
     ? context
-    : { ...(context as object), headers: options.responseHeaders ?? new Headers() };
+    : {
+        ...(context !== null && typeof context === "object" ? context : {}),
+        headers: options.responseHeaders ?? new Headers(),
+      };
 
 declare const middlewareNextResult: unique symbol;
-type MiddlewareNextResult = Result<unknown, AnyTaggedError> & {
+export type MiddlewareNextResult = Result<unknown, AnyTaggedError> & {
   readonly [middlewareNextResult]: true;
 };
 
-interface MiddlewareNext<TContext> {
-  (options: { readonly context: TContext }): Promise<MiddlewareNextResult>;
+export interface MiddlewareNext<TContribution> {
+  (options: { readonly context: TContribution }): Promise<MiddlewareNextResult>;
 }
 
 export interface MiddlewareHandlerArgs<
   TInputContext,
-  TOutputContext,
-  TDefinitions extends ErrorDefinitionMap,
+  TContribution,
+  TDefinitionSources extends ErrorDefinitionMap,
 > {
   readonly context: TInputContext;
-  readonly errors: TDefinitions;
-  readonly next: MiddlewareNext<TOutputContext>;
+  readonly errors: MaterializeDefinitionSources<TDefinitionSources>;
+  readonly next: MiddlewareNext<TContribution>;
 }
 
 export type MiddlewareHandler<
   TInputContext,
-  TOutputContext,
-  TDefinitions extends ErrorDefinitionMap,
+  TContribution,
+  TDefinitionSources extends ErrorDefinitionMap,
 > = (
-  args: MiddlewareHandlerArgs<TInputContext, TOutputContext, TDefinitions>,
-) => MaybePromise<Result<unknown, ErrorUnion<TDefinitions>> | MiddlewareNextResult>;
+  args: MiddlewareHandlerArgs<TInputContext, TContribution, TDefinitionSources>,
+) => MaybePromise<Result<unknown, ErrorUnion<TDefinitionSources>> | MiddlewareNextResult>;
 
-type ErasedMiddlewareHandler = (args: {
+export type ErasedMiddlewareHandler = (args: {
   readonly context: unknown;
   readonly errors: ErrorDefinitionMap;
   readonly next: (options: {
@@ -131,7 +206,10 @@ type ErasedMiddlewareHandler = (args: {
   }) => Promise<Result<unknown, AnyTaggedError>>;
 }) => MaybePromise<Result<unknown, AnyTaggedError>>;
 
-interface RuntimeMiddleware {
+export interface RuntimeMiddleware {
+  /** Definitions this middleware's handler may construct. */
+  readonly ownDefinitions: ErrorDefinitionMap;
+  /** Definitions contributed by this middleware and its dependency graph. */
   readonly definitions: ErrorDefinitionMap;
   readonly handler: ErasedMiddlewareHandler;
   /** Middleware this one depends on; flattened and deduped at `.use()` time. */
@@ -162,56 +240,204 @@ const appendMiddleware = (
   ...flattenMiddleware(middleware).filter((candidate) => !existing.includes(candidate)),
 ];
 
-export interface Middleware<
+const mergeMiddlewareContext = (context: unknown, contribution: unknown): object => {
+  if (typeof context !== "object" || context === null) {
+    throw new TypeError("Middleware context must be a non-null object");
+  }
+  if (typeof contribution !== "object" || contribution === null) {
+    throw new TypeError("Middleware context contribution must be a non-null object");
+  }
+  return { ...context, ...contribution };
+};
+
+export interface MiddlewareTypes<
   TInputContext,
   TOutputContext,
-  TDefinitions extends ErrorDefinitionMap,
+  TDefinitionSources extends ErrorDefinitionMap,
+  TDependencies extends readonly AnyMiddlewareTypes[] = readonly [],
   TWritesHeaders extends boolean = false,
+  TProvidedContext = TOutputContext,
+  TOwnDefinitionSources extends ErrorDefinitionMap = TDefinitionSources,
 > {
+  readonly inputContext: TInputContext;
+  readonly outputContext: TOutputContext;
+  readonly definitionSources: TDefinitionSources;
+  readonly ownDefinitionSources: TOwnDefinitionSources;
+  readonly dependencies: TDependencies;
+  readonly writesHeaders: TWritesHeaders;
+  /** Context contributed by this dependency graph, excluding its outer input. */
+  readonly providedContext: TProvidedContext;
+}
+
+/** Runtime-erased middleware facts. Specific associated records remain assignable. */
+export interface AnyMiddlewareTypes {
+  readonly inputContext: unknown;
+  readonly outputContext: unknown;
+  readonly definitionSources: ErrorDefinitionMap;
+  readonly ownDefinitionSources: ErrorDefinitionMap;
+  readonly dependencies: readonly AnyMiddlewareTypes[];
+  readonly writesHeaders: boolean;
+  readonly providedContext: unknown;
+}
+
+export interface Middleware<TTypes extends AnyMiddlewareTypes> {
   readonly _kind: "middleware";
-  readonly definitions: TDefinitions;
+  readonly ownDefinitions: MaterializeDefinitionSources<TTypes["ownDefinitionSources"]>;
+  readonly definitions: MaterializeDefinitionSources<TTypes["definitionSources"]>;
   readonly handler: ErasedMiddlewareHandler;
   readonly requires: readonly RuntimeMiddleware[];
-  readonly writesHeaders: TWritesHeaders;
+  readonly writesHeaders: TTypes["writesHeaders"];
   readonly _types?: {
     /** Contravariant: a middleware needing less context works with more. */
-    readonly inputContext: (context: TInputContext) => void;
-    readonly outputContext: TOutputContext;
-    readonly error: ErrorUnion<TDefinitions>;
-    readonly writesHeaders: TWritesHeaders;
+    readonly inputContext: (context: TTypes["inputContext"]) => void;
+    readonly outputContext: TTypes["outputContext"];
+    readonly error: ErrorUnion<TTypes["definitionSources"]>;
+    readonly ownError: ErrorUnion<TTypes["ownDefinitionSources"]>;
+    readonly dependencies: TTypes["dependencies"];
+    readonly writesHeaders: TTypes["writesHeaders"];
+    readonly providedContext: TTypes["providedContext"];
   };
 }
 
-export class MiddlewareBuilder<
+/** Runtime-erased middleware accepted by composition points. */
+export interface AnyMiddleware {
+  readonly _kind: "middleware";
+  readonly ownDefinitions: ErrorDefinitionMap;
+  readonly definitions: ErrorDefinitionMap;
+  readonly handler: ErasedMiddlewareHandler;
+  readonly requires: readonly RuntimeMiddleware[];
+  readonly writesHeaders: boolean;
+  readonly _types?: unknown;
+}
+
+export type MiddlewareTypesOf<TMiddleware> =
+  TMiddleware extends Middleware<infer TTypes> ? TTypes : never;
+
+/**
+ * One immediate dependency edge. Its own ancestry is a runtime graph fact and
+ * is deliberately not copied recursively into every downstream type record.
+ */
+export type MiddlewareDependencyTypes<TTypes extends AnyMiddlewareTypes> = MiddlewareTypes<
+  TTypes["inputContext"],
+  TTypes["outputContext"],
+  TTypes["definitionSources"],
+  readonly [],
+  TTypes["writesHeaders"],
+  TTypes["providedContext"],
+  TTypes["ownDefinitionSources"]
+>;
+
+/** Construction state for a middleware before its handler closes the builder. */
+export interface MiddlewareBuilderTypes<
   TInputContext,
-  TAdded = {},
-  TDefinitions extends ErrorDefinitionMap = {},
-  TOuterInput = TInputContext,
+  TContext,
+  TAddedContext,
+  TDefinitionSources extends ErrorDefinitionMap,
+  TDependencies extends readonly AnyMiddlewareTypes[] = readonly [],
   TWritesHeaders extends boolean = false,
+  TProvidedContext = {},
+  TOwnDefinitionSources extends ErrorDefinitionMap = never,
 > {
+  /** Context required by the complete dependency chain. */
+  readonly inputContext: TInputContext;
+  /** Context visible to this middleware's handler after dependencies run. */
+  readonly context: TContext;
+  /** Context this middleware promises to add when it calls `next`. */
+  readonly addedContext: TAddedContext;
+  readonly definitionSources: TDefinitionSources;
+  readonly ownDefinitionSources: TOwnDefinitionSources;
+  readonly dependencies: TDependencies;
+  readonly writesHeaders: TWritesHeaders;
+  /** Contributions accumulated from `.after()` dependencies. */
+  readonly providedContext: TProvidedContext;
+}
+
+export interface AnyMiddlewareBuilderTypes {
+  readonly inputContext: unknown;
+  readonly context: unknown;
+  readonly addedContext: unknown;
+  readonly definitionSources: ErrorDefinitionMap;
+  readonly ownDefinitionSources: ErrorDefinitionMap;
+  readonly dependencies: readonly AnyMiddlewareTypes[];
+  readonly writesHeaders: boolean;
+  readonly providedContext: unknown;
+}
+
+export type WithMiddlewareDefinitions<
+  TTypes extends AnyMiddlewareBuilderTypes,
+  TNewDefinitions extends ErrorDefinitionMap,
+> = MiddlewareBuilderTypes<
+  TTypes["inputContext"],
+  TTypes["context"],
+  TTypes["addedContext"],
+  MergeDefinitionSources<TTypes["definitionSources"], TNewDefinitions>,
+  TTypes["dependencies"],
+  TTypes["writesHeaders"],
+  TTypes["providedContext"],
+  MergeDefinitionSources<TTypes["ownDefinitionSources"], TNewDefinitions>
+>;
+
+export type WithMiddlewareHeaders<TTypes extends AnyMiddlewareBuilderTypes> =
+  MiddlewareBuilderTypes<
+    TTypes["inputContext"],
+    TTypes["context"] & { readonly headers: Headers },
+    TTypes["addedContext"],
+    TTypes["definitionSources"],
+    TTypes["dependencies"],
+    true,
+    TTypes["providedContext"] & { readonly headers: Headers },
+    TTypes["ownDefinitionSources"]
+  >;
+
+export type WithMiddlewareDependency<
+  TTypes extends AnyMiddlewareBuilderTypes,
+  TDependency extends AnyMiddlewareTypes,
+> = MiddlewareBuilderTypes<
+  TTypes["inputContext"],
+  TTypes["context"] & TDependency["providedContext"],
+  TTypes["addedContext"],
+  MergeDefinitionSources<TTypes["definitionSources"], TDependency["definitionSources"]>,
+  readonly [...TTypes["dependencies"], MiddlewareDependencyTypes<TDependency>],
+  BooleanOr<TTypes["writesHeaders"], TDependency["writesHeaders"]>,
+  TTypes["providedContext"] & TDependency["providedContext"],
+  TTypes["ownDefinitionSources"]
+>;
+
+export type CompleteMiddlewareTypes<TTypes extends AnyMiddlewareBuilderTypes> = MiddlewareTypes<
+  TTypes["inputContext"],
+  TTypes["inputContext"] & TTypes["providedContext"] & TTypes["addedContext"],
+  TTypes["definitionSources"],
+  TTypes["dependencies"],
+  TTypes["writesHeaders"],
+  TTypes["providedContext"] & TTypes["addedContext"],
+  TTypes["ownDefinitionSources"]
+>;
+
+export type MiddlewareContextCompatibility<TAvailable, TRequired> = [TAvailable] extends [TRequired]
+  ? unknown
+  : RpcConstraintError<
+      "middleware-requires-incompatible-context",
+      { readonly available: TAvailable; readonly required: TRequired }
+    >;
+
+export class MiddlewareBuilder<TTypes extends AnyMiddlewareBuilderTypes> {
   constructor(
-    private readonly definitions: TDefinitions = {} as TDefinitions,
+    private readonly definitions: ErrorDefinitionMap = {},
+    private readonly ownDefinitions: ErrorDefinitionMap = {},
     private readonly dependencies: readonly RuntimeMiddleware[] = [],
-    private readonly declaresHeaders: TWritesHeaders = false as TWritesHeaders,
+    private readonly declaresHeaders: boolean = false,
   ) {}
 
   errors<const TNewDefinitions extends ErrorDefinitionMap>(
     definitions: TNewDefinitions &
-      DefinitionMapCompatibility<TDefinitions, NoInfer<TNewDefinitions>>,
-  ): MiddlewareBuilder<
-    TInputContext,
-    TAdded,
-    MergeDefinitionMaps<TDefinitions, TNewDefinitions>,
-    TOuterInput,
-    TWritesHeaders
-  > {
-    return new MiddlewareBuilder<
-      TInputContext,
-      TAdded,
-      MergeDefinitionMaps<TDefinitions, TNewDefinitions>,
-      TOuterInput,
-      TWritesHeaders
-    >(mergeDefinitionMaps(this.definitions, definitions), this.dependencies, this.declaresHeaders);
+      DefinitionSourcesCompatibility<TTypes["definitionSources"], NoInfer<TNewDefinitions>>,
+  ): MiddlewareBuilder<WithMiddlewareDefinitions<TTypes, TNewDefinitions>> {
+    return new MiddlewareBuilder<WithMiddlewareDefinitions<TTypes, TNewDefinitions>>(
+      mergeDefinitionMaps(this.definitions, definitions),
+      mergeDefinitionMaps(this.ownDefinitions, definitions),
+      this.dependencies,
+      this.declaresHeaders,
+    );
   }
 
   /**
@@ -220,20 +446,13 @@ export class MiddlewareBuilder<
    * every procedure that `.use()`s it must declare `.headers()` too, exactly
    * as it must pre-declare the middleware's errors.
    */
-  headers(): MiddlewareBuilder<
-    TInputContext & { readonly headers: Headers },
-    TAdded,
-    TDefinitions,
-    TOuterInput,
-    true
-  > {
-    return new MiddlewareBuilder<
-      TInputContext & { readonly headers: Headers },
-      TAdded,
-      TDefinitions,
-      TOuterInput,
-      true
-    >(this.definitions, this.dependencies, true);
+  headers(): MiddlewareBuilder<WithMiddlewareHeaders<TTypes>> {
+    return new MiddlewareBuilder<WithMiddlewareHeaders<TTypes>>(
+      this.definitions,
+      this.ownDefinitions,
+      this.dependencies,
+      true,
+    );
   }
 
   /**
@@ -242,53 +461,37 @@ export class MiddlewareBuilder<
    * middleware's union, and any `.use()` site pulls the dependency in
    * automatically — deduplicated by reference when several middleware share it.
    */
-  after<
-    TDependencyOutput,
-    TDependencyDefinitions extends ErrorDefinitionMap,
-    TDependencyWritesHeaders extends boolean,
-  >(
-    dependency: Middleware<
-      TInputContext,
-      TDependencyOutput,
-      TDependencyDefinitions,
-      TDependencyWritesHeaders
-    > &
-      DefinitionMapCompatibility<TDefinitions, NoInfer<TDependencyDefinitions>>,
-  ): MiddlewareBuilder<
-    TDependencyOutput,
-    TAdded,
-    MergeDefinitionMaps<TDefinitions, TDependencyDefinitions>,
-    TOuterInput,
-    BooleanOr<TWritesHeaders, TDependencyWritesHeaders>
-  > {
-    return new MiddlewareBuilder<
-      TDependencyOutput,
-      TAdded,
-      MergeDefinitionMaps<TDefinitions, TDependencyDefinitions>,
-      TOuterInput,
-      BooleanOr<TWritesHeaders, TDependencyWritesHeaders>
-    >(
+  after<TDependencyTypes extends AnyMiddlewareTypes>(
+    dependency: Middleware<TDependencyTypes> &
+      MiddlewareContextCompatibility<TTypes["context"], TDependencyTypes["inputContext"]>,
+  ): MiddlewareBuilder<WithMiddlewareDependency<TTypes, TDependencyTypes>> {
+    return new MiddlewareBuilder<WithMiddlewareDependency<TTypes, TDependencyTypes>>(
       mergeDefinitionMaps(this.definitions, dependency.definitions),
-      [...this.dependencies, dependency as unknown as RuntimeMiddleware],
+      this.ownDefinitions,
+      [...this.dependencies, dependency],
       // A dependency that writes headers makes this one a header writer too:
       // `.use()` sites pull it in, so the obligation has to travel with it.
-      (this.declaresHeaders || dependency.writesHeaders === true) as BooleanOr<
-        TWritesHeaders,
-        TDependencyWritesHeaders
-      >,
+      booleanOr(this.declaresHeaders, dependency.writesHeaders),
     );
   }
 
   use(
-    handler: MiddlewareHandler<TInputContext, TInputContext & TAdded, TDefinitions>,
-  ): Middleware<TOuterInput, TInputContext & TAdded, TDefinitions, TWritesHeaders> {
+    handler: MiddlewareHandler<
+      TTypes["context"],
+      TTypes["addedContext"],
+      TTypes["ownDefinitionSources"]
+    >,
+  ): Middleware<CompleteMiddlewareTypes<TTypes>> {
+    // Audited middleware compile boundary: the fluent transitions above are
+    // the sole writers of these maps and the associated source records.
     return Object.freeze({
       _kind: "middleware" as const,
+      ownDefinitions: this.ownDefinitions,
       definitions: this.definitions,
       handler: handler as ErasedMiddlewareHandler,
       requires: this.dependencies,
       writesHeaders: this.declaresHeaders,
-    });
+    }) as Middleware<CompleteMiddlewareTypes<TTypes>>;
   }
 }
 
@@ -311,215 +514,100 @@ export interface ProcedureHandlerArgs<TContext, TInput, TDefinitions extends Err
   readonly signal: AbortSignal;
 }
 
-/**
- * One page of a paginated query: the rows plus the cursor that fetches the
- * next page — `null` when this page is the last. Handlers return this shape;
- * the client engine accumulates pages under ONE cache entry per list input.
- */
-export interface Page<TItem, TCursor> {
-  readonly items: readonly TItem[];
-  readonly nextCursor: TCursor | null;
-}
-
-export interface PageRequest<TListInput, TCursor> {
-  readonly list: TListInput;
-  readonly cursor: TCursor | null;
-}
-
-export interface PaginationManifest {
-  readonly cursor: AnyWireCodec;
-  readonly item: AnyWireCodec;
-}
-
-/**
- * A mutation's declared blast radius: which query it invalidates on success,
- * and how the mutation's input maps to the query's. Declared once at the
- * contract, executed automatically by the client cache — no `onSettled`
- * plumbing at call sites. Without `map`, every cached input of the target
- * query is invalidated.
- */
-export interface AffectsEntry {
-  readonly target: AnyProcedureContract | AnyUnaryProcedure | AnyPaginatedProcedure;
-  readonly map?: (input: unknown) => unknown;
-}
-
-type QueryAffectsTarget =
-  | ProcedureContract<any, any, any, any, "query", any>
-  | Procedure<any, any, any, any, "query", any>;
-
-/** The cache identity accepted by `.affects()` for one query target. */
-export type ProcedureAffectsInput<TTarget extends QueryAffectsTarget> = TTarget extends {
-  readonly _def: {
-    readonly input: WireCodec<infer TInput, WireValue>;
-    readonly capability: infer TCapability;
-  };
-}
-  ? TCapability extends {
-      readonly mode: "paginated";
-      readonly _types: { readonly listInput: infer TListInput };
-    }
-    ? TListInput
-    : TInput
-  : never;
-
-/**
- * A mutation's declared entity write for outputs that don't carry the
- * entity: `.writes(Doc, (input) => input.id)` invalidates every cached query
- * containing that entity — the invalidation-only sibling of returning the
- * entity (which patches).
- */
-export interface WritesEntry {
-  readonly model: AnyModel;
-  readonly map: (input: unknown) => ModelKeyInput;
-}
-
-/** Localizes the existential input erasure when a typed manifest is compiled. */
-const eraseManifestMapper =
-  <TInput, TOutput>(map: (input: TInput) => TOutput): ((input: unknown) => TOutput) =>
-  // The procedure invokes the compiled mapper only with its own validated input.
-  (input) =>
-    map(input as TInput);
-
-export interface ProcedureManifest<
+export type ContractProcedureTypes<
   TRootContext,
   TInput,
   TOutput,
   TDefinitions extends ErrorDefinitionMap,
-  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
-  TCapability extends ProcedureCapability = UnaryProcedureCapability,
-> {
-  readonly kind: TKind;
-  readonly input: WireCodec<TInput, WireValue>;
-  readonly output: WireCodec<TOutput, WireValue>;
-  readonly definitions: TDefinitions;
-  readonly capability: TCapability;
+  TKind extends ProcedureKind,
+  TCapability extends ProcedureCapability,
+> = ProcedureTypes<TRootContext, TRootContext, TInput, TOutput, TDefinitions, TKind, TCapability>;
+
+export type ExecutableProcedureTypes<
+  TRootContext,
+  TContext,
+  TInput,
+  TOutput,
+  TDefinitions extends ErrorDefinitionMap,
+  TKind extends ProcedureKind,
+  TCapability extends ProcedureCapability,
+> = ProcedureTypes<TRootContext, TContext, TInput, TOutput, TDefinitions, TKind, TCapability>;
+
+export interface ProcedureManifest<TTypes extends AnyProcedureTypes> {
+  readonly kind: TTypes["kind"];
+  readonly input: WireCodec<TTypes["input"], WireValue>;
+  readonly output: WireCodec<TTypes["output"], WireValue>;
+  readonly definitions: TTypes["definitions"];
+  readonly capability: TTypes["capability"];
   readonly affects?: readonly AffectsEntry[];
   readonly writes?: readonly WritesEntry[];
   readonly pagination?: PaginationManifest;
   readonly writesHeaders?: true;
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
-    args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
-  ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>;
-  readonly _rootContext?: TRootContext;
+    args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+  ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>;
 }
 
-export interface ProcedureContractManifest<
-  TRootContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
-  TCapability extends ProcedureCapability = UnaryProcedureCapability,
-> {
-  readonly kind: TKind;
-  readonly input: WireCodec<TInput, WireValue>;
-  readonly output: WireCodec<TOutput, WireValue>;
-  readonly definitions: TDefinitions;
-  readonly capability: TCapability;
-  readonly affects?: readonly AffectsEntry[];
-  readonly writes?: readonly WritesEntry[];
-  readonly pagination?: PaginationManifest;
-  /**
-   * Declared by `.headers()`. A fact about the procedure's interface, not its
-   * implementation: transports read it to decide how a call may be batched,
-   * because a response whose headers are already on the wire cannot receive
-   * a `set-cookie` from a handler that has not finished yet.
-   */
-  readonly writesHeaders?: true;
-  readonly _rootContext?: TRootContext;
-}
-
-export interface ProcedureContract<
-  TRootContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
-  TCapability extends ProcedureCapability = UnaryProcedureCapability,
-> {
-  readonly _kind: "procedure-contract";
-  readonly _def: ProcedureContractManifest<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    TKind,
-    TCapability
-  >;
-}
-
-export interface Procedure<
-  TRootContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
-  TCapability extends ProcedureCapability = UnaryProcedureCapability,
-> {
+export interface Procedure<TTypes extends AnyProcedureTypes> extends ProcedureTypeCarrier<TTypes> {
   readonly _kind: "procedure";
-  readonly _def: ProcedureManifest<TRootContext, TInput, TOutput, TDefinitions, TKind, TCapability>;
+  readonly _def: ProcedureManifest<TTypes>;
 }
 
 /** A query whose manifest proves the correlated list, cursor, and item types. */
 export interface SubscriptionProcedureManifest<
-  TRootContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-> extends ProcedureContractManifest<TRootContext, TInput, TOutput, TDefinitions, "subscription"> {
+  TTypes extends AnyProcedureTypes & { readonly kind: "subscription" },
+> extends ProcedureContractManifest<TTypes> {
   readonly middlewares: readonly RuntimeMiddleware[];
   readonly handler: (
-    args: ProcedureHandlerArgs<unknown, TInput, TDefinitions>,
-  ) => MaybePromise<AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>>;
+    args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+  ) => MaybePromise<AsyncIterable<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>>;
 }
 
 export interface SubscriptionProcedure<
-  TRootContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-> {
+  TTypes extends AnyProcedureTypes & { readonly kind: "subscription" },
+> extends ProcedureTypeCarrier<TTypes> {
   readonly _kind: "subscription-procedure";
-  readonly _def: SubscriptionProcedureManifest<TRootContext, TInput, TOutput, TDefinitions>;
+  readonly _def: SubscriptionProcedureManifest<TTypes>;
 }
 
-export type AnyUnaryProcedure = Procedure<
-  any,
-  any,
-  any,
-  any,
-  "query" | "mutation",
-  UnaryProcedureCapability<boolean>
->;
-export type AnyPaginatedProcedure = Procedure<
-  any,
-  any,
-  any,
-  any,
-  "query",
-  PaginatedProcedureCapability<any, any, any, boolean>
->;
-export type AnySubscriptionProcedure = SubscriptionProcedure<any, any, any, any>;
-export type AnyProcedure = AnyUnaryProcedure | AnyPaginatedProcedure | AnySubscriptionProcedure;
-export type AnyProcedureContract = ProcedureContract<any, any, any, any, any, any>;
+/** Runtime procedure shape. Handler invocation remains behind the executor proof boundary. */
+export interface AnyUnaryProcedure extends ProcedureTypeCarrier<AnyProcedureTypes> {
+  readonly _kind: "procedure";
+  readonly _def: {
+    readonly kind: "query" | "mutation";
+    readonly input: import("../wire.js").AnyWireCodec;
+    readonly output: import("../wire.js").AnyWireCodec;
+    readonly definitions: ErrorDefinitionMap;
+    readonly capability: ProcedureCapability;
+    readonly middlewares: readonly RuntimeMiddleware[];
+    readonly handler: (args: never) => unknown;
+    readonly affects?: readonly AffectsEntry[];
+    readonly writes?: readonly WritesEntry[];
+    readonly pagination?: PaginationManifest;
+    readonly writesHeaders?: true;
+  };
+}
+export interface AnySubscriptionProcedure extends ProcedureTypeCarrier<AnyProcedureTypes> {
+  readonly _kind: "subscription-procedure";
+  readonly _def: {
+    readonly kind: "subscription";
+    readonly input: import("../wire.js").AnyWireCodec;
+    readonly output: import("../wire.js").AnyWireCodec;
+    readonly definitions: ErrorDefinitionMap;
+    readonly capability: ProcedureCapability;
+    readonly pagination?: PaginationManifest;
+    readonly writesHeaders?: true;
+    readonly middlewares: readonly RuntimeMiddleware[];
+    readonly handler: (args: never) => unknown;
+  };
+}
+export type AnyProcedure = AnyUnaryProcedure | AnySubscriptionProcedure;
 
-export class ProcedureBuilder<
-  TRootContext,
-  TContext = TRootContext,
-  TInput = EmptyObject,
-  TOutput = never,
-  TDefinitions extends ErrorDefinitionMap = {},
-  TWritesHeaders extends boolean = false,
-> {
+export class ProcedureBuilder<TTypes extends AnyProcedureTypes> {
   constructor(
-    private readonly inputCodec?: WireCodec<TInput, WireValue>,
-    private readonly outputCodec?: WireCodec<TOutput, WireValue>,
-    private readonly definitions: TDefinitions = {} as TDefinitions,
+    private readonly declaration: ProcedureDeclaration<TTypes>,
     private readonly middlewares: readonly RuntimeMiddleware[] = [],
-    private readonly affectsEntries: readonly AffectsEntry[] = [],
-    private readonly writesEntries: readonly WritesEntry[] = [],
-    private readonly declaresHeaders: TWritesHeaders = false as TWritesHeaders,
   ) {}
 
   /**
@@ -534,30 +622,8 @@ export class ProcedureBuilder<
    * which turns "my cookie silently vanished under a streaming transport"
    * into a type error.
    */
-  headers(): ProcedureBuilder<
-    TRootContext,
-    TContext & { readonly headers: Headers },
-    TInput,
-    TOutput,
-    TDefinitions,
-    true
-  > {
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext & { readonly headers: Headers },
-      TInput,
-      TOutput,
-      TDefinitions,
-      true
-    >(
-      this.inputCodec,
-      this.outputCodec,
-      this.definitions,
-      this.middlewares,
-      this.affectsEntries,
-      this.writesEntries,
-      true,
-    );
+  headers(): ProcedureBuilder<WithProcedureHeaders<TTypes>> {
+    return new ProcedureBuilder(this.declaration.headers(), this.middlewares);
   }
 
   /**
@@ -567,24 +633,11 @@ export class ProcedureBuilder<
    */
   writes<TModel extends AnyModel>(
     model: TModel,
-    map: (input: TInput) => ModelKeyInput<TModel>,
-  ): ProcedureBuilder<TRootContext, TContext, TInput, TOutput, TDefinitions, TWritesHeaders> {
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      TWritesHeaders
-    >(
-      this.inputCodec,
-      this.outputCodec,
-      this.definitions,
-      this.middlewares,
-      this.affectsEntries,
-      [...this.writesEntries, { model, map: eraseManifestMapper(map) }],
-      this.declaresHeaders,
-    );
+    map: (input: TTypes["input"]) => ModelKeyInput<TModel>,
+  ): ProcedureBuilder<
+    WithProcedureMappedInput<WithProcedureKinds<TTypes, Extract<TTypes["kind"], "mutation">>>
+  > {
+    return new ProcedureBuilder(this.declaration.writes(model, map), this.middlewares);
   }
 
   /**
@@ -595,243 +648,188 @@ export class ProcedureBuilder<
    */
   affects<const TTarget extends QueryAffectsTarget>(
     target: TTarget,
-    map?: (input: TInput) => ProcedureAffectsInput<TTarget>,
-  ): ProcedureBuilder<TRootContext, TContext, TInput, TOutput, TDefinitions, TWritesHeaders> {
-    if (target._def.kind !== "query") {
-      throw new TypeError("affects() targets must be query procedures");
-    }
-    const entry: AffectsEntry =
-      map === undefined ? { target } : { target, map: eraseManifestMapper(map) };
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      TWritesHeaders
-    >(
-      this.inputCodec,
-      this.outputCodec,
-      this.definitions,
-      this.middlewares,
-      [...this.affectsEntries, entry],
-      this.writesEntries,
-      this.declaresHeaders,
-    );
+    map?: (input: TTypes["input"]) => ProcedureAffectsInput<TTarget>,
+  ): ProcedureBuilder<
+    WithProcedureMappedInput<WithProcedureKinds<TTypes, Extract<TTypes["kind"], "mutation">>>
+  > {
+    return new ProcedureBuilder(this.declaration.affects(target, map), this.middlewares);
   }
 
   input<TNewInput, TEncoded extends WireValue>(
+    this: ProcedureBuilder<TTypes> & ProcedureInputConstraint<TTypes>,
     codec: WireCodec<TNewInput, TEncoded>,
-  ): ProcedureBuilder<TRootContext, TContext, TNewInput, TOutput, TDefinitions, TWritesHeaders> {
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext,
-      TNewInput,
-      TOutput,
-      TDefinitions,
-      TWritesHeaders
-    >(
-      codec as WireCodec<TNewInput, WireValue>,
-      this.outputCodec,
-      this.definitions,
-      this.middlewares,
-      this.affectsEntries,
-      this.writesEntries,
-      this.declaresHeaders,
-    );
+  ): ProcedureBuilder<WithProcedureInput<TTypes, TNewInput>> {
+    return new ProcedureBuilder(this.declaration.input(codec), this.middlewares);
   }
 
   output<TNewOutput, TEncoded extends WireValue>(
     codec: WireCodec<TNewOutput, TEncoded>,
-  ): ProcedureBuilder<TRootContext, TContext, TInput, TNewOutput, TDefinitions, TWritesHeaders> {
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext,
-      TInput,
-      TNewOutput,
-      TDefinitions,
-      TWritesHeaders
-    >(
-      this.inputCodec,
-      codec as WireCodec<TNewOutput, WireValue>,
-      this.definitions,
-      this.middlewares,
-      this.affectsEntries,
-      this.writesEntries,
-      this.declaresHeaders,
-    );
+  ): ProcedureBuilder<WithProcedureOutput<TTypes, TNewOutput>> {
+    return new ProcedureBuilder(this.declaration.output(codec), this.middlewares);
   }
 
   errors<const TNewDefinitions extends ErrorDefinitionMap>(
     definitions: TNewDefinitions &
-      DefinitionMapCompatibility<TDefinitions, NoInfer<TNewDefinitions>>,
+      DefinitionMapCompatibility<TTypes["definitions"], NoInfer<TNewDefinitions>>,
   ): ProcedureBuilder<
-    TRootContext,
-    TContext,
-    TInput,
-    TOutput,
-    MergeDefinitionMaps<TDefinitions, TNewDefinitions>,
-    TWritesHeaders
+    WithProcedureDefinitions<TTypes, MergeDefinitionMaps<TTypes["definitions"], TNewDefinitions>>
   > {
-    return new ProcedureBuilder<
-      TRootContext,
-      TContext,
-      TInput,
-      TOutput,
-      MergeDefinitionMaps<TDefinitions, TNewDefinitions>,
-      TWritesHeaders
-    >(
-      this.inputCodec,
-      this.outputCodec,
-      mergeDefinitionMaps(this.definitions, definitions),
+    return new ProcedureBuilder(
+      this.declaration.errors<TNewDefinitions>(definitions),
       this.middlewares,
-      this.affectsEntries,
-      this.writesEntries,
-      this.declaresHeaders,
     );
   }
 
-  use<
-    TOutputContext,
-    TMiddlewareDefinitions extends ErrorDefinitionMap,
-    TMiddlewareWritesHeaders extends boolean,
-  >(
-    middleware: Middleware<
-      TContext,
-      TOutputContext,
-      TMiddlewareDefinitions,
-      TMiddlewareWritesHeaders
-    > &
-      DefinitionMapCompatibility<TDefinitions, NoInfer<TMiddlewareDefinitions>>,
-  ): ProcedureBuilder<
-    TRootContext,
-    TOutputContext,
-    TInput,
-    TOutput,
-    MergeDefinitionMaps<TDefinitions, TMiddlewareDefinitions>,
-    BooleanOr<TWritesHeaders, TMiddlewareWritesHeaders>
-  > {
-    const definitions = mergeDefinitionMaps(this.definitions, middleware.definitions);
-    return new ProcedureBuilder<
-      TRootContext,
-      TOutputContext,
-      TInput,
-      TOutput,
-      MergeDefinitionMaps<TDefinitions, TMiddlewareDefinitions>,
-      BooleanOr<TWritesHeaders, TMiddlewareWritesHeaders>
-    >(
-      this.inputCodec,
-      this.outputCodec,
-      definitions,
-      appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
-      this.affectsEntries,
-      this.writesEntries,
-      // A middleware that writes headers makes the procedure a header writer,
-      // the same way its errors join the procedure's declared union.
-      (this.declaresHeaders || middleware.writesHeaders === true) as BooleanOr<
-        TWritesHeaders,
-        TMiddlewareWritesHeaders
+  use<TMiddlewareTypes extends AnyMiddlewareTypes>(
+    middleware: Middleware<TMiddlewareTypes> &
+      MiddlewareContextCompatibility<TTypes["context"], TMiddlewareTypes["inputContext"]> &
+      DefinitionSourcesCompatibility<
+        TTypes["definitions"],
+        NoInfer<TMiddlewareTypes["definitionSources"]>
       >,
+  ): ProcedureBuilder<
+    WithProcedureContext<
+      TTypes,
+      TMiddlewareTypes["outputContext"],
+      MergeDefinitionMaps<
+        TTypes["definitions"],
+        MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>
+      >,
+      UnaryProcedureCapability<
+        BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
+      >
+    >
+  > {
+    const definitions = mergeDefinitionMaps(this.declaration.definitions, middleware.definitions);
+    const writesHeaders = booleanOr(this.declaration.writesHeaders, middleware.writesHeaders);
+    return new ProcedureBuilder<
+      WithProcedureContext<
+        TTypes,
+        TMiddlewareTypes["outputContext"],
+        MergeDefinitionMaps<
+          TTypes["definitions"],
+          MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>
+        >,
+        UnaryProcedureCapability<
+          BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
+        >
+      >
+    >(
+      this.declaration.rebind<
+        TMiddlewareTypes["outputContext"],
+        MergeDefinitionMaps<
+          TTypes["definitions"],
+          MaterializeDefinitionSources<TMiddlewareTypes["definitionSources"]>
+        >,
+        UnaryProcedureCapability<
+          BooleanOr<TTypes["writesHeaders"], TMiddlewareTypes["writesHeaders"]>
+        >
+      >(definitions, writesHeaders),
+      appendMiddleware(this.middlewares, middleware),
     );
   }
 
-  query(): ProcedureContract<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    "query",
-    UnaryProcedureCapability<TWritesHeaders>
+  query(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
+  ): ProcedureContract<
+    ContractProcedureTypes<
+      TTypes["rootContext"],
+      TTypes["input"],
+      TTypes["output"],
+      TTypes["definitions"],
+      "query",
+      UnaryProcedureCapability<TTypes["writesHeaders"]>
+    >
   >;
   query(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>,
   ): Procedure<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    "query",
-    UnaryProcedureCapability<TWritesHeaders>
+    CompleteProcedureTypes<TTypes, "query", UnaryProcedureCapability<TTypes["writesHeaders"]>>
   >;
   query(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
     handler?: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>,
   ):
     | ProcedureContract<
-        TRootContext,
-        TInput,
-        TOutput,
-        TDefinitions,
-        "query",
-        UnaryProcedureCapability<TWritesHeaders>
+        ContractProcedureTypes<
+          TTypes["rootContext"],
+          TTypes["input"],
+          TTypes["output"],
+          TTypes["definitions"],
+          "query",
+          UnaryProcedureCapability<TTypes["writesHeaders"]>
+        >
       >
     | Procedure<
-        TRootContext,
-        TInput,
-        TOutput,
-        TDefinitions,
-        "query",
-        UnaryProcedureCapability<TWritesHeaders>
+        CompleteProcedureTypes<TTypes, "query", UnaryProcedureCapability<TTypes["writesHeaders"]>>
       > {
     return handler === undefined ? this.finishContract("query") : this.finish("query", handler);
   }
 
-  mutation(): ProcedureContract<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    "mutation",
-    UnaryProcedureCapability<TWritesHeaders>
+  mutation(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "mutation">,
+  ): ProcedureContract<
+    ContractProcedureTypes<
+      TTypes["rootContext"],
+      TTypes["input"],
+      TTypes["output"],
+      TTypes["definitions"],
+      "mutation",
+      UnaryProcedureCapability<TTypes["writesHeaders"]>
+    >
   >;
   mutation(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "mutation">,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>,
   ): Procedure<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    "mutation",
-    UnaryProcedureCapability<TWritesHeaders>
+    CompleteProcedureTypes<TTypes, "mutation", UnaryProcedureCapability<TTypes["writesHeaders"]>>
   >;
   mutation(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "mutation">,
     handler?: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>,
   ):
     | ProcedureContract<
-        TRootContext,
-        TInput,
-        TOutput,
-        TDefinitions,
-        "mutation",
-        UnaryProcedureCapability<TWritesHeaders>
+        ContractProcedureTypes<
+          TTypes["rootContext"],
+          TTypes["input"],
+          TTypes["output"],
+          TTypes["definitions"],
+          "mutation",
+          UnaryProcedureCapability<TTypes["writesHeaders"]>
+        >
       >
     | Procedure<
-        TRootContext,
-        TInput,
-        TOutput,
-        TDefinitions,
-        "mutation",
-        UnaryProcedureCapability<TWritesHeaders>
+        CompleteProcedureTypes<
+          TTypes,
+          "mutation",
+          UnaryProcedureCapability<TTypes["writesHeaders"]>
+        >
       > {
     return handler === undefined
       ? this.finishContract("mutation")
       : this.finish("mutation", handler);
   }
 
-  subscription(): ProcedureContract<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    "subscription",
-    UnaryProcedureCapability<TWritesHeaders>
+  subscription(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "subscription">,
+  ): ProcedureContract<
+    ContractProcedureTypes<
+      TTypes["rootContext"],
+      TTypes["input"],
+      TTypes["output"],
+      TTypes["definitions"],
+      "subscription",
+      UnaryProcedureCapability<TTypes["writesHeaders"]>
+    >
   > {
     return this.finishContract("subscription");
   }
@@ -844,94 +842,103 @@ export class ProcedureBuilder<
    * Still a query on the wire: batching, digests, `.affects()` targeting,
    * and entity patches all apply unchanged.
    */
-  paginate<TCursor>(options: {
-    readonly cursor: WireCodec<TCursor, WireValue>;
-  }): ProcedureContract<
-    TRootContext,
-    PageRequest<TInput, TCursor>,
-    Page<TOutput, TCursor>,
-    TDefinitions,
-    "query",
-    PaginatedProcedureCapability<TInput, TCursor, TOutput, TWritesHeaders>
+  paginate<TCursor>(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
+    options: {
+      readonly cursor: WireCodec<TCursor, WireValue>;
+    },
+  ): ProcedureContract<
+    ContractProcedureTypes<
+      TTypes["rootContext"],
+      PageRequest<TTypes["input"], TCursor>,
+      Page<TTypes["output"], TCursor>,
+      TTypes["definitions"],
+      "query",
+      PaginatedProcedureCapability<
+        TTypes["input"],
+        TCursor,
+        TTypes["output"],
+        TTypes["writesHeaders"]
+      >
+    >
   >;
   paginate<TCursor>(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
     options: { readonly cursor: WireCodec<TCursor, WireValue> },
     handler: (
-      args: ProcedureHandlerArgs<TContext, PageRequest<TInput, TCursor>, TDefinitions>,
-    ) => MaybePromise<Result<Page<TOutput, TCursor>, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<
+        TTypes["context"],
+        PageRequest<TTypes["input"], TCursor>,
+        TTypes["definitions"]
+      >,
+    ) => MaybePromise<Result<Page<TTypes["output"], TCursor>, ErrorUnion<TTypes["definitions"]>>>,
   ): Procedure<
-    TRootContext,
-    PageRequest<TInput, TCursor>,
-    Page<TOutput, TCursor>,
-    TDefinitions,
-    "query",
-    PaginatedProcedureCapability<TInput, TCursor, TOutput, TWritesHeaders>
+    CompleteProcedureTypes<
+      TTypes,
+      "query",
+      PaginatedProcedureCapability<
+        TTypes["input"],
+        TCursor,
+        TTypes["output"],
+        TTypes["writesHeaders"]
+      >,
+      PageRequest<TTypes["input"], TCursor>,
+      Page<TTypes["output"], TCursor>
+    >
   >;
   paginate<TCursor>(
+    this: ProcedureBuilder<TTypes> & ProcedureTerminalConstraint<TTypes, "query">,
     options: { readonly cursor: WireCodec<TCursor, WireValue> },
     handler?: (
-      args: ProcedureHandlerArgs<TContext, PageRequest<TInput, TCursor>, TDefinitions>,
-    ) => MaybePromise<Result<Page<TOutput, TCursor>, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<
+        TTypes["context"],
+        PageRequest<TTypes["input"], TCursor>,
+        TTypes["definitions"]
+      >,
+    ) => MaybePromise<Result<Page<TTypes["output"], TCursor>, ErrorUnion<TTypes["definitions"]>>>,
   ):
     | ProcedureContract<
-        TRootContext,
-        PageRequest<TInput, TCursor>,
-        Page<TOutput, TCursor>,
-        TDefinitions,
-        "query",
-        PaginatedProcedureCapability<TInput, TCursor, TOutput, TWritesHeaders>
+        ContractProcedureTypes<
+          TTypes["rootContext"],
+          PageRequest<TTypes["input"], TCursor>,
+          Page<TTypes["output"], TCursor>,
+          TTypes["definitions"],
+          "query",
+          PaginatedProcedureCapability<
+            TTypes["input"],
+            TCursor,
+            TTypes["output"],
+            TTypes["writesHeaders"]
+          >
+        >
       >
     | Procedure<
-        TRootContext,
-        PageRequest<TInput, TCursor>,
-        Page<TOutput, TCursor>,
-        TDefinitions,
-        "query",
-        PaginatedProcedureCapability<TInput, TCursor, TOutput, TWritesHeaders>
+        CompleteProcedureTypes<
+          TTypes,
+          "query",
+          PaginatedProcedureCapability<
+            TTypes["input"],
+            TCursor,
+            TTypes["output"],
+            TTypes["writesHeaders"]
+          >,
+          PageRequest<TTypes["input"], TCursor>,
+          Page<TTypes["output"], TCursor>
+        >
       > {
-    if (!this.outputCodec) {
-      throw new TypeError("paginate() requires an output codec declaring the row shape");
-    }
-    this.assertAffectsAllowed("query");
-    const item = this.outputCodec as AnyWireCodec;
-    const cursorOrNull = wire.union([options.cursor, wire.null]);
-    const input = wire.object({
-      list: (this.inputCodec ?? wire.object({})) as AnyWireCodec,
-      cursor: cursorOrNull as AnyWireCodec,
-    }) as unknown as WireCodec<PageRequest<TInput, TCursor>, WireValue>;
-    const output = wire.object({
-      items: wire.array(item),
-      nextCursor: cursorOrNull as AnyWireCodec,
-    }) as unknown as WireCodec<Page<TOutput, TCursor>, WireValue>;
-    const pagination: PaginationManifest = Object.freeze({ cursor: options.cursor, item });
-    const base = {
-      kind: "query" as const,
-      input,
-      output,
-      definitions: this.definitions,
-      capability: new PaginatedProcedureCapability<TInput, TCursor, TOutput, TWritesHeaders>(
-        this.declaresHeaders,
-      ),
-      pagination,
-      ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
-    };
+    const definition = this.declaration.paginated(options.cursor);
     if (handler === undefined) {
       return Object.freeze({
         _kind: "procedure-contract" as const,
-        _def: Object.freeze(base),
+        _def: definition,
       });
     }
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
-        ...base,
+        ...definition,
         middlewares: this.middlewares,
-        handler: handler as ProcedureManifest<
-          TRootContext,
-          PageRequest<TInput, TCursor>,
-          Page<TOutput, TCursor>,
-          TDefinitions
-        >["handler"],
+        handler,
       }),
     });
   }
@@ -939,96 +946,47 @@ export class ProcedureBuilder<
   private finishContract<TKind extends "query" | "mutation" | "subscription">(
     kind: TKind,
   ): ProcedureContract<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    TKind,
-    UnaryProcedureCapability<TWritesHeaders>
+    ContractProcedureTypes<
+      TTypes["rootContext"],
+      TTypes["input"],
+      TTypes["output"],
+      TTypes["definitions"],
+      TKind,
+      UnaryProcedureCapability<TTypes["writesHeaders"]>
+    >
   > {
-    if (!this.outputCodec) {
-      throw new TypeError("A procedure requires an output codec");
-    }
-    this.assertAffectsAllowed(kind);
     return Object.freeze({
       _kind: "procedure-contract" as const,
-      _def: Object.freeze({
-        kind,
-        input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
-        output: this.outputCodec,
-        definitions: this.definitions,
-        capability: unaryProcedureCapability(this.declaresHeaders),
-        ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
-        ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
-        ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
-      }),
+      _def: this.declaration.unary(kind),
     });
-  }
-
-  private assertAffectsAllowed(kind: string): void {
-    if (this.affectsEntries.length > 0 && kind !== "mutation") {
-      throw new TypeError(
-        "Only mutations declare .affects(); queries are invalidated, not invalidating",
-      );
-    }
-    if (this.writesEntries.length > 0 && kind !== "mutation") {
-      throw new TypeError("Only mutations declare .writes()");
-    }
-    if (this.declaresHeaders && kind === "subscription") {
-      throw new TypeError(
-        "A subscription cannot write response headers: its response is already on the wire " +
-          "before the stream — and therefore any middleware or handler — runs. Set the header " +
-          "in the request that opens the stream instead.",
-      );
-    }
   }
 
   private finish<TKind extends "query" | "mutation">(
     kind: TKind,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TTypes["context"], TTypes["input"], TTypes["definitions"]>,
+    ) => MaybePromise<Result<TTypes["output"], ErrorUnion<TTypes["definitions"]>>>,
   ): Procedure<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    TKind,
-    UnaryProcedureCapability<TWritesHeaders>
+    CompleteProcedureTypes<TTypes, TKind, UnaryProcedureCapability<TTypes["writesHeaders"]>>
   > {
-    if (!this.outputCodec) {
-      throw new TypeError("A procedure requires an output codec");
-    }
-    this.assertAffectsAllowed(kind);
+    const definition = this.declaration.unary(kind);
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
-        kind,
-        input: this.inputCodec ?? (wire.object({}) as WireCodec<TInput, WireValue>),
-        output: this.outputCodec,
-        definitions: this.definitions,
-        capability: unaryProcedureCapability(this.declaresHeaders),
-        ...(this.affectsEntries.length === 0 ? {} : { affects: this.affectsEntries }),
-        ...(this.writesEntries.length === 0 ? {} : { writes: this.writesEntries }),
-        ...(this.declaresHeaders ? { writesHeaders: true as const } : {}),
+        ...definition,
         middlewares: this.middlewares,
-        handler: handler as ProcedureManifest<
-          TRootContext,
-          TInput,
-          TOutput,
-          TDefinitions
-        >["handler"],
+        handler,
       }),
     });
   }
 }
 
-type UndeclaredMiddlewareErrors<
+export type UndeclaredMiddlewareErrors<
   TDeclared extends ErrorDefinitionMap,
   TContributed extends ErrorDefinitionMap,
 > = Exclude<ErrorUnion<TContributed>, ErrorUnion<TDeclared>>;
 
-type MiddlewareContractCompatibility<
+export type MiddlewareContractCompatibility<
   TDeclared extends ErrorDefinitionMap,
   TCapability extends ProcedureCapability,
   TContributed extends ErrorDefinitionMap,
@@ -1044,53 +1002,66 @@ type MiddlewareContractCompatibility<
       UndeclaredMiddlewareErrors<TDeclared, TContributed>["_tag"]
     >;
 
-export class ProcedureImplementer<
-  TRootContext,
+export type ProcedureImplementationMiddlewareConstraint<
+  TContractTypes extends AnyProcedureTypes,
   TContext,
-  TInput,
-  TOutput,
-  TDefinitions extends ErrorDefinitionMap,
-  TKind extends "query" | "mutation" | "subscription" = "query" | "mutation" | "subscription",
-  TCapability extends ProcedureCapability = UnaryProcedureCapability,
-> {
+  TMiddlewareTypes extends AnyMiddlewareTypes,
+> = MiddlewareContextCompatibility<TContext, TMiddlewareTypes["inputContext"]> &
+  MiddlewareContractCompatibility<
+    TContractTypes["definitions"],
+    TContractTypes["capability"],
+    TMiddlewareTypes["definitionSources"],
+    TMiddlewareTypes["writesHeaders"]
+  >;
+
+export type ImplementedProcedureTypes<
+  TContractTypes extends AnyProcedureTypes,
+  TContext,
+  TKind extends ProcedureKind = TContractTypes["kind"],
+> = ProcedureTypes<
+  TContractTypes["rootContext"],
+  TContext,
+  TContractTypes["input"],
+  TContractTypes["output"],
+  TContractTypes["definitions"],
+  TKind,
+  TContractTypes["capability"]
+>;
+
+export type ImplementationContext<
+  TRootContext,
+  TContractTypes extends AnyProcedureTypes,
+> = TContractTypes["writesHeaders"] extends true
+  ? TRootContext & { readonly headers: Headers }
+  : TRootContext;
+
+export type ProcedureImplementationContextConstraint<
+  TRootContext,
+  TContractTypes extends AnyProcedureTypes,
+> = [Exclude<TRootContext, TContractTypes["rootContext"]>] extends [never]
+  ? unknown
+  : RpcConstraintError<
+      "procedure-contract-requires-incompatible-context",
+      {
+        readonly available: TRootContext;
+        readonly required: TContractTypes["rootContext"];
+      }
+    >;
+
+export class ProcedureImplementer<TContractTypes extends AnyProcedureTypes, TContext> {
   constructor(
-    private readonly contract: ProcedureContract<
-      TRootContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      TKind,
-      TCapability
-    >,
+    private readonly contract: ProcedureContract<TContractTypes>,
     private readonly middlewares: readonly RuntimeMiddleware[] = [],
   ) {}
 
-  use<
-    TOutputContext,
-    TMiddlewareDefinitions extends ErrorDefinitionMap,
-    TMiddlewareWritesHeaders extends boolean,
-  >(
-    middleware: Middleware<
-      TContext,
-      TOutputContext,
-      TMiddlewareDefinitions,
-      TMiddlewareWritesHeaders
-    > &
-      MiddlewareContractCompatibility<
-        TDefinitions,
-        TCapability,
-        NoInfer<TMiddlewareDefinitions>,
-        NoInfer<TMiddlewareWritesHeaders>
+  use<TMiddlewareTypes extends AnyMiddlewareTypes>(
+    middleware: Middleware<TMiddlewareTypes> &
+      ProcedureImplementationMiddlewareConstraint<
+        TContractTypes,
+        TContext,
+        NoInfer<TMiddlewareTypes>
       >,
-  ): ProcedureImplementer<
-    TRootContext,
-    TOutputContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    TKind,
-    TCapability
-  > {
+  ): ProcedureImplementer<TContractTypes, TMiddlewareTypes["outputContext"]> {
     assertDefinitionsAreDeclared(this.contract._def.definitions, middleware.definitions);
     if (middleware.writesHeaders === true && this.contract._def.writesHeaders !== true) {
       throw new TypeError(
@@ -1098,83 +1069,57 @@ export class ProcedureImplementer<
           "The declaration lives on the contract because transports read it before dispatch.",
       );
     }
-    return new ProcedureImplementer(
-      this.contract,
-      appendMiddleware(this.middlewares, middleware as unknown as RuntimeMiddleware),
-    );
+    return new ProcedureImplementer(this.contract, appendMiddleware(this.middlewares, middleware));
   }
 
   handler(
-    this: ProcedureImplementer<
-      TRootContext,
-      TContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      "query" | "mutation",
-      TCapability
-    >,
+    this: TContractTypes["kind"] extends "subscription"
+      ? never
+      : ProcedureImplementer<TContractTypes, TContext>,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<Result<TOutput, ErrorUnion<TDefinitions>>>,
+      args: ProcedureHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>,
+    ) => MaybePromise<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>,
   ): Procedure<
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    Exclude<TKind, "subscription">,
-    TCapability
+    ImplementedProcedureTypes<
+      TContractTypes,
+      TContext,
+      Extract<TContractTypes["kind"], "query" | "mutation">
+    >
   > {
+    const definition = this.contract._def;
+    assertUnaryProcedureKind(definition.kind);
+    const kind = definition.kind;
     return Object.freeze({
       _kind: "procedure" as const,
       _def: Object.freeze({
-        ...this.contract._def,
+        ...definition,
+        kind,
         middlewares: this.middlewares,
-        handler: handler as ProcedureManifest<
-          TRootContext,
-          TInput,
-          TOutput,
-          TDefinitions
-        >["handler"],
+        handler,
       }),
-      // The `this` parameter narrows TKind to the non-subscription branch at
-      // every call site; the cast restores the contract's exact kind, which
-      // the spread of `this.contract._def` preserves at runtime.
-    }) as Procedure<
-      TRootContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      Exclude<TKind, "subscription">,
-      TCapability
-    >;
+    });
   }
 
   stream(
-    this: ProcedureImplementer<
-      TRootContext,
-      TContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      "subscription"
-    >,
+    this: TContractTypes["kind"] extends "subscription"
+      ? ProcedureImplementer<TContractTypes, TContext>
+      : never,
     handler: (
-      args: ProcedureHandlerArgs<TContext, TInput, TDefinitions>,
-    ) => MaybePromise<AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>>,
-  ): SubscriptionProcedure<TRootContext, TInput, TOutput, TDefinitions> {
+      args: ProcedureHandlerArgs<TContext, TContractTypes["input"], TContractTypes["definitions"]>,
+    ) => MaybePromise<
+      AsyncIterable<Result<TContractTypes["output"], ErrorUnion<TContractTypes["definitions"]>>>
+    >,
+  ): SubscriptionProcedure<ImplementedProcedureTypes<TContractTypes, TContext, "subscription">> {
+    if (this.contract._def.kind !== "subscription") {
+      throw new TypeError("Only a subscription contract can be implemented with stream()");
+    }
     return Object.freeze({
       _kind: "subscription-procedure" as const,
       _def: Object.freeze({
         ...this.contract._def,
         kind: "subscription" as const,
         middlewares: this.middlewares,
-        handler: handler as SubscriptionProcedureManifest<
-          TRootContext,
-          TInput,
-          TOutput,
-          TDefinitions
-        >["handler"],
+        handler,
       }),
     });
   }
@@ -1188,18 +1133,20 @@ export interface ContractRouterRecord {
   readonly [key: string]: AnyProcedureContract | ContractRouterRecord;
 }
 
-type ProcedureRootContext<TProcedure> = TProcedure extends {
-  readonly _def: ProcedureContractManifest<infer TRootContext, any, any, any, any, any>;
-}
-  ? TRootContext
-  : never;
+export type ProcedureRootContext<TProcedure> = ProcedureTypesOf<TProcedure>["rootContext"];
 
 /** Recursively proves that a router's supplied context satisfies every procedure. */
 export type ContextCompatibleRouterRecord<TRootContext, TRecord extends RouterRecord> = {
   readonly [TKey in keyof TRecord]: TRecord[TKey] extends AnyProcedure
     ? TRootContext extends ProcedureRootContext<TRecord[TKey]>
       ? TRecord[TKey]
-      : never
+      : RpcConstraintError<
+          "router-procedure-requires-incompatible-context",
+          {
+            readonly available: TRootContext;
+            readonly required: ProcedureRootContext<TRecord[TKey]>;
+          }
+        >
     : TRecord[TKey] extends RouterRecord
       ? ContextCompatibleRouterRecord<TRootContext, TRecord[TKey]>
       : never;
@@ -1209,29 +1156,52 @@ export type ContextCompatibleContractRecord<TRootContext, TRecord extends Contra
   readonly [TKey in keyof TRecord]: TRecord[TKey] extends AnyProcedureContract
     ? TRootContext extends ProcedureRootContext<TRecord[TKey]>
       ? TRecord[TKey]
-      : never
+      : RpcConstraintError<
+          "router-procedure-requires-incompatible-context",
+          {
+            readonly available: TRootContext;
+            readonly required: ProcedureRootContext<TRecord[TKey]>;
+          }
+        >
     : TRecord[TKey] extends ContractRouterRecord
       ? ContextCompatibleContractRecord<TRootContext, TRecord[TKey]>
       : never;
 };
 
-export interface RouterContract<TRootContext, TRecord extends ContractRouterRecord> {
-  readonly _kind: "router-contract";
+/** Every compile-time fact carried by an executable router or shared contract. */
+export interface RouterTypes<TRootContext, TRecord extends RouterRecord | ContractRouterRecord> {
+  readonly rootContext: TRootContext;
   readonly record: TRecord;
+}
+
+/** Runtime-erased router facts. */
+export interface AnyRouterTypes {
+  readonly rootContext: unknown;
+  readonly record: RouterRecord | ContractRouterRecord;
+}
+
+declare const routerTypes: unique symbol;
+
+export interface RouterContract<TTypes extends RouterTypes<unknown, ContractRouterRecord>> {
+  readonly _kind: "router-contract";
+  readonly record: TTypes["record"];
   readonly procedures: ReadonlyMap<string, AnyProcedureContract>;
   /** The application error registry: every declared tag, exactly one definition each. */
   readonly errors: ReadonlyMap<string, AnyPublicErrorDefinition>;
-  readonly _rootContext?: TRootContext;
+  readonly [routerTypes]?: TTypes;
 }
 
-export interface Router<TRootContext, TRecord extends RouterRecord> {
+export interface Router<TTypes extends RouterTypes<unknown, RouterRecord>> {
   readonly _kind: "router";
-  readonly record: TRecord;
+  readonly record: TTypes["record"];
   readonly procedures: ReadonlyMap<string, AnyProcedure>;
   /** The application error registry: every declared tag, exactly one definition each. */
   readonly errors: ReadonlyMap<string, AnyPublicErrorDefinition>;
-  readonly _rootContext?: TRootContext;
+  readonly [routerTypes]?: TTypes;
 }
+
+export type AnyRouterContract = RouterContract<RouterTypes<unknown, ContractRouterRecord>>;
+export type AnyRouter = Router<RouterTypes<unknown, RouterRecord>>;
 
 /**
  * The router is the error registry: one tag maps to exactly one definition
@@ -1272,7 +1242,7 @@ const RESERVED_ROUTER_KEYS = new Set([
 
 const createRouter = <TRootContext, const TRecord extends RouterRecord>(
   record: TRecord,
-): Router<TRootContext, TRecord> => {
+): Router<RouterTypes<TRootContext, TRecord>> => {
   const procedures = new Map<string, AnyProcedure>();
   const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure =>
     "_kind" in value && (value._kind === "procedure" || value._kind === "subscription-procedure");
@@ -1295,7 +1265,7 @@ const createRouter = <TRootContext, const TRecord extends RouterRecord>(
 
 const createRouterContract = <TRootContext, const TRecord extends ContractRouterRecord>(
   record: TRecord,
-): RouterContract<TRootContext, TRecord> & TRecord => {
+): RouterContract<RouterTypes<TRootContext, TRecord>> & TRecord => {
   const procedures = new Map<string, AnyProcedureContract>();
   const isProcedureContract = (
     value: AnyProcedureContract | ContractRouterRecord,
@@ -1316,55 +1286,63 @@ const createRouterContract = <TRootContext, const TRecord extends ContractRouter
   const errors = collectErrorRegistry(procedures);
   // Entries are spread onto the contract so call sites read
   // `server.implement(contract.list)` rather than `contract.record.list`.
+  // Traversal above validated every leaf/reserved key; dynamic spread erases
+  // only the exact TRecord intersection restored here.
   return Object.freeze({
     ...record,
     _kind: "router-contract" as const,
     record,
     procedures,
     errors,
-  }) as RouterContract<TRootContext, TRecord> & TRecord;
+  }) as RouterContract<RouterTypes<TRootContext, TRecord>> & TRecord;
 };
 
-export interface RpcFactory<TRootContext> {
-  procedure(): ProcedureBuilder<TRootContext>;
-  middleware<TAddedContext = {}>(): MiddlewareBuilder<TRootContext, TAddedContext>;
+export interface RpcFactory<TRootContext> extends RpcFactoryTypeCarrier<
+  RpcFactoryTypes<TRootContext>
+> {
+  procedure(): ProcedureBuilder<
+    ProcedureTypes<
+      TRootContext,
+      TRootContext,
+      EmptyObject,
+      never,
+      {},
+      ProcedureKind,
+      UnaryProcedureCapability
+    >
+  >;
+  middleware<TAddedContext = {}>(): MiddlewareBuilder<
+    MiddlewareBuilderTypes<TRootContext, TRootContext, TAddedContext, never>
+  >;
   router<const TRecord extends RouterRecord>(
     record: TRecord & ContextCompatibleRouterRecord<TRootContext, TRecord>,
-  ): Router<TRootContext, TRecord>;
+  ): Router<RouterTypes<TRootContext, TRecord>>;
   contract<const TRecord extends ContractRouterRecord>(
     record: TRecord & ContextCompatibleContractRecord<TRootContext, TRecord>,
-  ): RouterContract<TRootContext, TRecord> & TRecord;
-  implement<
-    TContractContext,
-    TInput,
-    TOutput,
-    TDefinitions extends ErrorDefinitionMap,
-    TKind extends "query" | "mutation" | "subscription",
-    TCapability extends ProcedureCapability,
-  >(
-    contract: ProcedureContract<
-      TContractContext,
-      TInput,
-      TOutput,
-      TDefinitions,
-      TKind,
-      TCapability
-    > &
-      (TRootContext extends TContractContext ? unknown : never),
-  ): ProcedureImplementer<
-    TContractContext,
-    TRootContext,
-    TInput,
-    TOutput,
-    TDefinitions,
-    TKind,
-    TCapability
-  >;
+  ): RouterContract<RouterTypes<TRootContext, TRecord>> & TRecord;
+  implement<TContractTypes extends AnyProcedureTypes>(
+    contract: ProcedureContract<TContractTypes> &
+      ProcedureImplementationContextConstraint<TRootContext, TContractTypes>,
+  ): ProcedureImplementer<TContractTypes, ImplementationContext<TRootContext, TContractTypes>>;
 }
 
 const factory = <TRootContext>(): RpcFactory<TRootContext> => ({
-  procedure: () => new ProcedureBuilder<TRootContext>(),
-  middleware: <TAddedContext = {}>() => new MiddlewareBuilder<TRootContext, TAddedContext>(),
+  procedure: () =>
+    new ProcedureBuilder<
+      ProcedureTypes<
+        TRootContext,
+        TRootContext,
+        EmptyObject,
+        never,
+        {},
+        ProcedureKind,
+        UnaryProcedureCapability
+      >
+    >(procedureDeclaration(wire.object({}), {}, false)),
+  middleware: <TAddedContext = {}>() =>
+    new MiddlewareBuilder<
+      MiddlewareBuilderTypes<TRootContext, TRootContext, TAddedContext, never>
+    >(),
   router: (record) => createRouter<TRootContext, typeof record>(record),
   contract: (record) => createRouterContract<TRootContext, typeof record>(record),
   implement: (contract) => new ProcedureImplementer(contract),
@@ -1417,14 +1395,57 @@ const internalFailure = (
   return err(ServerInternal({ incidentId: id }));
 };
 
-export const executeProcedure = async <
+/**
+ * Reifies an erased middleware/handler return before another middleware can
+ * observe it. Malformed shapes and untagged error channels become defects at
+ * the exact boundary that produced them.
+ */
+const normalizeRuntimeResult = (
+  candidate: unknown,
+  phase: "middleware" | "handler",
+  options: ExecutionOptions<unknown>,
+): Result<unknown, AnyTaggedError> => {
+  if (candidate !== null && typeof candidate === "object" && "ok" in candidate) {
+    if (candidate.ok === true && "value" in candidate) return ok(candidate.value);
+    if (candidate.ok === false && "error" in candidate && isTaggedError(candidate.error)) {
+      return err(candidate.error);
+    }
+  }
+  return internalFailure(phase, candidate, options);
+};
+
+const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> =>
+  value !== null &&
+  typeof value === "object" &&
+  Symbol.asyncIterator in value &&
+  typeof value[Symbol.asyncIterator] === "function";
+
+function assertUnaryProcedureKind<TKind extends ProcedureKind>(
+  kind: TKind,
+): asserts kind is Extract<TKind, "query" | "mutation"> {
+  if (kind === "subscription") {
+    throw new TypeError("A subscription contract must be implemented with stream()");
+  }
+}
+
+export function executeProcedure<
   TRootContext,
   TInput,
   TOutput,
   TDefinitions extends ErrorDefinitionMap,
   TKind extends "query" | "mutation",
 >(
-  procedure: Procedure<TRootContext, TInput, TOutput, TDefinitions, TKind, ProcedureCapability>,
+  procedure: Procedure<
+    ExecutableProcedureTypes<
+      TRootContext,
+      unknown,
+      TInput,
+      TOutput,
+      TDefinitions,
+      TKind,
+      ProcedureCapability
+    >
+  >,
   input: TInput,
   options: ExecutionOptions<TRootContext>,
 ): Promise<
@@ -1434,7 +1455,22 @@ export const executeProcedure = async <
     | ReturnType<typeof ServerInternal>
     | ReturnType<typeof ServerBadRequest>
   >
-> => {
+>;
+export function executeProcedure(
+  procedure: AnyUnaryProcedure,
+  input: unknown,
+  options: ExecutionOptions<unknown>,
+): Promise<
+  Result<
+    unknown,
+    AnyTaggedError | ReturnType<typeof ServerInternal> | ReturnType<typeof ServerBadRequest>
+  >
+>;
+export async function executeProcedure(
+  procedure: AnyUnaryProcedure,
+  input: unknown,
+  options: ExecutionOptions<unknown>,
+): Promise<Result<unknown, AnyTaggedError>> {
   let decodedInput: ReturnType<typeof procedure._def.input.decode>;
   try {
     const encodedInput = encodeProcedureInput(procedure._def.input, input);
@@ -1452,23 +1488,36 @@ export const executeProcedure = async <
     const middleware = procedure._def.middlewares[index];
     if (middleware) {
       try {
-        return await middleware.handler({
-          context,
-          errors: middleware.definitions,
-          next: ({ context: nextContext }) => dispatch(index + 1, nextContext),
-        });
+        return normalizeRuntimeResult(
+          await middleware.handler({
+            context,
+            errors: middleware.ownDefinitions,
+            next: ({ context: contribution }) =>
+              dispatch(index + 1, mergeMiddlewareContext(context, contribution)),
+          }),
+          "middleware",
+          options,
+        );
       } catch (cause) {
         return internalFailure("middleware", cause, options);
       }
     }
     try {
-      return await procedure._def.handler({
+      // Audited executor boundary: input and context were validated/prepared
+      // before the runtime-erased handler is invoked.
+      const handlerArgs: ProcedureHandlerArgs<unknown, unknown, ErrorDefinitionMap> = {
         context,
         input: decodedInput.value,
         errors: procedure._def.definitions,
-        touch: (model, id) => options.onTouch?.(touchedEntityKey(model, id)),
+        touch: <TModel extends AnyModel>(model: TModel, id: ModelKeyInput<TModel>) =>
+          options.onTouch?.(touchedEntityKey(model, id)),
         signal: options.signal ?? neverAborted(),
-      });
+      };
+      return normalizeRuntimeResult(
+        await procedure._def.handler(handlerArgs as never),
+        "handler",
+        options,
+      );
     } catch (cause) {
       return internalFailure("handler", cause, options);
     }
@@ -1476,16 +1525,9 @@ export const executeProcedure = async <
 
   const result = await dispatch(0, contextWithHeaders(options.context, procedure, options));
   if (options.signal?.aborted) throw options.signal.reason;
-  if (
-    result === null ||
-    typeof result !== "object" ||
-    !("ok" in result) ||
-    typeof result.ok !== "boolean"
-  )
-    return internalFailure("handler", result, options);
   if (result.ok) {
     try {
-      const encoded = procedure._def.output.encode(result.value as TOutput);
+      const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
       if (!encoded.ok) return internalFailure("output", encoded.issues, options);
       const decoded = procedure._def.output.decode(encoded.value);
       if (!decoded.ok) return internalFailure("output", decoded.issues, options);
@@ -1495,13 +1537,6 @@ export const executeProcedure = async <
     }
   }
 
-  if (
-    result.error === null ||
-    typeof result.error !== "object" ||
-    !("_tag" in result.error) ||
-    typeof result.error._tag !== "string"
-  )
-    return internalFailure("error", result.error, options);
   if (ServerInternal.is(result.error)) {
     return err(result.error);
   }
@@ -1517,16 +1552,26 @@ export const executeProcedure = async <
   } catch (cause) {
     return internalFailure("error", cause, options);
   }
-  return err(normalizedError as ErrorUnion<TDefinitions>);
-};
+  return err(normalizedError);
+}
 
-export async function* executeSubscription<
+export function executeSubscription<
   TRootContext,
   TInput,
   TOutput,
   TDefinitions extends ErrorDefinitionMap,
 >(
-  procedure: SubscriptionProcedure<TRootContext, TInput, TOutput, TDefinitions>,
+  procedure: SubscriptionProcedure<
+    ExecutableProcedureTypes<
+      TRootContext,
+      unknown,
+      TInput,
+      TOutput,
+      TDefinitions,
+      "subscription",
+      UnaryProcedureCapability
+    >
+  >,
   input: TInput,
   options: ExecutionOptions<TRootContext>,
 ): AsyncGenerator<
@@ -1536,7 +1581,17 @@ export async function* executeSubscription<
     | ReturnType<typeof ServerInternal>
     | ReturnType<typeof ServerBadRequest>
   >
-> {
+>;
+export function executeSubscription(
+  procedure: AnySubscriptionProcedure,
+  input: unknown,
+  options: ExecutionOptions<unknown>,
+): AsyncGenerator<Result<unknown, AnyTaggedError>>;
+export async function* executeSubscription(
+  procedure: AnySubscriptionProcedure,
+  input: unknown,
+  options: ExecutionOptions<unknown>,
+): AsyncGenerator<Result<unknown, AnyTaggedError>> {
   let decodedInput: ReturnType<typeof procedure._def.input.decode>;
   try {
     const encodedInput = encodeProcedureInput(procedure._def.input, input);
@@ -1561,11 +1616,16 @@ export async function* executeSubscription<
     const middleware = procedure._def.middlewares[index];
     if (!middleware) return ok(context);
     try {
-      return await middleware.handler({
-        context,
-        errors: middleware.definitions,
-        next: ({ context: nextContext }) => prepareContext(index + 1, nextContext),
-      });
+      return normalizeRuntimeResult(
+        await middleware.handler({
+          context,
+          errors: middleware.ownDefinitions,
+          next: ({ context: contribution }) =>
+            prepareContext(index + 1, mergeMiddlewareContext(context, contribution)),
+        }),
+        "middleware",
+        options,
+      );
     } catch (cause) {
       return internalFailure("middleware", cause, options);
     }
@@ -1580,21 +1640,28 @@ export async function* executeSubscription<
         (candidate) => candidate.tag === prepared.error._tag,
       );
       yield definition?.policy.visibility === "public" && definition.is(prepared.error)
-        ? err(prepared.error as ErrorUnion<TDefinitions>)
+        ? err(prepared.error)
         : internalFailure("error", prepared.error, options);
     }
     return;
   }
 
-  let iterable: AsyncIterable<Result<TOutput, ErrorUnion<TDefinitions>>>;
+  let iterable: AsyncIterable<unknown>;
   try {
-    iterable = await procedure._def.handler({
+    const handlerArgs: ProcedureHandlerArgs<unknown, unknown, ErrorDefinitionMap> = {
       context: prepared.value,
       input: decodedInput.value,
       errors: procedure._def.definitions,
-      touch: (model, id) => options.onTouch?.(touchedEntityKey(model, id)),
+      touch: <TModel extends AnyModel>(model: TModel, id: ModelKeyInput<TModel>) =>
+        options.onTouch?.(touchedEntityKey(model, id)),
       signal: options.signal ?? neverAborted(),
-    });
+    };
+    const candidate = await procedure._def.handler(handlerArgs as never);
+    if (!isAsyncIterable(candidate)) {
+      yield internalFailure("handler", candidate, options);
+      return;
+    }
+    iterable = candidate;
   } catch (cause) {
     yield internalFailure("handler", cause, options);
     return;
@@ -1604,7 +1671,7 @@ export async function* executeSubscription<
   // signal can close it DIRECTLY. When the consumer walks away while the
   // producer is parked at a yield with no next() outstanding, nothing else
   // would ever resume it — this listener is what runs its `finally`.
-  let inner: AsyncIterator<Result<TOutput, ErrorUnion<TDefinitions>>>;
+  let inner: AsyncIterator<unknown>;
   try {
     inner = iterable[Symbol.asyncIterator]();
   } catch (cause) {
@@ -1612,7 +1679,7 @@ export async function* executeSubscription<
     return;
   }
   const closeInner = () => {
-    void Promise.resolve(inner.return?.(undefined as never)).catch(() => undefined);
+    void closeIterator(inner).catch(() => undefined);
   };
   if (options.signal) {
     if (options.signal.aborted) closeInner();
@@ -1623,9 +1690,9 @@ export async function* executeSubscription<
       const step = await inner.next();
       if (options.signal?.aborted) return;
       if (step.done) return;
-      const result = step.value;
+      const result = normalizeRuntimeResult(step.value, "handler", options);
       if (result.ok) {
-        const encoded = procedure._def.output.encode(result.value);
+        const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
         if (!encoded.ok) {
           yield internalFailure("output", encoded.issues, options);
           return;
@@ -1638,13 +1705,17 @@ export async function* executeSubscription<
         yield ok(decoded.value);
         continue;
       }
+      if (ServerInternal.is(result.error)) {
+        yield err(result.error);
+        return;
+      }
       const definition = Object.values(procedure._def.definitions).find(
         (candidate) => candidate.tag === result.error._tag,
       );
       if (definition?.policy.visibility !== "public" || !definition.is(result.error)) {
         yield internalFailure("error", result.error, options);
       } else {
-        yield err(result.error as ErrorUnion<TDefinitions>);
+        yield err(result.error);
       }
       return;
     }
@@ -1656,34 +1727,19 @@ export async function* executeSubscription<
   }
 }
 
-export type ProcedureInput<TProcedure> = TProcedure extends {
-  readonly _def: ProcedureContractManifest<any, infer TInput, any, any, any, any>;
-}
-  ? TInput
-  : never;
-export type ProcedureOutput<TProcedure> = TProcedure extends {
-  readonly _def: ProcedureContractManifest<any, any, infer TOutput, any, any, any>;
-}
-  ? TOutput
-  : never;
-export type ProcedureError<TProcedure> = TProcedure extends {
-  readonly _def: ProcedureContractManifest<any, any, any, infer TDefinitions, any, any>;
-}
-  ? ErrorUnion<TDefinitions>
-  : never;
-export type RouterContext<TRouter> =
-  TRouter extends Router<infer TContext, RouterRecord> ? TContext : never;
-
-type RouterRecordOf<TRouter> =
-  TRouter extends Router<any, infer TRecord>
-    ? TRecord
-    : TRouter extends RouterContract<any, infer TRecord>
-      ? TRecord
+export type RouterTypesOf<TRouter> =
+  TRouter extends Router<infer TTypes>
+    ? TTypes
+    : TRouter extends RouterContract<infer TTypes>
+      ? TTypes
       : never;
 
-type HasDef = { readonly _def: ProcedureContractManifest<any, any, any, any, any, any> };
+export type RouterContext<TRouter> = RouterTypesOf<TRouter>["rootContext"];
+export type RouterRecordOf<TRouter> = RouterTypesOf<TRouter>["record"];
 
-type MapRecord<TRecord, TProject> = {
+export type HasDef = AnyProcedure | AnyProcedureContract;
+
+export type MapRecord<TRecord, TProject> = {
   readonly [TKey in keyof TRecord]: TRecord[TKey] extends HasDef
     ? TProject extends "input"
       ? ProcedureInput<TRecord[TKey]>

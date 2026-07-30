@@ -6,7 +6,7 @@ export type ErrorDefinitionMap = Readonly<Record<string, AnyPublicErrorDefinitio
 
 /** The exact error union represented by a declaration or composed definition map. */
 export type ErrorUnion<TDefinitions extends ErrorDefinitionMap> = ErrorOf<
-  TDefinitions[Extract<keyof TDefinitions, string>]
+  TDefinitions extends unknown ? TDefinitions[Extract<keyof TDefinitions, string>] : never
 >;
 
 /**
@@ -18,18 +18,43 @@ export type MergeDefinitionMaps<
   TRight extends ErrorDefinitionMap,
 > = TLeft & TRight;
 
-type Equal<TLeft, TRight> =
+export type UnionToIntersection<TUnion> = (
+  TUnion extends unknown ? (value: TUnion) => void : never
+) extends (value: infer TIntersection) => void
+  ? TIntersection
+  : never;
+
+/**
+ * Middleware graphs accumulate definition maps as a union of contributions.
+ * Shared ancestry then deduplicates naturally instead of recursively copying
+ * the same intersections down every diamond edge. Materialization happens only
+ * where callers need the keyed `errors` object.
+ */
+export type MaterializeDefinitionSources<TSources extends ErrorDefinitionMap> = [TSources] extends [
+  never,
+]
+  ? {}
+  : UnionToIntersection<TSources> extends infer TDefinitions extends ErrorDefinitionMap
+    ? TDefinitions
+    : never;
+
+export type MergeDefinitionSources<
+  TLeft extends ErrorDefinitionMap,
+  TRight extends ErrorDefinitionMap,
+> = TLeft | TRight;
+
+export type DefinitionTypeEqual<TLeft, TRight> =
   (<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
     ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => T extends TLeft ? 1 : 2
       ? true
       : false
     : false;
 
-type ConflictingDefinitionKeys<
+export type ConflictingDefinitionKeys<
   TLeft extends ErrorDefinitionMap,
   TRight extends ErrorDefinitionMap,
 > = {
-  [TKey in Extract<keyof TLeft & keyof TRight, string>]: Equal<
+  [TKey in Extract<keyof TLeft & keyof TRight, string>]: DefinitionTypeEqual<
     TLeft[TKey],
     TRight[TKey]
   > extends true
@@ -37,7 +62,7 @@ type ConflictingDefinitionKeys<
     : TKey;
 }[Extract<keyof TLeft & keyof TRight, string>];
 
-type DefinitionAtTag<
+export type DefinitionAtTag<
   TDefinitions extends ErrorDefinitionMap,
   TTag extends string,
 > = TDefinitions[Extract<keyof TDefinitions, string>] extends infer TDefinition
@@ -46,7 +71,7 @@ type DefinitionAtTag<
     : never
   : never;
 
-type ConflictingDefinitionTags<
+export type ConflictingDefinitionTags<
   TLeft extends ErrorDefinitionMap,
   TRight extends ErrorDefinitionMap,
 > = {
@@ -55,11 +80,29 @@ type ConflictingDefinitionTags<
   }
     ? [DefinitionAtTag<TLeft, TTag>] extends [never]
       ? never
-      : Equal<TRight[TKey], DefinitionAtTag<TLeft, TTag>> extends true
+      : DefinitionTypeEqual<TRight[TKey], DefinitionAtTag<TLeft, TTag>> extends true
         ? never
         : TTag
     : never;
 }[Extract<keyof TRight, string>];
+
+export type ConflictingDefinitionSourceKeys<
+  TLeft extends ErrorDefinitionMap,
+  TRight extends ErrorDefinitionMap,
+> = TLeft extends unknown
+  ? TRight extends unknown
+    ? ConflictingDefinitionKeys<TLeft, TRight>
+    : never
+  : never;
+
+export type ConflictingDefinitionSourceTags<
+  TLeft extends ErrorDefinitionMap,
+  TRight extends ErrorDefinitionMap,
+> = TLeft extends unknown
+  ? TRight extends unknown
+    ? ConflictingDefinitionTags<TLeft, TRight>
+    : never
+  : never;
 
 /** Static half of definition identity; exact reference identity is checked at runtime. */
 export type DefinitionMapCompatibility<
@@ -75,6 +118,22 @@ export type DefinitionMapCompatibility<
   : RpcConstraintError<
       "conflicting-error-definition-keys",
       ConflictingDefinitionKeys<TLeft, TRight>
+    >;
+
+/** Pairwise compatibility for the (normally small) incoming contribution set. */
+export type DefinitionSourcesCompatibility<
+  TLeft extends ErrorDefinitionMap,
+  TRight extends ErrorDefinitionMap,
+> = [ConflictingDefinitionSourceKeys<TLeft, TRight>] extends [never]
+  ? [ConflictingDefinitionSourceTags<TLeft, TRight>] extends [never]
+    ? unknown
+    : RpcConstraintError<
+        "conflicting-error-definition-tags",
+        ConflictingDefinitionSourceTags<TLeft, TRight>
+      >
+  : RpcConstraintError<
+      "conflicting-error-definition-keys",
+      ConflictingDefinitionSourceKeys<TLeft, TRight>
     >;
 
 export const assertDefinitionsCanMerge = (
@@ -103,6 +162,8 @@ export const mergeDefinitionMaps = <
   right: TRight,
 ): MergeDefinitionMaps<TLeft, TRight> => {
   assertDefinitionsCanMerge(left, right);
+  // Object spread implements the record intersection after the runtime check
+  // rejects every overlapping key/tag that does not share one definition.
   return { ...left, ...right } as MergeDefinitionMaps<TLeft, TRight>;
 };
 

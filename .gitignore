@@ -4,5 +4,7 @@ dist/
 .DS_Store
 .blume/
 website/dist/
+/temp/
+WAVES.md
 src/**/*.d.ts
 !PLAN.md

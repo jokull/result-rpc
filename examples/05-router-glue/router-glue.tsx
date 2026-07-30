@@ -40,8 +40,15 @@ export interface LayerShellRouteFragment<TClient> extends ShellRouteFragment {
   readonly loader: (args: { readonly context: ResultRouterContext<TClient> }) => Promise<unknown>;
 }
 
+type RoutableShell = AnyShell & {
+  readonly Provider: (props: {
+    readonly fallback?: ReactNode;
+    readonly children?: ReactNode;
+  }) => ReactNode;
+};
+
 export const routeShell = (
-  shell: AnyShell,
+  shell: RoutableShell,
   options: RouteShellOptions = {},
 ): ShellRouteFragment => {
   const content = () => {

@@ -1,44 +1,48 @@
 /**
  * Process-lifetime dependency injection for the root context.
  *
- * Two kinds of context feed a procedure, and they compose differently:
- *
- * - **Services** — database pools, worker bindings, API clients. Process
- *   lifetime, a dependency *graph*, and no wire errors: if a service cannot be
- *   built the process is broken, not the request. This module owns them.
- * - **Request layers** — session, viewer, organization. Request lifetime, an
- *   ordered *chain*, and every step can fail with a tagged error that joins the
- *   operation union. Middleware (and the layer factory) owns those.
- *
- * A service declares what it needs; `resolveServices` builds the graph once at
- * process start, memoized by definition reference identity — a service shared
- * by several dependents (the diamond) is constructed exactly once. The resolved
- * record becomes the root context that `createContext` closes over, so request
- * middleware like auth reads `context.db` without caring how it was built.
+ * Services are a process-lifetime dependency graph with no recoverable error
+ * channel. A construction failure is a startup defect; request-level tagged
+ * failures belong to middleware and layers instead.
  */
+import type { MaybePromise } from "./types.js";
 
-type MaybePromise<T> = T | Promise<T>;
-
-export interface ServiceDefinition<TValue, TNeeds extends ServiceDefinitionMap = {}> {
+/** Runtime-erased service shape. Its factory cannot be called without an explicit proof boundary. */
+export interface AnyServiceDefinition {
   readonly $service: true;
   readonly name: string;
-  readonly needs: TNeeds;
-  readonly create: (needs: ResolvedServices<TNeeds>) => MaybePromise<TValue>;
+  readonly needs: ServiceDefinitionMap;
+  readonly create: (needs: never) => MaybePromise<unknown>;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyServiceDefinition = ServiceDefinition<any, any>;
 
 export type ServiceDefinitionMap = Readonly<Record<string, AnyServiceDefinition>>;
 
-export type ServiceValue<TDefinition> =
-  TDefinition extends ServiceDefinition<
-    infer TValue,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any
-  >
-    ? TValue
-    : never;
+/** Every compile-time fact carried by one service definition. */
+export interface ServiceTypes<TValue, TNeeds extends ServiceDefinitionMap = {}> {
+  readonly value: TValue;
+  readonly needs: TNeeds;
+  /** Service construction throws on defects; it has no Result error channel. */
+  readonly error: never;
+}
+
+export interface AnyServiceTypes {
+  readonly value: unknown;
+  readonly needs: ServiceDefinitionMap;
+  readonly error: never;
+}
+
+declare const serviceTypes: unique symbol;
+
+export interface ServiceDefinition<TTypes extends AnyServiceTypes> extends AnyServiceDefinition {
+  readonly needs: TTypes["needs"];
+  readonly create: (needs: ResolvedServices<TTypes["needs"]>) => MaybePromise<TTypes["value"]>;
+  readonly [serviceTypes]?: TTypes;
+}
+
+export type ServiceTypesOf<TDefinition> =
+  TDefinition extends ServiceDefinition<infer TTypes> ? TTypes : never;
+
+export type ServiceValue<TDefinition> = ServiceTypesOf<TDefinition>["value"];
 
 export type ResolvedServices<TDefinitions extends ServiceDefinitionMap> = {
   readonly [TKey in keyof TDefinitions]: ServiceValue<TDefinitions[TKey]>;
@@ -60,39 +64,41 @@ export type DefineServiceOptions<
 };
 
 /**
- * Declares a service: a name, its dependencies, and how to build it. Store the
- * result in a module-level constant — memoization is by reference identity, so
- * two calls to `defineService` are two services even with identical options.
+ * Declares a service. Store the result in a module constant: memoization and
+ * cycle identity are by definition reference, not by name or structural type.
  */
-export const defineService = <TValue, const TNeeds extends ServiceDefinitionMap = {}>(
+export function defineService<TValue>(
   name: string,
-  options: DefineServiceOptions<TValue, TNeeds>,
-): ServiceDefinition<TValue, TNeeds> => {
-  const needs = (options.needs ?? {}) as TNeeds;
+  options: DefineServiceOptions<TValue, {}>,
+): ServiceDefinition<ServiceTypes<TValue, {}>>;
+export function defineService<TValue, const TNeeds extends ServiceDefinitionMap>(
+  name: string,
+  options: DefineServiceOptions<TValue, TNeeds> & { readonly needs: TNeeds },
+): ServiceDefinition<ServiceTypes<TValue, TNeeds>>;
+export function defineService(
+  name: string,
+  options: {
+    readonly needs?: ServiceDefinitionMap;
+    readonly create: (needs: never) => MaybePromise<unknown>;
+  },
+): AnyServiceDefinition {
   return Object.freeze({
     $service: true,
     name,
-    needs,
+    needs: options.needs ?? Object.freeze({}),
     create: options.create,
   });
-};
+}
 
 /**
- * Resolves a service graph. Each definition is constructed at most once per
- * call, dependencies first; a shared dependency is one instance no matter how
- * many services need it. Cycles are rejected with the offending path.
- *
- * Call this once at process start and close over the result in
- * `createContext` — resolving per request would defeat the memoization.
+ * Resolves a service graph once, dependencies first. Shared dependencies are
+ * constructed once per resolution and cycles report the offending path.
  */
 export const resolveServices = async <const TDefinitions extends ServiceDefinitionMap>(
   definitions: TDefinitions,
 ): Promise<ResolvedServices<TDefinitions>> => {
   const memo = new Map<AnyServiceDefinition, Promise<unknown>>();
 
-  // Validate the definition graph synchronously before async construction.
-  // A single mutable "currently building" set cannot detect a back-edge that
-  // reaches a memoized sibling while its promise is still pending.
   const visited = new Set<AnyServiceDefinition>();
   const visiting = new Set<AnyServiceDefinition>();
   const validate = (definition: AnyServiceDefinition, path: readonly string[]): void => {
@@ -101,7 +107,7 @@ export const resolveServices = async <const TDefinitions extends ServiceDefiniti
     }
     if (visited.has(definition)) return;
     visiting.add(definition);
-    for (const dependency of Object.values(definition.needs as ServiceDefinitionMap)) {
+    for (const dependency of Object.values(definition.needs)) {
       validate(dependency, [...path, definition.name]);
     }
     visiting.delete(definition);
@@ -114,10 +120,12 @@ export const resolveServices = async <const TDefinitions extends ServiceDefiniti
     if (cached) return cached;
     const pending = (async () => {
       const needs: Record<string, unknown> = {};
-      for (const [key, dependency] of Object.entries(definition.needs as ServiceDefinitionMap)) {
+      for (const [key, dependency] of Object.entries(definition.needs)) {
         needs[key] = await resolve(dependency);
       }
-      return definition.create(needs as ResolvedServices<ServiceDefinitionMap>);
+      // Audited existential boundary: the graph walk resolved exactly the
+      // dependency record declared on this definition before invoking create.
+      return definition.create(needs as never);
     })();
     memo.set(definition, pending);
     return pending;
@@ -127,5 +135,6 @@ export const resolveServices = async <const TDefinitions extends ServiceDefiniti
   for (const [key, definition] of Object.entries(definitions)) {
     resolved[key] = await resolve(definition);
   }
+  // Dynamic record assembly follows the exact input keys one-for-one.
   return resolved as ResolvedServices<TDefinitions>;
 };

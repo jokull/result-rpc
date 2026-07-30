@@ -19,7 +19,7 @@
   "ignorePatterns": ["**/*.gen.ts", "demo/worker-configuration.d.ts"],
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.test-d.ts"],
       "rules": {
         "react-hooks/rules-of-hooks": "off"
       }

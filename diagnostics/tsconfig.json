@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "noErrorTruncation": true,
+    "noUnusedLocals": false
+  },
+  "include": ["fixture.ts"]
+}

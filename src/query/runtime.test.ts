@@ -3,6 +3,7 @@ import { err, error, ok, wire } from "../index.js";
 import { createFixtureClient } from "../testing/index.js";
 import { cancelled, fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
+import { createServerClient } from "../server/server-client.js";
 import { rpc } from "../server/contract.js";
 import type { AnyTaggedError } from "../error.js";
 import {
@@ -76,7 +77,7 @@ const isGraphInput = (value: unknown, seen = new WeakSet<object>()): value is Gr
 };
 const graph = r
   .procedure()
-  .input(wire.serializable(isGraphInput))
+  .input(wire.serializable(isGraphInput, { id: "runtime/graph-input/v1" }))
   .output(wire.string)
   .query(({ input }) => ok(`${input.sequence}:${input.labels.get("region")}`));
 const nullable = r
@@ -349,6 +350,50 @@ describe("reactive query runtime", () => {
     browserRuntime.clear();
   });
 
+  test("binds direct-server dehydration to the browser client's effective contract", async () => {
+    const direct = createServerClient(router, {
+      context: { values: new Map([["one", "first"]]) },
+      contractVersion: "release-42",
+    });
+    const source = createQueryRuntime({ client: direct });
+    await source.prefetch(direct.value.byId, { id: "one" });
+    const state = source.dehydrate();
+    expect(state.contract).toBe("release-42");
+
+    const matchingClient = createFixtureClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+      contractVersion: "release-42",
+    });
+    const matching = createQueryRuntime({ client: matchingClient });
+    matching.hydrate(state);
+    expect(matching.cache.get(matchingClient.value.byId, { id: "one" })).toEqual({
+      id: "one",
+      value: "first",
+    });
+
+    const staleClient = createFixtureClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+      contractVersion: "release-43",
+    });
+    const stale = createQueryRuntime({ client: staleClient });
+    expect(() => stale.hydrate(state)).toThrow(
+      "Dehydrated query cache contract release-42 does not match client contract release-43",
+    );
+    expect(stale.cache.get(staleClient.value.byId, { id: "one" })).toBeUndefined();
+
+    const unstamped = { v: state.v, serializer: state.serializer, payload: state.payload };
+    expect(() => Reflect.apply(stale.hydrate, stale, [unstamped])).toThrow(
+      "Dehydrated query cache contract undefined does not match client contract release-43",
+    );
+    expect(stale.cache.get(staleClient.value.byId, { id: "one" })).toBeUndefined();
+
+    source.clear();
+    matching.clear();
+    stale.clear();
+  });
+
   test("rejects hydrated success data that fails the procedure output codec", () => {
     const client = createFixtureClient({
       router,
@@ -533,6 +578,7 @@ describe("declared invalidation", () => {
       .output(wire.string)
       .mutation(() => ok("x"));
     expect(() =>
+      // @ts-expect-error Runtime defense for JavaScript and type-erased callers.
       app
         .procedure()
         .output(wire.string)
@@ -546,6 +592,11 @@ describe("declared invalidation", () => {
         // @ts-expect-error mutations cannot be invalidation targets
         .affects(mutationTarget),
     ).toThrow("affects() targets must be query procedures");
+    const inputBoundByMapper = app.procedure().output(wire.string).affects(target);
+    expect(() =>
+      // @ts-expect-error Runtime defense for JavaScript and type-erased callers.
+      inputBoundByMapper.input(wire.object({ id: wire.string })),
+    ).toThrow("input() must be declared before affects() or writes()");
   });
 });
 

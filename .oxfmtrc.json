@@ -2,5 +2,5 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 100,
   "proseWrap": "preserve",
-  "ignorePatterns": ["**/*.gen.ts", "demo/worker-configuration.d.ts", ".claude/**"]
+  "ignorePatterns": ["**/*.gen.ts", "demo/worker-configuration.d.ts", ".claude/**", "etc/*.api.md"]
 }

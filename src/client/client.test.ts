@@ -4,7 +4,7 @@ import { ClientHttpFailure, ClientTimeout } from "../framework-errors.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { createFixtureClient } from "../testing/index.js";
-import type { ClientEvent } from "./client.js";
+import { getProcedureClientMetadata, type ClientEvent } from "./client.js";
 import {
   batchFetchTransport,
   cancelled,
@@ -144,6 +144,15 @@ describe("unary client and server", () => {
     expect(client.$errors.definitions.get(NotFound.tag)).toBe(NotFound);
     expect(client.$errors.is(missing)).toBe(true);
     expect(client.$errors.is(privateFailure)).toBe(false);
+  });
+
+  test("retains an exact runtime error registry per procedure callable", () => {
+    const metadata = getProcedureClientMetadata(client.value.byId);
+    expect(metadata).toBeDefined();
+    expect(metadata!.errors.is(NotFound({ id: "missing" }))).toBe(true);
+    expect(metadata!.errors.is(ClientTimeout({ timeoutMs: 50 }))).toBe(true);
+    expect(metadata!.errors.is(Expired({ at: new Date(), sequence: 1n }))).toBe(false);
+    expect(metadata!.errors.definitions.has(Expired.tag)).toBe(false);
   });
 
   test("uses a browser-safe contract without retaining server handlers", async () => {
@@ -679,6 +688,27 @@ describe("contract skew", () => {
     expect(failure && "tag" in failure ? failure.tag : undefined).toBe("client/stale");
   });
 
+  test("a stale batch agrees with unary skew classification and reports skew once", async () => {
+    const { staleRouter, localFetch } = makeSkewWorld();
+    const events: ClientEvent[] = [];
+    const client = createFixtureClient({
+      router: staleRouter,
+      transport: batchFetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+      onEvent: (event) => void events.push(event),
+    });
+
+    const results = await Promise.all([client.byNumber({ id: "a" }), client.byNumber({ id: "b" })]);
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error._tag).toBe("client/stale");
+        expect(result.error.data).toEqual({ reclassifiedFrom: "server/bad-request" });
+      }
+    }
+    expect(events.filter((event) => event.type === "skew")).toHaveLength(1);
+  });
+
   test("matching contract stamps leave a genuine bad request as server/bad-request", async () => {
     const { staleRouter } = makeSkewWorld();
     // same build stamp on both sides: even a structurally different client
@@ -699,6 +729,231 @@ describe("contract skew", () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
     expect(result.error._tag).toBe("server/bad-request");
+  });
+
+  test("a stale subscription reconciles its stream handshake before its first item", async () => {
+    const server = rpc.context<{}>();
+    const serverEvents = server
+      .procedure()
+      .input(wire.object({}))
+      .output(wire.number)
+      .subscription();
+    const serverRouter = server.router({
+      events: server.implement(serverEvents).stream(async function* () {
+        yield ok(42);
+      }),
+    });
+    const serverHandler = createFetchHandler({
+      router: serverRouter,
+      createContext: () => ({}),
+    });
+
+    const stale = rpc.context<{}>();
+    const staleEvents = stale.procedure().input(wire.object({})).output(wire.string).subscription();
+    const staleRouter = stale.contract({ events: staleEvents });
+    const staleFetch = ((input: string | URL | Request, init?: RequestInit) =>
+      serverHandler(new Request(input, init))) as typeof globalThis.fetch;
+    const observed: ClientEvent[] = [];
+    const staleClient = createFixtureClient({
+      contract: staleRouter,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: staleFetch }),
+      onEvent: (event) => void observed.push(event),
+    });
+
+    const received = [];
+    for await (const item of staleClient.events({})) received.push(item);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.ok).toBe(false);
+    if (received[0]?.ok === false) {
+      expect(received[0].error._tag).toBe("client/stale");
+      expect(received[0].error.data).toEqual({
+        reclassifiedFrom: "client/protocol-violation",
+      });
+    }
+    for await (const _item of staleClient.events({})) {
+      // A second mismatched stream still fails, but must not duplicate the
+      // once-per-client deployment-skew signal.
+    }
+    expect(observed.filter((event) => event.type === "skew")).toHaveLength(1);
+  });
+
+  test("a mismatched custom stream is cancelled exactly once before decoding", async () => {
+    let cancellations = 0;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancellations += 1;
+      },
+    });
+    const custom = createFixtureClient({
+      router,
+      contractVersion: "browser-build",
+      transport: {
+        request: async () => ({ ok: false, reason: "network" }),
+        stream: async () => ({
+          ok: true,
+          response: {
+            status: 200,
+            contentType: "application/result-rpc-stream+devalue; sv=1",
+            body,
+            contract: "server-build",
+          },
+        }),
+      },
+    });
+
+    const received = [];
+    for await (const item of custom.value.events({ fail: false })) received.push(item);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe("client/stale");
+    expect(cancellations).toBe(1);
+  });
+
+  test("a stream without a contract stamp is a protocol violation and is cancelled", async () => {
+    let cancellations = 0;
+    const custom = createFixtureClient({
+      router,
+      transport: {
+        request: async () => ({ ok: false, reason: "network" }),
+        stream: async () => ({
+          ok: true,
+          response: {
+            status: 200,
+            contentType: "application/result-rpc-stream+devalue; sv=1",
+            body: new ReadableStream<Uint8Array>({
+              cancel() {
+                cancellations += 1;
+              },
+            }),
+            contract: null,
+          },
+        }),
+      },
+    });
+
+    const received = [];
+    for await (const item of custom.value.events({ fail: false })) received.push(item);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe(
+      "client/protocol-violation",
+    );
+    expect(cancellations).toBe(1);
+  });
+
+  test("breaking out of a custom stream cancels its reader exactly once", async () => {
+    const encoded = serialize({
+      v: 1,
+      seq: 0,
+      done: false,
+      response: {
+        v: 1,
+        ok: true,
+        value: { at: new Date("2026-01-01T00:00:00.000Z"), sequence: 1n },
+      },
+    });
+    if (!encoded.ok) throw new Error("stream fixture did not serialize");
+    let cancellations = 0;
+    const custom = createFixtureClient({
+      router,
+      contractVersion: "same-build",
+      transport: {
+        request: async () => ({ ok: false, reason: "network" }),
+        stream: async () => ({
+          ok: true,
+          response: {
+            status: 200,
+            contentType: "application/result-rpc-stream+devalue; sv=1",
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(`${encoded.value}\n`));
+              },
+              cancel() {
+                cancellations += 1;
+              },
+            }),
+            contract: "same-build",
+          },
+        }),
+      },
+    });
+
+    for await (const item of custom.value.events({ fail: false })) {
+      expect(item.ok).toBe(true);
+      break;
+    }
+
+    expect(cancellations).toBe(1);
+  });
+
+  test("a malformed custom stream frame cancels its reader exactly once", async () => {
+    let cancellations = 0;
+    const custom = createFixtureClient({
+      router,
+      contractVersion: "same-build",
+      transport: {
+        request: async () => ({ ok: false, reason: "network" }),
+        stream: async () => ({
+          ok: true,
+          response: {
+            status: 200,
+            contentType: "application/result-rpc-stream+devalue; sv=1",
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("not-a-frame\n"));
+              },
+              cancel() {
+                cancellations += 1;
+              },
+            }),
+            contract: "same-build",
+          },
+        }),
+      },
+    });
+
+    const received = [];
+    for await (const item of custom.value.events({ fail: false })) received.push(item);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe(
+      "client/protocol-violation",
+    );
+    expect(cancellations).toBe(1);
+  });
+
+  test("closing a parked custom subscription aborts and cancels its reader exactly once", async () => {
+    let cancellations = 0;
+    const custom = createFixtureClient({
+      router,
+      contractVersion: "same-build",
+      transport: {
+        request: async () => ({ ok: false, reason: "network" }),
+        stream: async () => ({
+          ok: true,
+          response: {
+            status: 200,
+            contentType: "application/result-rpc-stream+devalue; sv=1",
+            body: new ReadableStream<Uint8Array>({
+              cancel() {
+                cancellations += 1;
+              },
+            }),
+            contract: "same-build",
+          },
+        }),
+      },
+    });
+    const subscription = custom.value.events({ fail: false });
+    const iterator = subscription[Symbol.asyncIterator]();
+    const pending = iterator.next();
+    await Promise.resolve();
+
+    subscription.close();
+
+    await expect(pending).rejects.toEqual(cancelled);
+    expect(cancellations).toBe(1);
   });
 });
 

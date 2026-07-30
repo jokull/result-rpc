@@ -26,7 +26,7 @@ the serializer preflight a plain validator can't give you:
 ```ts
 const rename = app
   .procedure()
-  .input(wire.standard(RenameInput)) // your Valibot/Zod schema, as the wire codec
+  .input(wire.standard(RenameInput, { id: "rename-input/v1" }))
   .output(DocCodec)
   .mutation();
 ```
@@ -35,7 +35,8 @@ const rename = app
 schema must accept its own output, so one-way transforms don't fit. And when
 a form's shape happens to coincide exactly with an input, sharing the schema
 is free — but treat that as a coincidence to notice, not an architecture to
-force.)
+force. The stable `id` participates in the contract digest; change it whenever
+the schema's accepted wire shape or semantics change.)
 
 **And the form runs the same schema first**, with `validateStandard` — the
 form-side companion to `wire.standard`. Per-field feedback before a request

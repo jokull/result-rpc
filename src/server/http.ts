@@ -5,7 +5,7 @@ import {
   frameworkErrorDefinitions,
   ServerInternal,
 } from "../framework-errors.js";
-import { contractDigest } from "../contract-digest.js";
+import { effectiveContractVersion, type EffectiveContractVersion } from "../contract-digest.js";
 import {
   CONTRACT_HEADER,
   PROTOCOL_CONTENT_TYPE,
@@ -13,25 +13,24 @@ import {
   STREAM_CONTENT_TYPE,
   decodeBatchRequestEnvelope,
   decodeRequestEnvelope,
+  decodeResponseEnvelope,
   isProtocolContentType,
   type BatchResponseEnvelope,
-  type FailureEnvelope,
   type ResponseEnvelope,
 } from "../protocol.js";
 import type { Result } from "../result.js";
 import { DEFAULT_MAX_WIRE_BYTES, deserialize, serialize } from "../serializer.js";
-import { wire } from "../wire.js";
+import { encodeUnknownWireValue, wire } from "../wire.js";
 import {
   executeProcedure,
   executeSubscription,
   type AnyProcedure,
+  type AnyRouter,
   type AnySubscriptionProcedure,
   type InternalErrorEvent,
-  type ErrorDefinitionMap,
-  type Router,
   type RouterContext,
-  type RouterRecord,
 } from "./contract.js";
+import { closeIterator } from "../iterator.js";
 
 const readRequestBody = async (request: Request, maxBytes: number): Promise<string | undefined> => {
   if (!request.body) return "";
@@ -90,10 +89,11 @@ const streamProcedureResponse = (
         // A closed ReadableStream controller must never receive another frame.
         if (settled || lifetime.signal.aborted) return;
         let frame;
+        let failureEvent: { readonly failure: AnyTaggedError; readonly status: number } | undefined;
         if (next.done) {
           frame = { v: PROTOCOL_VERSION, seq: sequence++, done: true as const };
         } else if (next.value.ok) {
-          const output = procedure._def.output.encode(next.value.value);
+          const output = encodeUnknownWireValue(procedure._def.output, next.value.value);
           if (!output.ok) throw new TypeError("Unable to encode subscription output");
           frame = {
             v: PROTOCOL_VERSION,
@@ -102,7 +102,10 @@ const streamProcedureResponse = (
             response: { v: PROTOCOL_VERSION, ok: true as const, value: output.value },
           };
         } else {
-          onError?.(next.value.error, statusForError(procedure, next.value.error));
+          failureEvent = {
+            failure: next.value.error,
+            status: statusForError(procedure, next.value.error),
+          };
           frame = {
             v: PROTOCOL_VERSION,
             seq: sequence++,
@@ -117,6 +120,7 @@ const streamProcedureResponse = (
         const encoded = serialize(frame, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
         if (!encoded.ok) throw new TypeError("Unable to encode subscription frame");
         controller.enqueue(encoder.encode(`${encoded.value}\n`));
+        if (failureEvent) onError?.(failureEvent.failure, failureEvent.status);
         if (next.done || !next.value.ok) {
           settled = true;
           detachCaller();
@@ -128,6 +132,7 @@ const streamProcedureResponse = (
         detachCaller();
         const incidentId = `inc_${crypto.randomUUID()}`;
         onInternalError?.({ incidentId, phase: "handler", cause, procedurePath: path });
+        const failure = ServerInternal({ incidentId });
         const encoded = serialize({
           v: PROTOCOL_VERSION,
           seq: sequence++,
@@ -135,10 +140,13 @@ const streamProcedureResponse = (
           response: {
             v: PROTOCOL_VERSION,
             ok: false,
-            error: ServerInternal({ incidentId }).toJSON(),
+            error: failure.toJSON(),
           },
         });
-        if (encoded.ok) controller.enqueue(encoder.encode(`${encoded.value}\n`));
+        if (encoded.ok) {
+          controller.enqueue(encoder.encode(`${encoded.value}\n`));
+          onError?.(failure, ServerInternal.policy.httpStatus ?? 500);
+        }
         controller.close();
       }
     },
@@ -147,7 +155,7 @@ const streamProcedureResponse = (
       settled = true;
       detachCaller();
       abortLifetime();
-      await iterator.return?.(undefined as never);
+      await closeIterator(iterator);
     },
   });
   return new Response(body, {
@@ -178,17 +186,7 @@ const wireResponse = (
 ): Response => {
   const encoded = serialize(envelope, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
   if (!encoded.ok) {
-    const incidentId = `inc_${crypto.randomUUID()}`;
-    const fallback = serialize({
-      v: PROTOCOL_VERSION,
-      ok: false,
-      error: ServerInternal({ incidentId }).toJSON(),
-    } satisfies FailureEnvelope);
-    if (!fallback.ok) throw new TypeError("Unable to encode the static internal failure");
-    return new Response(fallback.value, {
-      status: 500,
-      headers: { "content-type": PROTOCOL_CONTENT_TYPE },
-    });
+    throw new TypeError(`Unable to encode response envelope: ${encoded.message}`);
   }
   return new Response(encoded.value, {
     status,
@@ -196,29 +194,28 @@ const wireResponse = (
   });
 };
 
-const failureResponse = (failure: AnyTaggedError, status: number): Response =>
-  wireResponse({ v: PROTOCOL_VERSION, ok: false, error: failure.toJSON() }, status);
-
 const statusForError = (procedure: AnyProcedure, failure: AnyTaggedError): number => {
   if (ServerInternal.is(failure)) return ServerInternal.policy.httpStatus ?? 500;
-  const definitions = procedure._def.definitions as ErrorDefinitionMap;
-  const definition = Object.values(definitions).find((candidate) => candidate.tag === failure._tag);
+  const definition = Object.values(procedure._def.definitions).find(
+    (candidate) => candidate.tag === failure._tag,
+  );
   if (!definition) return 500;
   return definition.policy.httpStatus ?? 200;
 };
 
 const frameworkPolicyFor = (failure: AnyTaggedError): ErrorPolicy | undefined =>
-  Object.values(frameworkErrorDefinitions).find((definition) => definition.tag === failure._tag)
-    ?.policy;
+  [...Object.values(frameworkErrorDefinitions), ProtocolInvalidRequest, ProtocolNotFound].find(
+    (definition) => definition.tag === failure._tag,
+  )?.policy;
 
 const definitionPolicyFor = (
-  router: Router<unknown, RouterRecord>,
+  router: AnyRouter,
   procedurePath: string,
   failure: AnyTaggedError,
 ): ErrorPolicy | undefined => {
   const procedure = router.procedures.get(procedurePath);
   if (!procedure) return undefined;
-  return Object.values(procedure._def.definitions as ErrorDefinitionMap).find(
+  return Object.values(procedure._def.definitions).find(
     (definition) => definition.tag === failure._tag,
   )?.policy;
 };
@@ -226,22 +223,21 @@ const definitionPolicyFor = (
 const encodeProcedureResult = (
   procedure: AnyProcedure,
   result: Result<unknown, AnyTaggedError>,
-  notify?: (failure: AnyTaggedError, httpStatus: number) => void,
+  finalizeFailure: (
+    failure: AnyTaggedError,
+    httpStatus: number,
+    touched: readonly string[],
+  ) => Response,
   touched: readonly string[] = [],
 ): Response => {
   const touchedField = touched.length === 0 ? {} : { touched };
   if (!result.ok) {
     const status = statusForError(procedure, result.error);
-    notify?.(result.error, status);
-    return wireResponse(
-      { v: PROTOCOL_VERSION, ok: false, error: result.error.toJSON(), ...touchedField },
-      status,
-    );
+    return finalizeFailure(result.error, status, touched);
   }
-  const encoded = procedure._def.output.encode(result.value);
+  const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
   if (!encoded.ok) {
-    const fallback = ServerInternal({ incidentId: `inc_${crypto.randomUUID()}` });
-    return failureResponse(fallback, 500);
+    throw new TypeError("Unable to encode procedure output");
   }
   return wireResponse(
     { v: PROTOCOL_VERSION, ok: true, value: encoded.value, ...touchedField },
@@ -249,7 +245,7 @@ const encodeProcedureResult = (
   );
 };
 
-export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> {
+export interface FetchHandlerOptions<TRouter extends AnyRouter> {
   readonly router: TRouter;
   readonly endpoint?: string;
   readonly maxBatchItems?: number;
@@ -276,10 +272,11 @@ export interface FetchHandlerOptions<TRouter extends Router<any, RouterRecord>> 
    */
   readonly onError?: (event: ErrorResponseEvent) => void;
   /**
-   * Overrides the automatic contract digest sent on every response for stale-
+   * Overrides the automatic contract digest to form the effective version sent
+   * on every response for stale-
    * client detection (e.g. a build stamp). Set the same value on the client.
    */
-  readonly contractVersion?: string;
+  readonly contractVersion?: EffectiveContractVersion;
 }
 
 export interface ErrorResponseEvent {
@@ -289,7 +286,7 @@ export interface ErrorResponseEvent {
   readonly httpStatus: number;
 }
 
-export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
+export const createFetchHandler = <TRouter extends AnyRouter>(
   options: FetchHandlerOptions<TRouter>,
 ): ((request: Request) => Promise<Response>) => {
   const endpoint = options.endpoint ?? "/rpc";
@@ -301,24 +298,41 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
   if (!Number.isSafeInteger(maxRequestBytes) || maxRequestBytes < 1) {
     throw new TypeError("maxRequestBytes must be a positive integer");
   }
-  const contractVersion = options.contractVersion ?? contractDigest(options.router);
+  const contractVersion = effectiveContractVersion(options.router, options.contractVersion);
+  const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
+    const policy =
+      frameworkPolicyFor(failure) ??
+      (procedurePath === undefined
+        ? undefined
+        : definitionPolicyFor(options.router, procedurePath, failure));
+    options.onError?.({
+      error: failure,
+      ...(policy === undefined ? {} : { policy }),
+      ...(procedurePath === undefined ? {} : { procedurePath }),
+      httpStatus,
+    });
+  };
+  const finalizeFailure = (
+    failure: AnyTaggedError,
+    httpStatus: number,
+    procedurePath?: string,
+    touched: readonly string[] = [],
+  ): Response => {
+    const response = wireResponse(
+      {
+        v: PROTOCOL_VERSION,
+        ok: false,
+        error: failure.toJSON(),
+        ...(touched.length === 0 ? {} : { touched }),
+      },
+      httpStatus,
+    );
+    notify(failure, httpStatus, procedurePath);
+    return response;
+  };
   const handle = async (request: Request, responseHeaders: Headers): Promise<Response> => {
-    const notify = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
-      const policy =
-        frameworkPolicyFor(failure) ??
-        (procedurePath === undefined
-          ? undefined
-          : definitionPolicyFor(options.router, procedurePath, failure));
-      options.onError?.({
-        error: failure,
-        ...(policy === undefined ? {} : { policy }),
-        ...(procedurePath === undefined ? {} : { procedurePath }),
-        httpStatus,
-      });
-    };
     const failWith = (failure: AnyTaggedError, httpStatus: number, procedurePath?: string) => {
-      notify(failure, httpStatus, procedurePath);
-      return failureResponse(failure, httpStatus);
+      return finalizeFailure(failure, httpStatus, procedurePath);
     };
     const url = new URL(request.url);
     if (url.pathname !== endpoint || request.method !== "POST") {
@@ -341,7 +355,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     const batch = envelope ? undefined : decodeBatchRequestEnvelope(raw);
     if (!envelope && !batch) return failWith(ProtocolInvalidRequest({}), 400);
     if (batch && batch.batch.length > maxBatchItems) {
-      return failureResponse(ProtocolInvalidRequest({}), 400);
+      return failWith(ProtocolInvalidRequest({}), 400);
     }
 
     let context: RouterContext<TRouter>;
@@ -355,7 +369,11 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         cause,
         ...(envelope === undefined ? {} : { procedurePath: envelope.path }),
       });
-      return failureResponse(ServerInternal({ incidentId }), 500);
+      return failWith(
+        ServerInternal({ incidentId }),
+        ServerInternal.policy.httpStatus ?? 500,
+        envelope?.path,
+      );
     }
 
     if (envelope) {
@@ -372,7 +390,11 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
             cause,
             procedurePath: envelope.path,
           });
-          return failureResponse(ServerInternal({ incidentId }), 500);
+          return failWith(
+            ServerInternal({ incidentId }),
+            ServerInternal.policy.httpStatus ?? 500,
+            envelope.path,
+          );
         }
         if (!decodedInput.ok)
           return failWith(badRequestFromIssues(decodedInput.issues), 400, envelope.path);
@@ -392,7 +414,7 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
       const procedure = options.router.procedures.get(item.path);
       if (!procedure) return failWith(ProtocolNotFound({}), 404, item.path);
       if (procedure._kind === "subscription-procedure") {
-        return failureResponse(ProtocolInvalidRequest({}), 400);
+        return failWith(ProtocolInvalidRequest({}), 400, item.path);
       }
       let decodedInput;
       try {
@@ -405,7 +427,11 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           cause,
           procedurePath: item.path,
         });
-        return failureResponse(ServerInternal({ incidentId }), 500);
+        return failWith(
+          ServerInternal({ incidentId }),
+          ServerInternal.policy.httpStatus ?? 500,
+          item.path,
+        );
       }
       if (!decodedInput.ok)
         return failWith(badRequestFromIssues(decodedInput.issues), 400, item.path);
@@ -424,7 +450,8 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         return encodeProcedureResult(
           procedure,
           result,
-          (failure, status) => notify(failure, status, item.path),
+          (failure, status, failureTouched) =>
+            finalizeFailure(failure, status, item.path, failureTouched),
           touched,
         );
       } catch (cause) {
@@ -435,7 +462,11 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
           cause,
           procedurePath: item.path,
         });
-        return failureResponse(ServerInternal({ incidentId }), 500);
+        return failWith(
+          ServerInternal({ incidentId }),
+          ServerInternal.policy.httpStatus ?? 500,
+          item.path,
+        );
       }
     };
 
@@ -446,10 +477,12 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
         const response = await dispatch(item);
         const decoded = deserialize(await response.text(), { maxBytes: DEFAULT_MAX_WIRE_BYTES });
         if (!decoded.ok) throw new TypeError("Unable to decode an internal batch item");
+        const responseEnvelope = decodeResponseEnvelope(decoded.value);
+        if (!responseEnvelope) throw new TypeError("Invalid internal batch response envelope");
         return {
           id: item.id,
           status: response.status,
-          response: decoded.value as ResponseEnvelope,
+          response: responseEnvelope,
         };
       }),
     );
@@ -459,7 +492,20 @@ export const createFetchHandler = <TRouter extends Router<any, RouterRecord>>(
     // One Headers per request: handlers append through the context, and every
     // response shape — unary, batched, streaming — passes through here.
     const responseHeaders = new Headers();
-    const response = await handle(request, responseHeaders);
+    let response: Response;
+    try {
+      response = await handle(request, responseHeaders);
+    } catch (cause) {
+      // The caller leaving is transport control flow. Let the fetch boundary
+      // observe its own aborted signal and translate it to `cancelled`; an
+      // incident response has no remaining consumer and would misclassify the
+      // handler's AbortError as an application defect.
+      if (request.signal.aborted) throw cause;
+      const incidentId = `inc_${crypto.randomUUID()}`;
+      options.onInternalError?.({ incidentId, phase: "output", cause });
+      const failure = ServerInternal({ incidentId });
+      response = finalizeFailure(failure, ServerInternal.policy.httpStatus ?? 500);
+    }
     for (const [name, value] of responseHeaders) {
       // `append`, not `set`: several procedures in one batch may each add a
       // `set-cookie`, and those must not overwrite one another.

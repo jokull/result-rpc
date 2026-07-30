@@ -44,7 +44,7 @@ export const issueByIdContract = app
 
 export const createIssueContract = app
   .procedure()
-  .input(wire.standard(createIssueSchema))
+  .input(wire.standard(createIssueSchema, { id: "tracker/create-issue/v1" }))
   .output(Issue.all("the tracker shows every issue field it stores"))
   .errors({ ...authErrors, ...pickErrors(issueErrors, "titleTaken") })
   .affects(listIssuesContract)

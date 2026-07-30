@@ -45,7 +45,7 @@ export interface TransportResponse {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: string;
-  /** The server's contract digest (`x-result-rpc-contract`), when sent. */
+  /** The server's effective contract version (`x-result-rpc-contract`), when sent. */
   readonly contract?: string;
 }
 
@@ -53,6 +53,8 @@ export interface TransportStreamResponse {
   readonly status: number;
   readonly contentType: string | null;
   readonly body: ReadableStream<Uint8Array> | null;
+  /** Stream handshake metadata. `null` means the server supplied no contract stamp. */
+  readonly contract: string | null;
 }
 
 export type TransportOutcome =
@@ -204,6 +206,7 @@ export const fetchTransport = (options: FetchTransportOptions): ClientTransport 
           status: response.status,
           contentType: response.headers.get("content-type"),
           body: response.body,
+          contract: response.headers.get(CONTRACT_HEADER),
         },
       };
     } catch {

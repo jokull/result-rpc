@@ -92,8 +92,8 @@ const authenticated = ViewerLayer.middleware(server, session);
 
 // -- procedures -----------------------------------------------------------------------
 
-const whoami = SessionLayer.procedure(server, whoamiContract, session);
-const me = ViewerLayer.procedure(server, meContract, authenticated);
+const whoami = SessionLayer.implement(server, whoamiContract, session);
+const me = ViewerLayer.implement(server, meContract, authenticated);
 
 /** Returns WHO changed: every cached query containing this user patches in place. */
 const setAvatar = server

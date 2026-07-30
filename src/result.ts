@@ -1,4 +1,5 @@
 import type { AnyTaggedError } from "./error.js";
+import { closeIterator } from "./iterator.js";
 
 /**
  * Results are frozen result-rpc runtime values. Their enumerable shape stays
@@ -26,29 +27,30 @@ export interface Err<E extends AnyTaggedError> {
 
 export type Result<T, E extends AnyTaggedError> = Ok<T> | Err<E>;
 
-function resultIterator(this: Result<unknown, AnyTaggedError>) {
-  let done = false;
-  return {
-    next: (): IteratorResult<unknown> => {
-      if (done) return { done: true, value: undefined };
-      done = true;
-      return this.ok ? { done: true, value: this.value } : { done: false, value: this };
+export const ok = <T>(value: T): Ok<T> => {
+  const result: Ok<T> = {
+    ok: true,
+    value,
+    [Symbol.iterator]() {
+      return { next: (): IteratorResult<never, T> => ({ done: true, value }) };
     },
   };
-}
+  Object.defineProperty(result, Symbol.iterator, { enumerable: false });
+  return Object.freeze(result);
+};
 
-const withIterator = <T extends object>(result: T): T =>
-  Object.freeze(
-    Object.defineProperty(result, Symbol.iterator, {
-      value: resultIterator,
-      enumerable: false,
-    }),
-  );
-
-export const ok = <T>(value: T): Ok<T> => withIterator({ ok: true, value }) as Ok<T>;
-
-export const err = <E extends AnyTaggedError>(error: E): Err<E> =>
-  withIterator({ ok: false, error }) as Err<E>;
+export const err = <E extends AnyTaggedError>(error: E): Err<E> => {
+  const result: Err<E> = {
+    ok: false,
+    error,
+    *[Symbol.iterator]() {
+      yield result;
+      throw new TypeError("A yielded Err cannot resume");
+    },
+  };
+  Object.defineProperty(result, Symbol.iterator, { enumerable: false });
+  return Object.freeze(result);
+};
 
 export const isOk = <T, E extends AnyTaggedError>(result: Result<T, E>): result is Ok<T> =>
   result.ok;
@@ -79,16 +81,20 @@ export const match = <T, E extends AnyTaggedError, R1, R2>(
   }>,
 ): R1 | R2 => (result.ok ? handlers.ok(result.value) : handlers.error(result.error));
 
-type ErrorHandlers<E extends AnyTaggedError, R> = {
-  readonly [Tag in E["_tag"]]: (error: Extract<E, { readonly _tag: Tag }>) => R;
+export type ErrorHandlers<E extends AnyTaggedError, R> = {
+  readonly [Tag in E["_tag"]]: (error: E & { readonly _tag: Tag }) => R;
 };
 
-export const matchError = <E extends AnyTaggedError, R>(
+export const matchError = <
+  const Tag extends string,
+  E extends AnyTaggedError & { readonly _tag: Tag },
+  R,
+>(
   error: E,
   handlers: ErrorHandlers<E, R>,
 ): R => {
-  const handler = handlers[error._tag as E["_tag"]];
-  return handler(error as Extract<E, { readonly _tag: E["_tag"] }>);
+  const handler = handlers[error._tag];
+  return handler(error);
 };
 
 /**
@@ -165,10 +171,10 @@ export const tryPromise = async <T, E extends AnyTaggedError>(
   }
 };
 
-type AllValues<TShape> = {
-  -readonly [K in keyof TShape]: TShape[K] extends Result<infer T, AnyTaggedError> ? T : never;
+export type AllValues<TShape> = {
+  readonly [K in keyof TShape]: TShape[K] extends Result<infer T, AnyTaggedError> ? T : never;
 };
-type AllErrors<TShape> = (
+export type AllErrors<TShape> = (
   TShape extends readonly unknown[] ? TShape[number] : TShape[keyof TShape]
 ) extends infer TMember
   ? TMember extends Err<infer E>
@@ -207,7 +213,15 @@ export function all(
   return ok(values);
 }
 
-type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
+export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
+
+type ResultGenerator =
+  | Generator<Err<AnyTaggedError>, unknown>
+  | AsyncGenerator<Err<AnyTaggedError>, unknown>;
+
+const isAsyncResultGenerator = (
+  iterator: ResultGenerator,
+): iterator is AsyncGenerator<Err<AnyTaggedError>, unknown> => Symbol.asyncIterator in iterator;
 
 /**
  * Generator composition (the core DX of better-result, ported with credit):
@@ -234,26 +248,22 @@ export function gen<TYield extends Err<AnyTaggedError>, TReturn>(
   body: () => AsyncGenerator<TYield, TReturn>,
 ): Promise<Result<TReturn, GenErr<TYield>>>;
 export function gen(
-  body: () =>
-    | Generator<Err<AnyTaggedError>, unknown>
-    | AsyncGenerator<Err<AnyTaggedError>, unknown>,
+  body: () => ResultGenerator,
 ): Result<unknown, AnyTaggedError> | Promise<Result<unknown, AnyTaggedError>> {
   const iterator = body();
-  if (Symbol.asyncIterator in iterator) {
-    const asyncIterator = iterator as AsyncGenerator<Err<AnyTaggedError>, unknown>;
+  if (isAsyncResultGenerator(iterator)) {
     return (async () => {
-      const step = await asyncIterator.next();
+      const step = await iterator.next();
       if (!step.done) {
-        await asyncIterator.return(undefined as never);
+        await closeIterator(iterator);
         return step.value;
       }
       return ok(step.value);
     })();
   }
-  const syncIterator = iterator as Generator<Err<AnyTaggedError>, unknown>;
-  const step = syncIterator.next();
+  const step = iterator.next();
   if (!step.done) {
-    syncIterator.return(undefined as never);
+    void closeIterator(iterator);
     return step.value;
   }
   return ok(step.value);

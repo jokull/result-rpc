@@ -41,7 +41,7 @@ export interface ModelDefinition<
   readonly name: TName;
   /** The identity field(s) as declared; present in the canonical shape and every pick. */
   readonly key: TKey;
-  /** The identity fields, normalized. Composite keys join values in this order. */
+  /** The identity fields, normalized. Composite keys encode values in this order. */
   readonly keyFields: readonly KeyField<TKey>[];
   /**
    * Prove that this model is an exact projection of an upstream row or
@@ -116,45 +116,45 @@ export interface ModelDefinition<
 
 /** `true` selects one of the model's own fields; a codec supplies any other. */
 export type SelectionValue<TShape extends CodecShape, TKey> = TKey extends keyof TShape
-  ? true | WireCodec<any, any>
-  : WireCodec<any, any>;
+  ? true | AnyWireCodec
+  : AnyWireCodec;
 
 export type SelectionInput<TShape extends CodecShape, TSelection> = {
   readonly [TKey in keyof TSelection]: TSelection[TKey] extends true
     ? TKey extends keyof TShape
       ? InputOf<TShape[TKey]>
       : never
-    : TSelection[TKey] extends WireCodec<infer TInput, any>
-      ? TInput
+    : TSelection[TKey] extends AnyWireCodec
+      ? InputOf<TSelection[TKey]>
       : never;
 };
 
-type ShapeKeySpec<TShape extends CodecShape> =
+export type ShapeKeySpec<TShape extends CodecShape> =
   | (keyof TShape & string)
   | readonly (keyof TShape & string)[];
 
-type KeyField<TKey> = TKey extends readonly (infer TField extends string)[] ? TField : TKey;
+export type KeyField<TKey> = TKey extends readonly (infer TField extends string)[] ? TField : TKey;
 
-type SelectedOwnFields<TSelection> = {
+export type SelectedOwnFields<TSelection> = {
   [TKey in keyof TSelection]: TSelection[TKey] extends true ? TKey : never;
 }[keyof TSelection];
 
-type Equal<TLeft, TRight> =
+export type ModelTypeEqual<TLeft, TRight> =
   (<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
     ? (<T>() => T extends TRight ? 1 : 2) extends <T>() => T extends TLeft ? 1 : 2
       ? true
       : false
     : false;
 
-type MismatchedSourceFields<TModel extends object, TSource extends object> = {
+export type MismatchedSourceFields<TModel extends object, TSource extends object> = {
   [TKey in keyof TModel]: TKey extends keyof TSource
-    ? Equal<TModel[TKey], TSource[TKey]> extends true
+    ? ModelTypeEqual<TModel[TKey], TSource[TKey]> extends true
       ? never
       : TKey
     : TKey;
 }[keyof TModel];
 
-type ModelSourceMismatch<TModel extends object, TSource extends object> =
+export type ModelSourceMismatch<TModel extends object, TSource extends object> =
   MismatchedSourceFields<TModel, TSource> extends never
     ? never
     : {
@@ -167,7 +167,7 @@ type ModelSourceMismatch<TModel extends object, TSource extends object> =
 export type ModelValue<TModel extends AnyModel> =
   TModel extends ModelDefinition<string, infer TShape> ? ShapeInput<TShape> : never;
 
-type ModelIdentityField<TModel extends AnyModel> =
+export type ModelIdentityField<TModel extends AnyModel> =
   TModel["key"] extends readonly (infer TField extends string)[] ? TField : TModel["key"];
 
 /**
@@ -179,7 +179,7 @@ export type ModelProjection<TModel extends AnyModel> = Readonly<
     Partial<Omit<ModelValue<TModel>, Extract<ModelIdentityField<TModel>, keyof ModelValue<TModel>>>>
 >;
 
-type ScalarKeyField<TShape extends CodecShape> = {
+export type ScalarKeyField<TShape extends CodecShape> = {
   [TKey in keyof TShape & string]: [InputOf<TShape[TKey]>] extends [never]
     ? never
     : [InputOf<TShape[TKey]>] extends [string | number]
@@ -187,7 +187,7 @@ type ScalarKeyField<TShape extends CodecShape> = {
       : never;
 }[keyof TShape & string];
 
-type ModelKeySpec<TShape extends CodecShape> =
+export type ModelKeySpec<TShape extends CodecShape> =
   | ScalarKeyField<TShape>
   | readonly ScalarKeyField<TShape>[];
 
@@ -205,18 +205,18 @@ export interface DefineModelOptions<
   readonly shape: TShape;
 }
 
-/** How callers address an entity: a plain id, a pre-joined composite id, or the key fields. */
-type ModelKeyRecord<TModel extends AnyModel> = Readonly<{
+/** How callers address an entity: a scalar id or an exact record of its key fields. */
+export type ModelKeyRecord<TModel extends AnyModel> = Readonly<{
   [TField in KeyField<TModel["key"]>]: TField extends keyof ModelValue<TModel>
     ? Extract<ModelValue<TModel>[TField], string | number>
     : never;
 }>;
 
-type SpecificModelKeyInput<
+export type SpecificModelKeyInput<
   TModel extends AnyModel,
   TKey = TModel["key"],
 > = TKey extends readonly string[]
-  ? string | ModelKeyRecord<TModel>
+  ? ModelKeyRecord<TModel>
   : TKey extends keyof ModelValue<TModel>
     ? Extract<ModelValue<TModel>[TKey], string | number> | ModelKeyRecord<TModel>
     : never;
@@ -225,8 +225,38 @@ export type ModelKeyInput<TModel extends AnyModel = AnyModel> = string extends T
   ? string | number | Readonly<Record<string, string | number>>
   : SpecificModelKeyInput<TModel>;
 
+declare const entityIdBrand: unique symbol;
+
+/**
+ * The canonical identity of one model value. This is deliberately distinct
+ * from the scalar or key-field record accepted by cache APIs: it is an
+ * encoded internal identity, not another spelling of a model key.
+ */
+export type EntityId<TModel extends AnyModel = AnyModel> = string & {
+  readonly [entityIdBrand]: TModel["name"];
+};
+
+declare const entityCacheKeyBrand: unique symbol;
+
+/** A model-qualified key used only by internal entity indexes. */
+export type EntityCacheKey = EntityId & { readonly [entityCacheKeyBrand]: true };
+
 /** Decoded-entity brands: object identity → its model. Global and inert. */
 const entityBrands = new WeakMap<object, AnyModel>();
+
+/** @internal Runtime proof used by cache projection adapters. */
+export const isEntityRecord = (value: unknown): value is Record<string, unknown> => {
+  if (value === null || typeof value !== "object") return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+const isWireCodec = (value: unknown): value is AnyWireCodec =>
+  value !== null &&
+  typeof value === "object" &&
+  typeof Reflect.get(value, "kind") === "string" &&
+  typeof Reflect.get(value, "encode") === "function" &&
+  typeof Reflect.get(value, "decode") === "function";
 
 /** Internal: read a decoded object's model, if any. */
 export const entityBrandOf = (value: object): AnyModel | undefined => entityBrands.get(value);
@@ -236,31 +266,121 @@ export const brandEntity = (value: object, model: AnyModel): void => {
   entityBrands.set(value, model);
 };
 
-/** @internal Reads a canonical entity id from a decoded, branded object. */
-export const entityIdOf = (value: object, model: AnyModel): string | undefined => {
-  const parts: string[] = [];
-  for (const field of model.keyFields) {
-    const raw = (value as Record<string, unknown>)[field];
-    if (typeof raw !== "string" && typeof raw !== "number") return undefined;
-    parts.push(String(raw));
+type IdentityPart = string | number;
+type EncodedIdentityPart = readonly [type: "s" | "n", value: string];
+
+const ENTITY_ID_PREFIX = "result-rpc:entity:1:";
+
+/**
+ * ECMAScript's finite-number string form is a canonical round-trippable
+ * representation. The four non-finite/signed-zero cases need explicit names
+ * so every value distinguished by `Object.is` has stable identity semantics.
+ */
+const encodeIdentityNumber = (value: number): string => {
+  if (Number.isNaN(value)) return "NaN";
+  if (value === Number.POSITIVE_INFINITY) return "+Infinity";
+  if (value === Number.NEGATIVE_INFINITY) return "-Infinity";
+  if (Object.is(value, -0)) return "-0";
+  return String(value);
+};
+
+const encodeIdentityPart = (value: IdentityPart): EncodedIdentityPart =>
+  typeof value === "string" ? ["s", value] : ["n", encodeIdentityNumber(value)];
+
+/**
+ * One encoder owns the complete cache identity. JSON array encoding is
+ * injective here because every segment is a tagged two-tuple: model name,
+ * scalar type, arity, empty strings, Unicode, and delimiter characters all
+ * retain explicit boundaries.
+ */
+const encodeEntityIdentity = <TModel extends AnyModel>(
+  model: TModel,
+  parts: readonly IdentityPart[],
+): EntityId<TModel> => {
+  const encoded = JSON.stringify([
+    encodeIdentityPart(model.name),
+    ...parts.map(encodeIdentityPart),
+  ]);
+  // This constructor is the sole boundary that introduces the opaque brand.
+  return `${ENTITY_ID_PREFIX}${encoded}` as EntityId<TModel>;
+};
+
+const isCanonicalEncodedNumber = (value: string): boolean => {
+  if (value === "NaN" || value === "+Infinity" || value === "-Infinity" || value === "-0") {
+    return true;
   }
-  return parts.join(":");
+  const number = Number(value);
+  return Number.isFinite(number) && String(number) === value;
+};
+
+const isEncodedIdentityPart = (value: unknown): value is EncodedIdentityPart => {
+  if (!Array.isArray(value) || value.length !== 2 || typeof value[1] !== "string") return false;
+  return value[0] === "s" || (value[0] === "n" && isCanonicalEncodedNumber(value[1]));
+};
+
+const encodedIdentityModelName = (value: string): string | undefined => {
+  if (!value.startsWith(ENTITY_ID_PREFIX)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value.slice(ENTITY_ID_PREFIX.length));
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed) || parsed.length < 2 || !parsed.every(isEncodedIdentityPart)) {
+    return undefined;
+  }
+  const model = parsed[0];
+  return model?.[0] === "s" ? model[1] : undefined;
+};
+
+/** @internal Reads a canonical, model-qualified id from a decoded entity. */
+export const entityIdOf = <TModel extends AnyModel>(
+  value: object,
+  model: TModel,
+): EntityId<TModel> | undefined => {
+  const parts: IdentityPart[] = [];
+  for (const field of model.keyFields) {
+    const raw = Reflect.get(value, field);
+    if (typeof raw !== "string" && typeof raw !== "number") return undefined;
+    parts.push(raw);
+  }
+  return encodeEntityIdentity(model, parts);
 };
 
 /**
- * Resolves a caller-supplied key to the entity's id string. Records must
- * carry every key field. A bare scalar addresses a single-field key; a string
- * may also carry the canonical pre-joined form of a composite key.
+ * Resolves a caller-supplied key to the entity's opaque canonical id. Records
+ * must carry every key field. A bare scalar addresses only a single-field
+ * key; composite keys require their structured record, so segment boundaries
+ * cannot be guessed from a pre-joined string.
  */
 export const entityIdFor = <TModel extends AnyModel>(
   model: TModel,
   id: ModelKeyInput<TModel>,
-): string | undefined => {
-  if (typeof id === "string" || typeof id === "number") return String(id);
-  return entityIdOf(id as object, model);
+): EntityId<TModel> | undefined => {
+  if (typeof id === "string" || typeof id === "number") {
+    return model.keyFields.length === 1 ? encodeEntityIdentity(model, [id]) : undefined;
+  }
+  return entityIdOf(id, model);
 };
 
-export const entityKey = (model: string, id: string): string => `${model}:${id}`;
+/**
+ * Converts an entity id to the internal cache-index key while checking the
+ * model qualification. All cache keys therefore originate in the same full
+ * tuple encoder; no caller may recreate one with string concatenation.
+ */
+export const entityKey = (model: string, id: EntityId): EntityCacheKey => {
+  if (encodedIdentityModelName(id) !== model) {
+    throw new TypeError(
+      `Entity id is not the canonical identity for model ${JSON.stringify(model)}`,
+    );
+  }
+  // Runtime validation above is the proof that this string is a cache key.
+  return id as EntityCacheKey;
+};
+
+/** @internal Validates a model-qualified cache key received over the wire. */
+export const entityCacheKeyFromWire = (value: string): EntityCacheKey | undefined =>
+  encodedIdentityModelName(value) === undefined ? undefined : (value as EntityCacheKey);
 
 const brandingCodec = <TValue>(
   inner: WireCodec<TValue, WireValue>,
@@ -268,15 +388,23 @@ const brandingCodec = <TValue>(
   model: () => AnyModel,
 ): WireCodec<TValue, WireValue> => ({
   kind,
+  schema: JSON.stringify(["model", kind, inner.schema]),
   encode: (input) => inner.encode(input),
   decode: (value) => {
     const result = inner.decode(value);
     if (result.ok && result.value !== null && typeof result.value === "object") {
-      entityBrands.set(result.value as object, model());
+      entityBrands.set(result.value, model());
     }
     return result;
   },
 });
+
+function normalizeModelKey<TKey extends string | readonly string[]>(
+  key: TKey,
+): readonly KeyField<TKey>[];
+function normalizeModelKey(key: string | readonly string[]): readonly string[] {
+  return typeof key === "string" ? [key] : key;
+}
 
 export const defineModel = <
   const TName extends string,
@@ -288,9 +416,7 @@ export const defineModel = <
 ): ModelDefinition<TName, TShape, TKey> => {
   // `TKey` is either the scalar field or its readonly tuple form; normalization
   // preserves exactly their element union.
-  const keyFields = (
-    typeof options.key === "string" ? [options.key] : options.key
-  ) as readonly KeyField<TKey>[];
+  const keyFields = normalizeModelKey(options.key);
   if (keyFields.length === 0) {
     throw new TypeError(`Model ${name} declares an empty key`);
   }
@@ -318,13 +444,12 @@ export const defineModel = <
       ? TSelection
       : never,
   ): WireCodec<SelectionInput<TShape, TSelection>, WireValue> => {
-    const entries = selection as Readonly<Record<string, unknown>>;
-    const keys = Object.keys(entries);
-    const own = keys.filter((key) => entries[key] === true);
+    const keys = Object.keys(selection);
+    const own = keys.filter((key) => Reflect.get(selection, key) === true);
     requireKeyFields(own, "selection");
     const subset: Record<string, AnyWireCodec> = {};
     for (const key of keys) {
-      const value = entries[key];
+      const value: unknown = Reflect.get(selection, key);
       if (value === true) {
         const codec = options.shape[key];
         if (!codec) {
@@ -332,11 +457,16 @@ export const defineModel = <
             `Model ${name} has no field "${key}" — select true only for the model's own fields, or give a codec`,
           );
         }
-        subset[key] = codec as AnyWireCodec;
+        subset[key] = codec;
       } else {
-        subset[key] = value as AnyWireCodec;
+        if (!isWireCodec(value)) {
+          throw new TypeError(`Model ${name} selection "${key}" must be true or a wire codec`);
+        }
+        subset[key] = value;
       }
     }
+    // The loop compiled exactly TSelection into the subset; Object.keys
+    // necessarily erased the mapped input relationship.
     return brandingCodec(
       wire.object(subset),
       `model(${name}):{${[...keys].sort().join(",")}}`,
@@ -349,6 +479,8 @@ export const defineModel = <
     requireKeyFields(keys, "projection");
     const subset: Record<string, AnyWireCodec> = {};
     for (const key of keys) subset[key] = options.shape[key]!;
+    // Each subset entry was selected from the same TShape at a TKeys member;
+    // dynamic record construction erased the mapped input relationship.
     return brandingCodec(
       wire.object(subset),
       `model(${name}):${[...keys].sort().join(",")}`,
@@ -367,8 +499,8 @@ export const defineModel = <
           `Model ${name}: all() ships every field, so it takes a reason — say why this output is allowed to widen with the model`,
         );
       }
-      return brandingCodec(
-        wire.object(options.shape) as WireCodec<ShapeInput<TShape>, WireValue>,
+      return brandingCodec<ShapeInput<TShape>>(
+        wire.object(options.shape),
         `model(${name}):all`,
         () => self,
       );
@@ -384,7 +516,7 @@ export const defineModel = <
 
 export interface CollectedEntity {
   readonly model: AnyModel;
-  readonly id: string;
+  readonly id: EntityId;
   /** The decoded (projection-shaped) entity object. */
   readonly value: Record<string, unknown>;
 }
@@ -404,8 +536,8 @@ export const collectEntities = (root: unknown): readonly CollectedEntity[] => {
     const model = entityBrands.get(value);
     if (model) {
       const id = entityIdOf(value, model);
-      if (id !== undefined) {
-        found.push({ model, id, value: value as Record<string, unknown> });
+      if (id !== undefined && isEntityRecord(value)) {
+        found.push({ model, id, value });
       }
     }
     if (Array.isArray(value)) {
@@ -462,10 +594,10 @@ export const mergeByExistingKeys = (
  * (cycle-safe, shared references preserved, brands carried onto clones);
  * returns the original root untouched when no occurrence changed.
  */
-export const patchEntity = (
+export const patchEntity = <TModel extends AnyModel>(
   root: unknown,
-  model: AnyModel,
-  id: string,
+  model: TModel,
+  id: EntityId<TModel>,
   produce: (current: Record<string, unknown>) => Record<string, unknown>,
 ): { readonly value: unknown; readonly changed: boolean } => {
   let changed = false;
@@ -475,11 +607,11 @@ export const patchEntity = (
     const cached = clones.get(value);
     if (cached !== undefined) return cached;
     const brand = entityBrands.get(value);
-    if (brand === model && entityIdOf(value, brand) === id) {
+    if (brand === model && entityIdOf(value, brand) === id && isEntityRecord(value)) {
       // Walk INTO the produced replacement: a nested occurrence of the same
       // entity (including a self-reference cycle) must be patched too, and
       // cycles must rebind to the clone, not dangle on the original.
-      const produced = produce(value as Record<string, unknown>);
+      const produced = produce(value);
       const next: Record<string, unknown> = {};
       clones.set(value, next);
       entityBrands.set(next, brand);
@@ -556,7 +688,7 @@ export const shareStructural = (previous: unknown, next: unknown): unknown => {
           const aBrand = entityBrands.get(a);
           if (aBrand) {
             const previousId = entityIdOf(a, aBrand);
-            const resultId = entityIdOf(result as object, aBrand);
+            const resultId = entityIdOf(result, aBrand);
             if (previousId !== undefined && previousId === resultId) {
               entityBrands.set(result, aBrand);
             }
@@ -570,16 +702,14 @@ export const shareStructural = (previous: unknown, next: unknown): unknown => {
     if (aIsArray && bIsArray) {
       if (visiting.has(b)) return b;
       visiting.add(b);
-      const aArray = a as readonly unknown[];
-      const bArray = b as readonly unknown[];
-      const copy: unknown[] = Array.from({ length: bArray.length });
+      const copy: unknown[] = Array.from({ length: b.length });
       let equal = 0;
-      for (let index = 0; index < bArray.length; index += 1) {
-        copy[index] = share(aArray[index], bArray[index]);
-        if (index < aArray.length && Object.is(copy[index], aArray[index])) equal += 1;
+      for (let index = 0; index < b.length; index += 1) {
+        copy[index] = share(a[index], b[index]);
+        if (index < a.length && Object.is(copy[index], a[index])) equal += 1;
       }
       visiting.delete(b);
-      return finish(aArray.length === bArray.length && equal === bArray.length ? a : copy);
+      return finish(a.length === b.length && equal === b.length ? a : copy);
     }
     if (
       !aIsArray &&
@@ -591,19 +721,16 @@ export const shareStructural = (previous: unknown, next: unknown): unknown => {
     ) {
       if (visiting.has(b)) return b;
       visiting.add(b);
-      const aObject = a as Record<string, unknown>;
-      const bObject = b as Record<string, unknown>;
-      const bKeys = Object.keys(bObject);
+      const bKeys = Object.keys(b);
       const copy: Record<string, unknown> = {};
       let equal = 0;
       for (const key of bKeys) {
-        copy[key] = share(aObject[key], bObject[key]);
-        if (key in aObject && Object.is(copy[key], aObject[key])) equal += 1;
+        const previousValue = Reflect.get(a, key);
+        copy[key] = share(previousValue, Reflect.get(b, key));
+        if (key in a && Object.is(copy[key], previousValue)) equal += 1;
       }
       visiting.delete(b);
-      return finish(
-        Object.keys(aObject).length === bKeys.length && equal === bKeys.length ? a : copy,
-      );
+      return finish(Object.keys(a).length === bKeys.length && equal === bKeys.length ? a : copy);
     }
     // Rich values (Date, Map, Set, URL, ...), type mismatches, and fresh
     // subtrees take the new side wholesale — its interior is already branded

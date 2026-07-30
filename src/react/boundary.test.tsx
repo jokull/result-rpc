@@ -133,6 +133,65 @@ describe("boundaryShells", () => {
     runtime.clear();
   });
 
+  test("StaleShell owns a stale subscription before any stream item escapes", async () => {
+    const server = rpc.context<{}>();
+    const serverEvents = server
+      .procedure()
+      .input(wire.object({}))
+      .output(wire.number)
+      .subscription();
+    const serverRouter = server.router({
+      events: server.implement(serverEvents).stream(async function* () {
+        yield ok(42);
+      }),
+    });
+    const handler = createFetchHandler({ router: serverRouter, createContext: () => ({}) });
+
+    const stale = rpc.context<{}>();
+    const staleEvents = stale.procedure().input(wire.object({})).output(wire.string).subscription();
+    const staleContract = stale.contract({ events: staleEvents });
+    const client = createFixtureClient({
+      contract: staleContract,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const reactions: string[] = [];
+    const { StaleShell, BoundaryProvider } = boundaryShells({
+      name: "test-subscription-stale",
+      onStale: (failure) => void reactions.push(failure.data.reclassifiedFrom),
+    });
+
+    let connection: string | undefined;
+    let resultVisible = false;
+    function Probe() {
+      const state = StaleShell.useSubscription(client.events, {});
+      connection = state.connection;
+      resultVisible = state.result !== undefined;
+      return null;
+    }
+
+    const runtime = createQueryRuntime({ client });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <BoundaryProvider>
+            <Probe />
+          </BoundaryProvider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(connection).toBe("paused");
+    expect(resultVisible).toBe(false);
+    expect(reactions).toEqual(["client/protocol-violation"]);
+    await act(async () => renderer!.unmount());
+    runtime.clear();
+  });
+
   test("reconnect resumes held transport failures automatically", async () => {
     const app = rpc.context<{}>();
     const router = app.router({

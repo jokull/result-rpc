@@ -31,7 +31,7 @@ const emit = (event: ConnectivityEvent) => {
 };
 
 const attach = () => {
-  const target = globalThis as EventTargetLike;
+  const target: EventTargetLike = globalThis;
   if (!target.addEventListener) return;
   const onOnline = () => emit("online");
   const onOffline = () => emit("offline");
@@ -44,9 +44,7 @@ const attach = () => {
   target.addEventListener("online", onOnline);
   target.addEventListener("offline", onOffline);
   target.addEventListener("focus", onFocus);
-  const doc = (typeof document === "undefined" ? undefined : document) as
-    | EventTargetLike
-    | undefined;
+  const doc: EventTargetLike | undefined = typeof document === "undefined" ? undefined : document;
   doc?.addEventListener?.("visibilitychange", onVisible);
   detach = () => {
     target.removeEventListener?.("online", onOnline);

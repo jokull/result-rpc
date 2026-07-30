@@ -175,17 +175,23 @@ export type ClientBoundaryError =
 /** Maps codec issues into `server/bad-request` data: paths and messages only, never values. */
 export const badRequestFromIssues = (cause: unknown): ServerBadRequest => {
   const issues = Array.isArray(cause)
-    ? (
-        cause as readonly {
-          readonly path?: readonly (string | number)[];
-          readonly message?: unknown;
-        }[]
-      )
-        .slice(0, 20)
-        .map((issue) => ({
-          path: (issue.path ?? []).map(String),
-          message: typeof issue.message === "string" ? issue.message : "Invalid value",
-        }))
+    ? cause.slice(0, 20).map((issue: unknown) => {
+        const path =
+          issue !== null &&
+          typeof issue === "object" &&
+          "path" in issue &&
+          Array.isArray(issue.path)
+            ? issue.path
+            : [];
+        const message =
+          issue !== null && typeof issue === "object" && "message" in issue
+            ? issue.message
+            : undefined;
+        return {
+          path: path.map(String),
+          message: typeof message === "string" ? message : "Invalid value",
+        };
+      })
     : [{ path: [], message: "Invalid input" }];
   return ServerBadRequest({ issues });
 };

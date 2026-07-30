@@ -1,4 +1,12 @@
-import type { DecodeResult, EmptyObject, InputOf, WireCodec, WireValue } from "./wire.js";
+import type {
+  AnyWireCodec,
+  DecodeResult,
+  EmptyObject,
+  EncodedOf,
+  InputOf,
+  WireCodec,
+  WireValue,
+} from "./wire.js";
 import { DEFAULT_MAX_ERROR_BYTES, serialize } from "./serializer.js";
 import { err, type Err } from "./result.js";
 
@@ -101,7 +109,7 @@ export type HttpStatusName = keyof typeof httpStatusNames;
 export type ErrorVisibility = "public" | "private";
 export type ErrorSeverity = "debug" | "info" | "warning" | "error";
 
-interface ErrorPolicyBase<Visibility extends ErrorVisibility = ErrorVisibility> {
+export interface ErrorPolicyBase<Visibility extends ErrorVisibility = ErrorVisibility> {
   readonly retry: RetryPolicy;
   readonly visibility: Visibility;
   readonly severity?: ErrorSeverity;
@@ -113,7 +121,7 @@ export type ErrorPolicy<Visibility extends ErrorVisibility = ErrorVisibility> =
       ? { readonly httpStatus?: number }
       : { readonly httpStatus?: never });
 
-interface ErrorDefinitionOptionsBase<Tag extends string, Input, Data extends WireValue> {
+export interface ErrorDefinitionOptionsBase<Tag extends string, Input, Data extends WireValue> {
   readonly tag: Tag;
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
@@ -161,24 +169,35 @@ export interface ErrorDefinition<
   decode(value: unknown): DecodeResult<TaggedError<Tag, Data, Visibility>>;
 }
 
-// `any` is intentional in this erased registry type. Individual definitions retain
-// their exact input and encoded data types through ErrorOf and ErrorInputOf.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyErrorDefinition = ErrorDefinition<string, any, any, any>;
+type ErrorDefinitionArguments<Input> = EmptyObject extends Input
+  ? [input?: Input, options?: ErrorOptions]
+  : [input: Input, options?: ErrorOptions];
+
+/** Runtime-erased definition. Its constructor cannot be called without a proof boundary. */
+export interface AnyErrorDefinition {
+  readonly tag: string;
+  readonly codec: AnyWireCodec;
+  readonly policy: Readonly<ErrorPolicy>;
+  is(value: unknown): value is AnyTaggedError;
+  decode(value: unknown): DecodeResult<AnyTaggedError>;
+}
 
 /** An error definition whose instances are allowed to cross an RPC boundary. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyPublicErrorDefinition = ErrorDefinition<string, any, any, "public">;
+export interface AnyPublicErrorDefinition extends AnyErrorDefinition {
+  readonly policy: Readonly<ErrorPolicy<"public">>;
+  is(value: unknown): value is AnyPublicTaggedError;
+  decode(value: unknown): DecodeResult<AnyPublicTaggedError>;
+}
 
 export type ErrorOf<TDefinition> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TDefinition extends ErrorDefinition<infer Tag, any, infer Data, infer Visibility>
+  TDefinition extends ErrorDefinition<infer Tag, infer _Input, infer Data, infer Visibility>
     ? TaggedError<Tag, Data, Visibility>
     : never;
 
 export type ErrorInputOf<TDefinition> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TDefinition extends ErrorDefinition<string, infer Input, any, any> ? Input : never;
+  TDefinition extends ErrorDefinition<string, infer Input, infer _Data, infer _Visibility>
+    ? Input
+    : never;
 
 const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<object>()): T => {
   if (value !== null && typeof value === "object") {
@@ -195,6 +214,8 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
             : Object.values(value);
     for (const child of children) {
       if (child === undefined || child === null || typeof child !== "object") continue;
+      // The parent is already a WireValue (and error construction performs a
+      // serializer preflight); container APIs erase that recursive fact.
       freezeWireValue(child as WireValue, seen);
     }
   }
@@ -203,6 +224,7 @@ const freezeWireValue = <T extends WireValue>(value: T, seen = new WeakSet<objec
 
 const emptyDataCodec: WireCodec<EmptyObject, EmptyObject> = {
   kind: "object",
+  schema: '["object",[]]',
   encode: (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value)
       ? { ok: true, value: {} }
@@ -220,6 +242,7 @@ const createErrorDefinition = <
   Visibility extends ErrorVisibility,
 >(
   rawOptions: ErrorDefinitionOptionsBase<Tag, Input, Data> & {
+    readonly data: WireCodec<Input, Data>;
     readonly visibility: Visibility;
     readonly httpStatus?: number | HttpStatusName;
   },
@@ -227,7 +250,7 @@ const createErrorDefinition = <
 ): ErrorDefinition<Tag, Input, Data, Visibility> => {
   const options = {
     ...rawOptions,
-    data: rawOptions.data ?? (emptyDataCodec as unknown as WireCodec<Input, Data>),
+    data: rawOptions.data,
     httpStatus:
       rawOptions.visibility === "public"
         ? typeof rawOptions.httpStatus === "string"
@@ -271,11 +294,12 @@ const createErrorDefinition = <
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       return { ok: false, issues: [{ path: [], message: "Expected a tagged error object" }] };
     }
-    const candidate = value as { readonly _tag?: unknown; readonly data?: unknown };
-    if (candidate._tag !== options.tag) {
+    const tag = "_tag" in value ? value._tag : undefined;
+    if (tag !== options.tag) {
       return { ok: false, issues: [{ path: ["_tag"], message: `Expected ${options.tag}` }] };
     }
-    const decoded = options.data.decode(candidate.data);
+    const data = "data" in value ? value.data : undefined;
+    const decoded = options.data.decode(data);
     if (!decoded.ok) {
       return {
         ok: false,
@@ -311,7 +335,23 @@ const createErrorDefinition = <
     }
   };
 
-  const definition = ((input: Input = {} as Input, errorOptions?: ErrorOptions) => {
+  const definition = (...args: ErrorDefinitionArguments<Input>) => {
+    let input: Input;
+    if (args.length === 0) {
+      const decodedDefault = options.data.decode({});
+      if (!decodedDefault.ok) {
+        const details = decodedDefault.issues
+          .map((issue) => `${issue.path.join(".") || "data"}: ${issue.message}`)
+          .join("; ");
+        throw new TypeError(`Invalid default data for ${options.tag}: ${details}`);
+      }
+      input = decodedDefault.value;
+    } else {
+      // The conditional tuple above proves a present first argument whenever
+      // Input does not admit the canonical empty object.
+      input = args[0] as Input;
+    }
+    const errorOptions = args[1];
     const encoded = options.data.encode(input);
     if (!encoded.ok) {
       const details = encoded.issues
@@ -327,7 +367,7 @@ const createErrorDefinition = <
       );
     }
     return instantiate(encoded.value, errorOptions);
-  }) as unknown as ErrorDefinition<Tag, Input, Data, Visibility>;
+  };
 
   Object.defineProperties(definition, {
     tag: { value: options.tag, enumerable: true },
@@ -347,7 +387,11 @@ const createErrorDefinition = <
     decode: { value: decode },
   });
 
-  return Object.freeze(definition);
+  // Audited callable-object boundary: all members were installed above with
+  // immutable descriptors, while the exact call signature is already carried
+  // by `definition`. JavaScript has no syntax that lets defineProperties teach
+  // TypeScript about those installed members.
+  return Object.freeze(definition) as ErrorDefinition<Tag, Input, Data, Visibility>;
 };
 
 export function error<const Tag extends string, Input, Data extends WireValue>(
@@ -372,19 +416,28 @@ export function error<const Tag extends string>(
 ): ErrorDefinition<Tag, EmptyObject, EmptyObject, "public">;
 export function error<const Tag extends string, Input, Data extends WireValue>(
   options: ErrorDefinitionOptions<Tag, Input, Data, ErrorVisibility>,
-): ErrorDefinition<Tag, Input, Data, ErrorVisibility> {
+): AnyErrorDefinition {
+  if (options.data === undefined) {
+    return createErrorDefinition(
+      {
+        ...options,
+        data: emptyDataCodec,
+        visibility: options.visibility ?? "public",
+      },
+      false,
+    );
+  }
   return createErrorDefinition(
-    {
-      ...options,
-      visibility: options.visibility ?? "public",
-    },
+    { ...options, data: options.data, visibility: options.visibility ?? "public" },
     false,
   );
 }
 
 /** Internal framework factory; intentionally not re-exported from the package root. */
 export const frameworkError = <const Tag extends string, Input, Data extends WireValue>(
-  options: ErrorDefinitionOptions<Tag, Input, Data, "public">,
+  options: ErrorDefinitionOptions<Tag, Input, Data, "public"> & {
+    readonly data: WireCodec<Input, Data>;
+  },
 ): ErrorDefinition<Tag, Input, Data, "public"> =>
   createErrorDefinition(
     {
@@ -398,7 +451,10 @@ export type ErrorDefinitionInput<TDefinition extends AnyErrorDefinition> = Input
   TDefinition["codec"]
 >;
 
-type CatalogHandlers<TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>, R> = {
+export type CatalogHandlers<
+  TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>,
+  R,
+> = {
   readonly [TKey in keyof TDefinitions as TDefinitions[TKey]["tag"]]: (
     error: ErrorOf<TDefinitions[TKey]>,
   ) => R;
@@ -437,12 +493,22 @@ export const errorCatalog = <
   type R = THandlers[keyof THandlers] extends (error: never) => infer TReturn ? TReturn : never;
   const definitionList = Object.values(definitions);
   const tags = new Set(definitionList.map((definition) => definition.tag));
+  const definitionsByTag = new Map<string, AnyErrorDefinition>();
+  for (const definition of definitionList) {
+    const existing = definitionsByTag.get(definition.tag);
+    if (existing !== undefined && existing !== definition) {
+      throw new TypeError(`Catalog contains conflicting definitions for tag ${definition.tag}`);
+    }
+    definitionsByTag.set(definition.tag, definition);
+  }
   for (const tag of Object.keys(handlers)) {
     if (!tags.has(tag)) throw new TypeError(`Catalog handles unknown tag ${tag}`);
   }
   for (const tag of tags) {
     if (!(tag in handlers)) throw new TypeError(`Catalog is missing tag ${tag}`);
   }
+  // The exhaustive handler map and runtime tag validation above are the proof
+  // at this dynamic property-access boundary.
   const dispatch = (error: TError): R =>
     (handlers as unknown as Record<string, (error: AnyTaggedError) => R>)[error._tag]!(error);
   const catalog: ErrorCatalog<TError, R> = Object.assign(dispatch, {
@@ -454,13 +520,16 @@ export const errorCatalog = <
 
 // --- Namespaced declaration -------------------------------------------------
 
-type KebabCase<S extends string, Acc extends string = ""> = S extends `${infer Head}${infer Tail}`
+export type KebabCase<
+  S extends string,
+  Acc extends string = "",
+> = S extends `${infer Head}${infer Tail}`
   ? Head extends Lowercase<Head>
     ? KebabCase<Tail, `${Acc}${Head}`>
     : KebabCase<Tail, `${Acc}-${Lowercase<Head>}`>
   : Acc;
 
-interface ErrorSpecBase<Input, Data extends WireValue> {
+export interface ErrorSpecBase<Input, Data extends WireValue> {
   /** Defaults to an empty object codec. */
   readonly data?: WireCodec<Input, Data>;
   /** Defaults to `"never"`. */
@@ -484,24 +553,26 @@ export type ErrorSpec<
         readonly httpStatus?: number | HttpStatusName;
       });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyErrorSpec = ErrorSpecBase<any, any> & {
+export type AnyErrorSpec = {
+  readonly data?: AnyWireCodec;
+  readonly retry?: RetryPolicy;
+  readonly severity?: ErrorSeverity;
   readonly visibility?: ErrorVisibility;
   readonly httpStatus?: number | HttpStatusName;
 };
 
-type SpecInput<TSpec> = TSpec extends { readonly data: WireCodec<infer Input, WireValue> }
-  ? Input
+export type SpecInput<TSpec> = TSpec extends { readonly data: infer TCodec extends AnyWireCodec }
+  ? InputOf<TCodec>
   : EmptyObject;
-type SpecData<TSpec> = TSpec extends { readonly data: WireCodec<any, infer Data> }
-  ? Data
+export type SpecData<TSpec> = TSpec extends { readonly data: infer TCodec extends AnyWireCodec }
+  ? EncodedOf<TCodec>
   : EmptyObject;
-type SpecVisibility<TSpec> = TSpec extends {
+export type SpecVisibility<TSpec> = TSpec extends {
   readonly visibility: infer Visibility extends ErrorVisibility;
 }
   ? Visibility
   : "public";
-type CheckedErrorSpecs<TSpecs extends Readonly<Record<string, AnyErrorSpec>>> = {
+export type CheckedErrorSpecs<TSpecs extends Readonly<Record<string, AnyErrorSpec>>> = {
   readonly [TKey in keyof TSpecs]: TSpecs[TKey] &
     ErrorSpec<
       SpecInput<TSpecs[TKey]>,
@@ -551,15 +622,18 @@ export const defineErrors = <
   }
   const definitions: Record<string, AnyErrorDefinition> = {};
   for (const [key, spec] of Object.entries(specs)) {
-    definitions[key] = createErrorDefinition(
-      {
-        ...spec,
-        tag: `${namespace}/${kebabCase(key)}`,
-        visibility: spec.visibility ?? "public",
-      },
-      false,
-    ) as AnyErrorDefinition;
+    const options = {
+      ...spec,
+      tag: `${namespace}/${kebabCase(key)}`,
+      visibility: spec.visibility ?? "public",
+    };
+    definitions[key] =
+      spec.data === undefined
+        ? createErrorDefinition({ ...options, data: emptyDataCodec }, false)
+        : createErrorDefinition({ ...options, data: spec.data }, false);
   }
+  // Dynamic construction preserves the input spec's keys one-for-one; each
+  // value was created from that key's exact spec above.
   return Object.freeze(definitions) as NamespacedErrors<TNamespace, TSpecs>;
 };
 
@@ -582,5 +656,7 @@ export const pickErrors = <
     if (!definition) throw new TypeError(`Unknown error key ${key}`);
     picked[key] = definition;
   }
+  // Every runtime key came from TKeys and every value from the corresponding
+  // property in TDefinitions.
   return Object.freeze(picked) as Pick<TDefinitions, TKeys[number]>;
 };

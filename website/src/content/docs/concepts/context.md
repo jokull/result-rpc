@@ -62,15 +62,17 @@ runs after; the dependency's output becomes its input, the dependency's errors
 join the union, and any `.use()` site pulls the whole chain in dependency
 order:
 
+`next` takes only this middleware's declared contribution. result-rpc merges
+it into the established context, so a middleware cannot accidentally discard
+upstream fields and refinements need no whole-context spread.
+
 ```ts
 import { serverRpc } from "result-rpc/server";
 
 const server = serverRpc.context<AppContext>();
 const session = server
   .middleware<{ viewer: User | null }>()
-  .use(async ({ context, next }) =>
-    next({ context: { ...context, viewer: await userFromCookie(context) } }),
-  );
+  .use(async ({ context, next }) => next({ context: { viewer: await userFromCookie(context) } }));
 
 const requireViewer = server
   .middleware<{ viewer: User }>()
@@ -79,7 +81,7 @@ const requireViewer = server
   .use(({ context, errors, next }) =>
     context.viewer === null
       ? err(errors.Unauthorized())
-      : next({ context: { ...context, viewer: context.viewer } }),
+      : next({ context: { viewer: context.viewer } }),
   );
 ```
 
@@ -151,7 +153,7 @@ const rotateSession = server
   .headers()
   .use(({ context, next }) => {
     context.headers.append("set-cookie", `session=${refresh(context)}; HttpOnly; Path=/`);
-    return next({ context });
+    return next({ context: {} });
   });
 ```
 

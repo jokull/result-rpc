@@ -45,8 +45,13 @@ For a recursive or otherwise richer application type, supply an actual type
 guard. Serializer support alone cannot prove an application shape:
 
 ```ts
-const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value));
+const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value), {
+  id: "doc-graph/v1",
+});
 ```
+
+The stable `id` is the structural contract identity for a guard the library
+cannot introspect. Change it whenever the accepted wire shape changes.
 
 Functions, symbols, unsupported application class instances, and arbitrary
 `Error` causes are rejected. `TaggedError` is the deliberate exception because

@@ -14,6 +14,7 @@ import {
 } from "react";
 import type { AnyTaggedError } from "../error.js";
 import type { EmptyObject } from "../wire.js";
+import { normalizeClientCallInput } from "../client/base-client.js";
 import { claimed } from "../client/transport.js";
 import {
   getClientEventListener,
@@ -24,11 +25,12 @@ import {
   claimOwner,
   pauseQueryProjection,
   useAmbientClaim,
+  useClaimObserver,
   useClaimScope,
   type AmbientClaim,
 } from "./claims.js";
 import { serialize } from "../serializer.js";
-import { bindLayerShell } from "./shell.js";
+import { bindLayerShell, type LayerShellFactory } from "./shell.js";
 import type {
   PaginatedClientItem,
   PaginatedClientListInput,
@@ -40,6 +42,7 @@ import type {
   MutationOptions,
   MutationProcedureClientLike,
   MutationState,
+  NarrowProcedureClient,
   QueryOptions,
   QueryProcedureClientLike,
   QueryRuntime,
@@ -54,8 +57,23 @@ import type {
 } from "../query/runtime.js";
 
 import { createQueryRuntime } from "../query/runtime.js";
-export { toResult } from "../query/runtime.js";
+export { SERIALIZER_VERSION, toResult } from "../query/runtime.js";
 export type {
+  AnyModel,
+  AnyProcedure,
+  AnyProcedureContract,
+  AnySubscriptionProcedure,
+  AnyUnaryProcedure,
+  AnyProcedureClientTypes,
+  ClientPaginationTypes,
+  ClientProcedure,
+  ClientProcedureCapability,
+  ClientProcedureError,
+  ClientProcedureInput,
+  ClientProcedureOutput,
+  ProcedureClientTypeCarrier,
+  ClientProcedureTypes,
+  ClientUnaryTypes,
   CreateQueryRuntimeOptions,
   DehydratedQueryRuntime,
   FetchState,
@@ -63,57 +81,161 @@ export type {
   MutationProcedureClientLike,
   MutationState,
   MutationStateOf,
+  NarrowProcedureClient,
+  IsUnion,
+  ModelKeyInput,
+  ModelDefinition,
+  ModelIdentityField,
+  ModelKeyRecord,
+  ModelProjection,
+  ModelValue,
+  KeyField,
+  ModelSourceMismatch,
+  ModelTypeEqual,
+  MismatchedSourceFields,
+  SelectedOwnFields,
+  SelectionInput,
+  SelectionValue,
+  ShapeKeySpec,
+  SpecificModelKeyInput,
+  MutationControls,
+  MaybePromise,
   PaginatedClientCursor,
   PaginatedClientItem,
   PaginatedClientListInput,
   PaginatedProcedureClientLike,
   PaginatedState,
   PaginatedStateOf,
+  PaginatedControls,
+  Page,
+  PageRequest,
+  ProcedureClientConstraint,
+  ProcedureClientError,
+  ProcedureClientInput,
   ProcedureClientLike,
+  ProcedureClientOutput,
+  ProcedureClientResult,
+  QueryControls,
   QueryProcedureClientLike,
   QueryCache,
   QueryOptions,
   QueryRuntime,
   QueryState,
   QueryStateOf,
+  Result,
+  ResultMutationObserver,
+  ResultPaginatedObserver,
+  ResultQueryKey,
+  ResultQueryObserver,
+  ResultSubscriptionObserver,
+  RpcConstraintError,
+  RuntimeCallOptions,
+  RuntimeMiddleware,
   SubscriptionConnection,
   SubscriptionOptions,
   SubscriptionProcedureClientLike,
+  SubscriptionClientError,
+  SubscriptionClientInput,
+  SubscriptionClientOutput,
   SubscriptionState,
   SubscriptionStateOf,
+  EffectiveContractVersion,
+  ErasedMiddlewareHandler,
 } from "../query/runtime.js";
-export { defineShell, getLayerProcedureResolver, layerShell, prefetchLayer } from "./shell.js";
+export { defineShell, layerShell, prefetchLayer } from "./shell.js";
+export type * from "./shell.js";
 export { boundaryShells } from "./boundary.js";
+export type * from "./boundary.js";
 export type {
   BoundaryShells,
   BoundaryShellsOptions,
   Connectivity,
   ConnectivityStatus,
 } from "./boundary.js";
+export type { AnyLayer, LayerShape } from "../layer.js";
+export type { ErrorDefinitionMap, ErrorUnion } from "../error-map.js";
+export type {
+  AnyPublicErrorDefinition,
+  AnyErrorDefinition,
+  AnyPublicTaggedError,
+  AnyTaggedError,
+  EncodedTaggedError,
+  ErrorDefinition,
+  ErrorOf,
+  ErrorPolicy,
+  ErrorPolicyBase,
+  ErrorSeverity,
+  ErrorVisibility,
+  RetryPolicy,
+  TaggedError,
+} from "../error.js";
+export type {
+  AffectsEntry,
+  AnyProcedureTypes,
+  PaginationManifest,
+  ProcedureKind,
+  ProcedureTypeCarrier,
+  QueryAffectsTarget,
+  WritesEntry,
+} from "../procedure-types.js";
+export type {
+  PaginatedProcedureCapability,
+  ProcedureCapability,
+  UnaryProcedureCapability,
+} from "../procedure-capability.js";
+export type { ClaimRegistry } from "./claims.js";
+export type { Err, Ok } from "../result.js";
+export type {
+  AnyWireCodec,
+  CodecIssue,
+  CodecShape,
+  DecodeResult,
+  EmptyObject,
+  InputOf,
+  OptionalShapeKeys,
+  RequiredShapeKeys,
+  ShapeInput,
+  WireCodec,
+  WireScalar,
+  WireTypedArray,
+  WireValue,
+} from "../wire.js";
+export { ClientStale, defectErrors, staleErrors, transportErrors } from "../framework-errors.js";
 
 /** Zero-input procedures may omit the input argument entirely. */
 export type QueryHookArgs<TProcedureClient extends QueryProcedureClientLike> =
-  EmptyObject extends ProcedureClientInput<TProcedureClient>
+  EmptyObject extends ProcedureClientInput<NoInfer<TProcedureClient>>
     ? [
-        input?: ProcedureClientInput<TProcedureClient>,
-        options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+        input?: ProcedureClientInput<NoInfer<TProcedureClient>>,
+        options?: QueryOptions<ProcedureClientError<NoInfer<TProcedureClient>>>,
       ]
     : [
-        input: ProcedureClientInput<TProcedureClient>,
-        options?: QueryOptions<ProcedureClientError<TProcedureClient>>,
+        input: ProcedureClientInput<NoInfer<TProcedureClient>>,
+        options?: QueryOptions<ProcedureClientError<NoInfer<TProcedureClient>>>,
       ];
 
 /** Zero-input subscriptions may omit the input argument entirely. */
 export type SubscriptionHookArgs<TProcedureClient extends SubscriptionProcedureClientLike> =
-  EmptyObject extends SubscriptionClientInput<TProcedureClient>
+  EmptyObject extends SubscriptionClientInput<NoInfer<TProcedureClient>>
     ? [
-        input?: SubscriptionClientInput<TProcedureClient>,
-        options?: SubscriptionOptions<SubscriptionClientError<TProcedureClient>>,
+        input?: SubscriptionClientInput<NoInfer<TProcedureClient>>,
+        options?: SubscriptionOptions<SubscriptionClientError<NoInfer<TProcedureClient>>>,
       ]
     : [
-        input: SubscriptionClientInput<TProcedureClient>,
-        options?: SubscriptionOptions<SubscriptionClientError<TProcedureClient>>,
+        input: SubscriptionClientInput<NoInfer<TProcedureClient>>,
+        options?: SubscriptionOptions<SubscriptionClientError<NoInfer<TProcedureClient>>>,
       ];
+
+function normalizeHookArgs<TInput, TOptions>(
+  rest: readonly [input?: TInput, options?: TOptions],
+  defaultOptions: TOptions,
+): readonly [input: TInput, options: TOptions];
+function normalizeHookArgs(
+  rest: readonly [input?: unknown, options?: unknown],
+  defaultOptions: unknown,
+): readonly [input: unknown, options: unknown] {
+  return [normalizeClientCallInput(rest), rest[1] ?? defaultOptions];
+}
 export type {
   AnyShell,
   AnyLayerShell,
@@ -125,6 +247,7 @@ export type {
   ShellHoldings,
   ShellEffect,
   LayerShellOptions,
+  LayerShellFactory,
   LayerShellClient,
   LayerShellMetadata,
   LayerShellProcedure,
@@ -144,9 +267,45 @@ export type RegisteredClient = Register extends { readonly client: infer TClient
   ? TClient
   : unknown;
 
-type RegisteredProviderClient = RegisteredClient extends object ? RegisteredClient : object;
+export type RegisteredProviderClient = RegisteredClient extends object ? RegisteredClient : object;
 
 const RuntimeContext = createContext<QueryRuntime<unknown> | undefined>(undefined);
+
+const claimRuntimeIds = new WeakMap<object, number>();
+let nextClaimRuntimeId = 1;
+const claimRuntimeId = (runtime: object): number => {
+  const existing = claimRuntimeIds.get(runtime);
+  if (existing !== undefined) return existing;
+  const created = nextClaimRuntimeId++;
+  claimRuntimeIds.set(runtime, created);
+  return created;
+};
+
+const queryClaimId = (
+  runtime: object,
+  key: readonly [path: string, encodedInput: string],
+): string => `query:${claimRuntimeId(runtime)}:${key[0].length}:${key[0]}:${key[1]}`;
+
+const pendingOwnedRuntimeCleanup = new WeakMap<object, object>();
+
+const useOwnedRuntimeCleanup = (runtime: QueryRuntime<object> | undefined): void => {
+  useEffect(() => {
+    if (runtime === undefined) return;
+    // React Strict Mode immediately replays an effect's setup/cleanup pair.
+    // Defer disposal one microtask so the replayed setup can cancel it, while
+    // a real unmount or client replacement still clears exactly once.
+    pendingOwnedRuntimeCleanup.delete(runtime);
+    return () => {
+      const token = {};
+      pendingOwnedRuntimeCleanup.set(runtime, token);
+      queueMicrotask(() => {
+        if (pendingOwnedRuntimeCleanup.get(runtime) !== token) return;
+        pendingOwnedRuntimeCleanup.delete(runtime);
+        runtime.clear();
+      });
+    };
+  }, [runtime]);
+};
 
 export type ResultRpcProviderProps<TClient extends object = object> = (
   | { readonly runtime: QueryRuntime<TClient>; readonly client?: undefined }
@@ -165,11 +324,21 @@ export type ResultRpcProviderProps<TClient extends object = object> = (
 const useProvidedRuntime = <TClient extends object>(
   props: ResultRpcProviderProps<TClient>,
 ): QueryRuntime<TClient> => {
-  const [owned] = useState(() => props.runtime ?? createQueryRuntime({ client: props.client }));
+  const owned = useMemo(
+    () => (props.runtime === undefined ? createQueryRuntime({ client: props.client }) : undefined),
+    [props.client, props.runtime],
+  );
+  useOwnedRuntimeCleanup(owned);
   const runtime = props.runtime ?? owned;
-  const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
-  if (props.hydrate !== undefined && hydrated.current !== props.hydrate) {
-    hydrated.current = props.hydrate;
+  if (runtime === undefined) throw new TypeError("ResultRpcProvider requires client or runtime");
+  const hydrated = useRef<
+    { readonly runtime: QueryRuntime<TClient>; readonly state: DehydratedQueryRuntime } | undefined
+  >(undefined);
+  if (
+    props.hydrate !== undefined &&
+    (hydrated.current?.runtime !== runtime || hydrated.current.state !== props.hydrate)
+  ) {
+    hydrated.current = { runtime, state: props.hydrate };
     try {
       runtime.hydrate(props.hydrate);
     } catch (cause) {
@@ -195,12 +364,19 @@ const useRuntime = (): QueryRuntime<unknown> => {
   return runtime;
 };
 
+/** The enclosing provider's runtime, for imperative cache operations. */
+export const useResultRuntime = (): QueryRuntime<RegisteredClient> =>
+  useRuntime() as QueryRuntime<RegisteredClient>;
+
 let hydrationSkewWarned = false;
 const warnHydrationSkew = (cause: unknown) => {
+  const processValue = Reflect.get(globalThis, "process");
+  const env =
+    processValue !== null && typeof processValue === "object"
+      ? Reflect.get(processValue, "env")
+      : undefined;
   const isProduction =
-    (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[
-      "NODE_ENV"
-    ] === "production";
+    env !== null && typeof env === "object" && Reflect.get(env, "NODE_ENV") === "production";
   if (isProduction || hydrationSkewWarned) return;
   hydrationSkewWarned = true;
   // eslint-disable-next-line no-console
@@ -262,12 +438,22 @@ export const ResultRpcHydrationBoundary = (props: ResultRpcHydrationBoundaryProp
  */
 export const useResultClient = (): RegisteredClient => useRuntime().client as RegisteredClient;
 
+/** React bindings scoped to one generated client type. */
+export interface ResultRpcReact<TClient extends object> {
+  readonly ResultRpcProvider: (props: ResultRpcProviderProps<TClient>) => ReactNode;
+  readonly useResultClient: () => TClient;
+  readonly useResultRuntime: () => QueryRuntime<TClient>;
+  readonly layerShell: LayerShellFactory<TClient>;
+}
+
 /**
  * A scoped binding for repositories that compile several independent apps in
  * one TypeScript program. Normal applications can use `Register`; this binds
  * the same guarantees without global declaration merging.
  */
-export const createResultRpcReact = <TClient extends object>() => {
+export const createResultRpcReact = <TClient extends object>(): Readonly<
+  ResultRpcReact<TClient>
+> => {
   const ScopedRuntimeContext = createContext<QueryRuntime<TClient> | undefined>(undefined);
   const useScopedRuntime = (): QueryRuntime<TClient> => {
     const runtime = useContext(ScopedRuntimeContext);
@@ -286,6 +472,7 @@ export const createResultRpcReact = <TClient extends object>() => {
   return Object.freeze({
     ResultRpcProvider: Provider,
     useResultClient: useClient,
+    useResultRuntime: useScopedRuntime,
     layerShell: bindLayerShell(useClient),
   });
 };
@@ -312,17 +499,15 @@ const useClaimNotifier = (procedure: Function) => {
   }, [listener, path]);
 };
 
-const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLike>(
-  procedure: TProcedureClient,
-  ...rest: QueryHookArgs<TProcedureClient>
+const useResultQueryResolvedWithClaim = <TProcedureClient extends QueryProcedureClientLike>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
+  input: ProcedureClientInput<TProcedureClient>,
+  options: QueryOptions<ProcedureClientError<TProcedureClient>>,
 ): [
   QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>,
   AmbientClaim | undefined,
+  () => Promise<void>,
 ] => {
-  const [input = {} as ProcedureClientInput<TProcedureClient>, options = {}] = rest as [
-    ProcedureClientInput<TProcedureClient>?,
-    QueryOptions<ProcedureClientError<TProcedureClient>>?,
-  ];
   const runtime = useRuntime();
   const inputKey = runtime.cache.key(procedure, input)[1];
   // Options are read through a ref so inline objects (and inline retry
@@ -344,28 +529,74 @@ const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLi
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
     [runtime, procedure, inputKey, options.enabled, options.staleTime, options.gcTime],
   );
-  useEffect(() => () => observer.destroy(), [observer]);
-  const state = useSyncExternalStore(
-    observer.subscribe,
-    observer.getCurrentState,
-    observer.getCurrentState,
-  );
-  // Ambient monitor: a failure claimed by any mounted shell never surfaces as
-  // a terminal state, no matter which hook observed it.
+  const observerRef = useRef(observer);
+  observerRef.current = observer;
+  const committedObserverRef = useRef(false);
   const notifyClaim = useClaimNotifier(procedure);
-  const refetchRef = useRef(state.refetch);
-  refetchRef.current = state.refetch;
-  const [retryHeld] = useState(() => () => void refetchRef.current());
-  const claim = useAmbientClaim(
-    state.state === "failure" ? state.error : undefined,
+  const [retryHeld] = useState(() => async () => {
+    await observerRef.current.refetch();
+  });
+  const claimObserver = useClaimObserver(
     notifyClaim,
     retryHeld,
+    queryClaimId(runtime, observer.key),
   );
-  return [claim ? pauseQueryProjection(state) : state, claim];
+  const subscribe = useMemo(
+    () => (listener: () => void) =>
+      observer.subscribe(() => {
+        const next = observer.getCurrentState();
+        try {
+          claimObserver.notify(next.state === "failure" ? next.error : undefined);
+        } finally {
+          listener();
+        }
+      }),
+    [observer, claimObserver],
+  );
+  useEffect(() => {
+    committedObserverRef.current = true;
+    return () => {
+      committedObserverRef.current = false;
+      observer.destroy();
+    };
+  }, [observer]);
+  const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
+  // Ambient monitor: a failure claimed by any mounted shell never surfaces as
+  // a terminal state, no matter which hook observed it.
+  const claim = useAmbientClaim(claimObserver, state.state === "failure" ? state.error : undefined);
+  const [settleForSuspense] = useState(() => async () => {
+    const suspenseObserver = observerRef.current;
+    try {
+      const next = await suspenseObserver.refetch();
+      await claimObserver.settle(next.state === "failure" ? next.error : undefined);
+    } finally {
+      // React discards hook memoization when an initial mount suspends. Such
+      // an observer can never receive an effect cleanup; retire it once its
+      // request/claim lifecycle has finished. A committed observer is retained
+      // across update suspensions and stays live.
+      if (!committedObserverRef.current) suspenseObserver.destroy();
+    }
+  });
+  return [claim ? pauseQueryProjection(state) : state, claim, settleForSuspense];
 };
 
-export const useResultQuery = <TProcedureClient extends QueryProcedureClientLike>(
-  procedure: TProcedureClient,
+const useResultQueryWithClaim = <TProcedureClient extends QueryProcedureClientLike>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
+  ...rest: QueryHookArgs<TProcedureClient>
+): [
+  QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>>,
+  AmbientClaim | undefined,
+] => {
+  const [input, options] = normalizeHookArgs<
+    ProcedureClientInput<TProcedureClient>,
+    QueryOptions<ProcedureClientError<TProcedureClient>>
+  >(rest, {});
+  const [state, claim] = useResultQueryResolvedWithClaim(procedure, input, options);
+  return [state, claim];
+};
+
+export const useResultQuery = <const TProcedureClient extends QueryProcedureClientLike>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
   ...rest: QueryHookArgs<TProcedureClient>
 ): QueryState<ProcedureClientOutput<TProcedureClient>, ProcedureClientError<TProcedureClient>> =>
   useResultQueryWithClaim(procedure, ...rest)[0];
@@ -402,10 +633,12 @@ const pausePaginatedProjection = <TItem, E extends AnyTaggedError>(
  * loaded window. Ambient shells claim failures exactly like `useResultQuery`;
  * use `Shell.usePaginatedQuery` when the return type should subtract them too.
  */
-export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProcedureClientLike>(
-  procedure: TProcedureClient,
-  input: PaginatedClientListInput<TProcedureClient>,
-  options: QueryOptions<ProcedureClientError<TProcedureClient>> = {},
+export const useResultPaginatedQuery = <
+  const TProcedureClient extends PaginatedProcedureClientLike,
+>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
+  input: PaginatedClientListInput<NoInfer<TProcedureClient>>,
+  options: QueryOptions<ProcedureClientError<NoInfer<TProcedureClient>>> = {},
 ): PaginatedState<
   PaginatedClientItem<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
@@ -430,21 +663,32 @@ export const useResultPaginatedQuery = <TProcedureClient extends PaginatedProced
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- input identity is represented by inputKey
     [runtime, procedure, inputKey.value, options.enabled, options.staleTime, options.gcTime],
   );
-  useEffect(() => () => observer.destroy(), [observer]);
-  const state = useSyncExternalStore(
-    observer.subscribe,
-    observer.getCurrentState,
-    observer.getCurrentState,
-  );
+  const observerRef = useRef(observer);
+  observerRef.current = observer;
   const notifyClaim = useClaimNotifier(procedure);
-  const refetchRef = useRef(state.refetch);
-  refetchRef.current = state.refetch;
-  const [retryHeld] = useState(() => () => void refetchRef.current());
-  const claim = useAmbientClaim(
-    state.state === "failure" ? state.error : undefined,
+  const [retryHeld] = useState(() => async () => {
+    await observerRef.current.refetch();
+  });
+  const claimObserver = useClaimObserver(
     notifyClaim,
     retryHeld,
+    queryClaimId(runtime, observer.key),
   );
+  const subscribe = useMemo(
+    () => (listener: () => void) =>
+      observer.subscribe(() => {
+        const next = observer.getCurrentState();
+        try {
+          claimObserver.notify(next.state === "failure" ? next.error : undefined);
+        } finally {
+          listener();
+        }
+      }),
+    [observer, claimObserver],
+  );
+  useEffect(() => () => observer.destroy(), [observer]);
+  const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
+  const claim = useAmbientClaim(claimObserver, state.state === "failure" ? state.error : undefined);
   return claim ? pausePaginatedProjection(state) : state;
 };
 
@@ -453,34 +697,35 @@ export type SuspenseQueryState<T, E extends AnyTaggedError> = Exclude<
   { readonly state: "pending" }
 >;
 
-export const useResultSuspenseQuery = <TProcedureClient extends QueryProcedureClientLike>(
-  procedure: TProcedureClient,
+export const useResultSuspenseQuery = <const TProcedureClient extends QueryProcedureClientLike>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
   ...rest: QueryHookArgs<TProcedureClient>
 ): SuspenseQueryState<
   ProcedureClientOutput<TProcedureClient>,
   ProcedureClientError<TProcedureClient>
 > => {
-  const [input = {} as ProcedureClientInput<TProcedureClient>, options = {}] = rest as [
-    ProcedureClientInput<TProcedureClient>?,
-    QueryOptions<ProcedureClientError<TProcedureClient>>?,
-  ];
-  const [state, claim] = useResultQueryWithClaim(
-    procedure,
-    ...([input, { ...options, enabled: true }] as QueryHookArgs<TProcedureClient>),
-  );
+  const [input, options] = normalizeHookArgs<
+    ProcedureClientInput<TProcedureClient>,
+    QueryOptions<ProcedureClientError<TProcedureClient>>
+  >(rest, {});
+  const [state, claim, settle] = useResultQueryResolvedWithClaim(procedure, input, {
+    ...options,
+    enabled: true,
+  });
   if (state.state === "pending") {
-    // A claim-paused operation resumes when its owner's holdings change, not
-    // by refetching in a loop.
-    throw claim ? claim.entry.whenChanged() : state.refetch().then(() => undefined);
+    // A claim-paused operation waits on its exact acquisition. An initial
+    // request settles through the same observer-to-shell bridge before this
+    // promise wakes React, so the shell can render its recovery affordance.
+    throw claim ? claim.wait() : settle();
   }
   return state;
 };
 
 export const useResultMutation = <
-  TProcedureClient extends MutationProcedureClientLike,
+  const TProcedureClient extends MutationProcedureClientLike,
   TContext = undefined,
 >(
-  procedure: TProcedureClient,
+  procedure: NarrowProcedureClient<TProcedureClient>,
   options: MutationOptions<
     ProcedureClientInput<TProcedureClient>,
     ProcedureClientOutput<TProcedureClient>,
@@ -518,12 +763,25 @@ export const useResultMutation = <
     };
     return runtime.mutation(procedure, dynamicOptions);
   }, [runtime, procedure]);
-  useEffect(() => () => observer.destroy(), [observer]);
-  const state = useSyncExternalStore(
-    observer.subscribe,
-    observer.getCurrentState,
-    observer.getCurrentState,
+  const observerRef = useRef(observer);
+  observerRef.current = observer;
+  const notifyClaim = useClaimNotifier(procedure);
+  const [resetHeld] = useState(() => () => observerRef.current.reset());
+  const claimObserver = useClaimObserver(notifyClaim, resetHeld);
+  const subscribe = useMemo(
+    () => (listener: () => void) =>
+      observer.subscribe(() => {
+        const next = observer.getCurrentState();
+        try {
+          claimObserver.notify(next.state === "failure" ? next.error : undefined);
+        } finally {
+          listener();
+        }
+      }),
+    [observer, claimObserver],
   );
+  useEffect(() => () => observer.destroy(), [observer]);
+  const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
   const scope = useClaimScope();
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
@@ -541,17 +799,11 @@ export const useResultMutation = <
     }
     return result;
   });
-  const notifyClaim = useClaimNotifier(procedure);
   // On shell resume a held mutation RESETS instead of replaying: the failure
   // was already delivered to the caller as the claimed rejection, and firing
   // a side effect again is never the shell's call. Resetting ends the pause
   // arc so holdings (and the connection banner) drain on reconnect.
-  const [resetHeld] = useState(() => () => stateRef.current.reset());
-  const claim = useAmbientClaim(
-    state.state === "failure" ? state.error : undefined,
-    notifyClaim,
-    resetHeld,
-  );
+  const claim = useAmbientClaim(claimObserver, state.state === "failure" ? state.error : undefined);
   if (!claim) return { ...state, mutate };
   return {
     ...(state.variables === undefined ? {} : { variables: state.variables }),
@@ -562,17 +814,19 @@ export const useResultMutation = <
   };
 };
 
-export const useResultSubscription = <TProcedureClient extends SubscriptionProcedureClientLike>(
-  procedure: TProcedureClient,
+export const useResultSubscription = <
+  const TProcedureClient extends SubscriptionProcedureClientLike,
+>(
+  procedure: NarrowProcedureClient<TProcedureClient>,
   ...rest: SubscriptionHookArgs<TProcedureClient>
 ): SubscriptionState<
   SubscriptionClientOutput<TProcedureClient>,
   SubscriptionClientError<TProcedureClient>
 > => {
-  const [input = {} as SubscriptionClientInput<TProcedureClient>, options = {}] = rest as [
-    SubscriptionClientInput<TProcedureClient>?,
-    SubscriptionOptions<SubscriptionClientError<TProcedureClient>>?,
-  ];
+  const [input, options] = normalizeHookArgs<
+    SubscriptionClientInput<TProcedureClient>,
+    SubscriptionOptions<SubscriptionClientError<TProcedureClient>>
+  >(rest, {});
   const runtime = useRuntime();
   const encodedInput = serialize(input);
   if (!encodedInput.ok) throw new TypeError("Subscription input is not wire-serializable");
@@ -581,17 +835,28 @@ export const useResultSubscription = <TProcedureClient extends SubscriptionProce
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- encoded input and selected option values define observer identity
     [runtime, procedure, encodedInput.value, options.retry, options.retryDelayMs],
   );
-  const state = useSyncExternalStore(
-    observer.subscribe,
-    observer.getCurrentState,
-    observer.getCurrentState,
-  );
-  const failure = state.result && !state.result.ok ? state.result.error : undefined;
+  const observerRef = useRef(observer);
+  observerRef.current = observer;
   const notifyClaim = useClaimNotifier(procedure);
-  const reconnectRef = useRef(state.reconnect);
-  reconnectRef.current = state.reconnect;
-  const [retryHeld] = useState(() => () => reconnectRef.current());
-  const claim = useAmbientClaim(failure, notifyClaim, retryHeld);
+  const [retryHeld] = useState(() => () => observerRef.current.reconnect());
+  const claimObserver = useClaimObserver(notifyClaim, retryHeld);
+  const subscribe = useMemo(
+    () => (listener: () => void) =>
+      observer.subscribe(() => {
+        const next = observer.getCurrentState();
+        const nextFailure = next.result && !next.result.ok ? next.result.error : undefined;
+        try {
+          claimObserver.notify(nextFailure);
+        } finally {
+          listener();
+        }
+      }),
+    [observer, claimObserver],
+  );
+  useEffect(() => () => observer.close(), [observer]);
+  const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
+  const failure = state.result && !state.result.ok ? state.result.error : undefined;
+  const claim = useAmbientClaim(claimObserver, failure);
   if (!claim) return state;
   return { ...state, connection: "paused" as const, result: undefined };
 };

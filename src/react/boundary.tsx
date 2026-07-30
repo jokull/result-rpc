@@ -66,14 +66,19 @@ export interface Connectivity {
   readonly resume: () => void;
 }
 
-type TransportBoundaryShell = Shell<typeof transportErrors, undefined, Record<never, never>, void>;
-type DefectBoundaryShell = Shell<
+export type TransportBoundaryShell = Shell<
+  typeof transportErrors,
+  undefined,
+  Record<never, never>,
+  void
+>;
+export type DefectBoundaryShell = Shell<
   typeof defectErrors,
   TransportBoundaryShell,
   Record<never, never>,
   void
 >;
-type StaleBoundaryShell = Shell<
+export type StaleBoundaryShell = Shell<
   typeof staleErrors,
   DefectBoundaryShell,
   Record<never, never>,
@@ -183,5 +188,5 @@ export const boundaryShells = (options: BoundaryShellsOptions = {}): BoundaryShe
     StaleShell,
     BoundaryProvider,
     useConnectivity,
-  } as BoundaryShells;
+  } satisfies BoundaryShells;
 };

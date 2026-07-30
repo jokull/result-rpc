@@ -90,6 +90,21 @@ No upward dependency is allowed. In particular:
 - the client knows nothing about React;
 - React bindings contain no protocol logic.
 
+Procedure construction has one lower-level declaration algebra shared by the
+root contract builder and the executable server builder. It owns input/output
+codecs, error maps, header capability, pagination, and cache declarations;
+server execution adds only middleware and handlers. `affects`/`writes` mappers
+remain functions of the exact decoded input until the terminal manifest compile
+step. Once a mapper binds an input, replacing that input codec is an illegal
+builder state rather than a stale callback waiting to fail at runtime.
+
+Factories, procedures, clients, and routers each retain one hidden associated
+type record. Consumers project facts from those records instead of re-matching
+positional generics or `_def` structure. The factory record is invariant so the
+first factory argument remains the source of request-context inference; later
+middleware and contract arguments validate it with `NoInfer` rather than
+widening it and trying to infer the context again.
+
 ## Public package surface
 
 Suggested exports:
@@ -396,6 +411,18 @@ A middleware can:
 
 Middleware errors union with procedure errors. Collision rules are identical to
 router composition. Middleware cannot silently replace a procedure's definition.
+Each handler receives only its own error constructors, while its dependencies'
+errors still accumulate into the procedure union. `next` likewise accepts only
+the middleware's declared context contribution; the executor performs the
+monotonic merge.
+
+The type graph mirrors that runtime split. Error definitions accumulate as a
+union of source maps, which naturally deduplicates shared diamond ancestry;
+the keyed catalog is materialized only where a consumer asks for it. Immediate
+dependency records omit their own ancestry because the runtime graph already
+owns it. The committed type profile measures chains and context/error diamonds
+through depth 15, including terminal-slope acceleration, so a superficially
+better average cannot hide an explosive tail.
 
 ```ts
 const authenticated = serverRpc
@@ -404,7 +431,7 @@ const authenticated = serverRpc
   .use(async ({ context, next, errors }) => {
     const user = await authenticate(context.request);
     if (!user) return err(errors.Unauthorized({}));
-    return next({ context: { ...context, user } });
+    return next({ context: { user } });
   });
 ```
 
@@ -944,9 +971,12 @@ a write could land, so offering one would be a lie.
 ### Contract skew
 
 Every response carries the server's contract digest (`x-result-rpc-contract`),
-computed from procedure paths, kinds, and error tags with policies — identical
-for a router and the contract it implements, overridable with a
-`contractVersion` build stamp on both sides. The client compares per response:
+computed from procedure paths, capabilities, complete structural codec schemas,
+and error schemas with policies — identical for a router and the contract it
+implements, replaceable with a `contractVersion` build stamp on both sides.
+External Standard Schema/guard codecs supply an application-owned stable schema
+id because their internals cannot be fingerprinted portably. The client compares
+per response:
 the first mismatch emits a `skew` ClientEvent, and a contract-shaped failure
 (`server/bad-request`, `client/decode-failure`, `client/protocol-violation`,
 `client/http-failure`) under mismatch is reclassified to `client/stale`
@@ -1044,7 +1074,7 @@ and for router loader contexts.
 Deliberately none in the package. Shells are providers and hooks, so any
 router composes; the route-fragment pattern (shell Provider as route
 component, layer prefetch as route loader) lives as app-owned glue in
-`examples/05-router-glue/router-glue.tsx`. `getLayerProcedureResolver` is the
+`examples/05-router-glue/router-glue.tsx`. A layer shell's `resolveProcedure` property is the
 one advanced export that makes such glue possible: it returns a layer shell's
 context-procedure resolver so integrations can derive loaders.
 

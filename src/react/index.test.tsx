@@ -5,7 +5,12 @@ import { err, error, ok, wire, type Result } from "../index.js";
 import { createFixtureClient } from "../testing/index.js";
 import { fetchTransport, isCancelled, isClaimed } from "../client/transport.js";
 import { defineShell } from "./shell.js";
-import { type MutationState, type QueryState, type SubscriptionState } from "../query/runtime.js";
+import {
+  type MutationState,
+  type QueryRuntime,
+  type QueryState,
+  type SubscriptionState,
+} from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import type { ClientBoundaryError, ServerBadRequest, ServerInternal } from "../framework-errors.js";
@@ -13,6 +18,7 @@ import {
   ResultRpcProvider,
   useResultMutation,
   useResultQuery,
+  useResultRuntime,
   useResultSubscription,
   useResultSuspenseQuery,
 } from "./index.js";
@@ -57,6 +63,88 @@ type RenameFailure = FrameworkFailure | ReturnType<typeof SessionExpired>;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 describe("React bindings", () => {
+  test("provider ownership clears only owned runtimes across Strict replay and client replacement", async () => {
+    const secondClient = createFixtureClient({
+      router,
+      transport: fetchTransport({ url: "https://example.test/rpc", fetch: localFetch }),
+    });
+    const clears = new Map<QueryRuntime<unknown>, number>();
+    const captured: QueryRuntime<unknown>[] = [];
+
+    function CaptureOwned() {
+      const runtime = useResultRuntime();
+      if (!clears.has(runtime)) {
+        clears.set(runtime, 0);
+        const clear = runtime.clear;
+        Reflect.set(runtime, "clear", () => {
+          clears.set(runtime, (clears.get(runtime) ?? 0) + 1);
+          clear();
+        });
+        captured.push(runtime);
+      }
+      return null;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <StrictMode>
+          <ResultRpcProvider client={client}>
+            <CaptureOwned />
+          </ResultRpcProvider>
+        </StrictMode>,
+      );
+      await settle();
+    });
+    expect(captured).toHaveLength(1);
+    expect(clears.get(captured[0]!)).toBe(0);
+
+    await act(async () => {
+      renderer?.update(
+        <StrictMode>
+          <ResultRpcProvider client={secondClient}>
+            <CaptureOwned />
+          </ResultRpcProvider>
+        </StrictMode>,
+      );
+      await settle();
+    });
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).not.toBe(captured[1]);
+    expect(clears.get(captured[0]!)).toBe(1);
+    expect(clears.get(captured[1]!)).toBe(0);
+
+    await act(async () => {
+      renderer?.unmount();
+      await settle();
+    });
+    expect(clears.get(captured[0]!)).toBe(1);
+    expect(clears.get(captured[1]!)).toBe(1);
+
+    const borrowed = createQueryRuntime({ client });
+    let borrowedClears = 0;
+    const clearBorrowed = borrowed.clear;
+    Reflect.set(borrowed, "clear", () => {
+      borrowedClears += 1;
+      clearBorrowed();
+    });
+    await act(async () => {
+      renderer = create(
+        <StrictMode>
+          <ResultRpcProvider runtime={borrowed}>
+            <CaptureOwned />
+          </ResultRpcProvider>
+        </StrictMode>,
+      );
+      await settle();
+      renderer.unmount();
+      await settle();
+    });
+    expect(borrowedClears).toBe(0);
+    borrowed.clear();
+    expect(borrowedClears).toBe(1);
+  });
+
   test("mounts query and mutation hooks over the Result state", async () => {
     const runtime = createQueryRuntime({ client });
     let queryState: QueryState<string, FrameworkFailure> | undefined;

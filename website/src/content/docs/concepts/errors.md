@@ -232,9 +232,16 @@ registry is inspectable at runtime:
 appRouter.errors;
 ```
 
+TypeScript catches incompatible duplicate declarations when their tag, codec,
+or visibility types differ. It cannot mint a fresh nominal type for each call,
+so two separate `error()` calls with exactly the same structural signature are
+indistinguishable statically. Router construction therefore always performs
+the final reference-identity check. Share exported definition constants; do
+not redeclare a tag and rely on structural equality.
+
 The key stays `string` on purpose. `ReadonlyMap` is invariant in its key type,
 so narrowing it to the tag union would make a concrete router stop satisfying
-`Router<any, RouterRecord>` — the bound every function here accepts. For
+`AnyRouter` — the erased runtime bound every function here accepts. For
 compile-time exhaustiveness over declared errors, reach for
 [`errorCatalog`](/concepts/client/) instead; that is
 the typed door, and this is the runtime window.

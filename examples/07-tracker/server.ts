@@ -174,7 +174,7 @@ const listProjects = server
 // -- router and handler ---------------------------------------------------------
 
 export const router = server.router({
-  session: { me: SessionLayer.procedure(server, sessionMeContract, sessionMiddleware) },
+  session: { me: SessionLayer.implement(server, sessionMeContract, sessionMiddleware) },
   issues: {
     list: listIssues,
     byId: issueById,

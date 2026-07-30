@@ -13,7 +13,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { wire } from "../../src/index.js";
-import { collectEntities, defineModel, mergeByExistingKeys, patchEntity } from "../../src/model.js";
+import {
+  collectEntities,
+  defineModel,
+  entityIdFor,
+  mergeByExistingKeys,
+  patchEntity,
+  type ModelKeyInput,
+} from "../../src/model.js";
 
 const User = defineModel("a09-user", {
   key: "id",
@@ -23,6 +30,15 @@ const Team = defineModel("a09-team", {
   key: "id",
   shape: { id: wire.string, name: wire.string },
 });
+
+const idFor = <TModel extends typeof User | typeof Team>(
+  model: TModel,
+  id: ModelKeyInput<TModel>,
+) => {
+  const resolved = entityIdFor(model, id);
+  if (resolved === undefined) throw new Error("invalid test identity");
+  return resolved;
+};
 
 const decodeUser = (id: string, name: string) => {
   const decoded = User.all("test fixture").decode({ id, name });
@@ -36,7 +52,7 @@ describe("attack-09 identity edges", () => {
     const container = new Map([[user, "score:10"]]);
     // ATTACK ASSERTION: key-position entities should be seen.
     expect(collectEntities(container).length).toBe(1);
-    const { changed } = patchEntity(container, User as never, "u1", (c) =>
+    const { changed } = patchEntity(container, User, idFor(User, "u1"), (c) =>
       mergeByExistingKeys(c, { name: "new" }),
     );
     expect(changed).toBe(true);
@@ -46,7 +62,7 @@ describe("attack-09 identity edges", () => {
     const user = decodeUser("u1", "old");
     const container = new Set([user]);
     expect(collectEntities(container).length).toBe(1);
-    const { value, changed } = patchEntity(container, User as never, "u1", (c) =>
+    const { value, changed } = patchEntity(container, User, idFor(User, "u1"), (c) =>
       mergeByExistingKeys(c, { name: "new" }),
     );
     expect(changed).toBe(true);
@@ -58,17 +74,17 @@ describe("attack-09 identity edges", () => {
     const teamDecoded = Team.all("test fixture").decode({ id: "x1", name: "team-name" });
     if (!teamDecoded.ok) throw new Error("decode failed");
     const root = [user, teamDecoded.value];
-    const { value } = patchEntity(root, User as never, "x1", (c) =>
+    const { value } = patchEntity(root, User, idFor(User, "x1"), (c) =>
       mergeByExistingKeys(c, { name: "patched" }),
     );
     const [u, t] = value as [{ name: string }, { name: string }];
     expect(u.name).toBe("patched");
     expect(t.name).toBe("team-name"); // untouched
     // and the index keys differ
-    const keys = collectEntities(root)
-      .map((e) => `${e.model.name}:${e.id}`)
-      .sort();
-    expect(keys).toEqual(["a09-team:x1", "a09-user:x1"]);
+    const entities = collectEntities(root);
+    expect(entities.map((entity) => entity.model.name).sort()).toEqual(["a09-team", "a09-user"]);
+    expect(entities.find((entity) => entity.model === User)?.id).toBe(idFor(User, "x1"));
+    expect(entities.find((entity) => entity.model === Team)?.id).toBe(idFor(Team, "x1"));
   });
 
   test("9d: canonical and pick() of the same entity in one result both patch, projection stays narrow", () => {
@@ -82,7 +98,9 @@ describe("attack-09 identity edges", () => {
     const brief = BriefFull.decode({ id: "u1", name: "old" });
     if (!full.ok || !brief.ok) throw new Error("decode failed");
     const root = { detail: full.value, row: brief.value };
-    const { value } = patchEntity(root, Full as never, "u1", (c) =>
+    const fullId = entityIdFor(Full, "u1");
+    if (fullId === undefined) throw new Error("invalid test identity");
+    const { value } = patchEntity(root, Full, fullId, (c) =>
       mergeByExistingKeys(c, { name: "new", email: "n@b.c" }),
     );
     const patched = value as { detail: Record<string, unknown>; row: Record<string, unknown> };

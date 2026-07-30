@@ -6,7 +6,7 @@ import { fetchTransport } from "../client/transport.js";
 import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { executeProcedure, rpc } from "../server/contract.js";
-import { ResultRpcProvider, defineShell, layerShell } from "./index.js";
+import { ResultRpcProvider, createResultRpcReact, defineShell, layerShell } from "./index.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -53,7 +53,7 @@ const authenticated = AuthLayer.middleware(app, async ({ context, errors }) =>
 const whoamiContract = AuthLayer.contract(app);
 
 // server: its implementation is the middleware's context value, nothing else
-const whoami = AuthLayer.procedure(app, whoamiContract, authenticated);
+const whoami = AuthLayer.implement(app, whoamiContract, authenticated);
 
 const docById = app
   .procedure()
@@ -62,6 +62,7 @@ const docById = app
   .errors({ Unauthorized, TripNotFound })
   .use(authenticated)
   .query(({ input, errors, context }) => {
+    if (input.id === "unauthorized") return err(errors.Unauthorized({}));
     if (input.id === "missing") return err(errors.TripNotFound({ docId: input.id }));
     return ok(`${input.id}:${context.user.id}`);
   });
@@ -138,8 +139,72 @@ describe("layer factory", () => {
     expect(docTag).toBeUndefined();
     expect(AuthShell.claimedTags).toContain("auth/unauthorized");
     expect(AuthShell.claimedTags).toContain("client/offline");
+    expect(AuthShell.layer).toBe(AuthLayer);
+    expect(AuthShell.resolveProcedure(client)).toBe(client.auth.whoami);
     await act(async () => renderer?.unmount());
     runtime.clear();
+  });
+
+  test("one layer shell keeps sibling provider values and reactions isolated", async () => {
+    const firstClient = clientFor("u_1");
+    const secondClient = clientFor("u_2");
+    type Client = typeof firstClient;
+    const scoped = createResultRpcReact<Client>();
+    const LayerShell = scoped.layerShell(AuthLayer, {
+      from: DefectShell,
+      select: (client) => client.auth.whoami,
+      onError: (failure, value) => {
+        if (failure._tag === "auth/unauthorized") seen.push(value?.id ?? "establishing");
+      },
+    });
+    const firstRuntime = createQueryRuntime({ client: firstClient });
+    const secondRuntime = createQueryRuntime({ client: secondClient });
+    const values = new Map<string, string>();
+    const seen: string[] = [];
+
+    function Probe({ name, fail }: { readonly name: string; readonly fail?: boolean }) {
+      values.set(name, LayerShell.use().id);
+      LayerShell.useQuery(name === "first" ? firstClient.trip.byId : secondClient.trip.byId, {
+        id: fail ? "unauthorized" : "healthy",
+      });
+      return null;
+    }
+
+    const Branch = ({
+      runtime,
+      name,
+      fail,
+    }: {
+      readonly runtime: typeof firstRuntime;
+      readonly name: string;
+      readonly fail?: boolean;
+    }) => (
+      <scoped.ResultRpcProvider runtime={runtime}>
+        <AppShell.Provider>
+          <DefectShell.Provider>
+            <LayerShell.Provider>
+              <Probe name={name} {...(fail === undefined ? {} : { fail })} />
+            </LayerShell.Provider>
+          </DefectShell.Provider>
+        </AppShell.Provider>
+      </scoped.ResultRpcProvider>
+    );
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <>
+          <Branch runtime={firstRuntime} name="first" fail />
+          <Branch runtime={secondRuntime} name="second" />
+        </>,
+      );
+      await settle();
+    });
+    expect(Object.fromEntries(values)).toEqual({ first: "u_1", second: "u_2" });
+    expect(seen).toEqual(["u_1"]);
+    await act(async () => renderer?.unmount());
+    firstRuntime.clear();
+    secondRuntime.clear();
   });
 
   test("a failed establishment renders the fallback and reaches onError", async () => {
@@ -258,8 +323,8 @@ describe("layer factory", () => {
     const sessionContract = SessionLayer.contract(cookieApp);
     const viewerContract = ViewerLayer.contract(cookieApp);
     const cookieRouter = cookieApp.router({
-      session: SessionLayer.procedure(cookieApp, sessionContract, session),
-      viewer: ViewerLayer.procedure(cookieApp, viewerContract, requireViewer),
+      session: SessionLayer.implement(cookieApp, sessionContract, session),
+      viewer: ViewerLayer.implement(cookieApp, viewerContract, requireViewer),
       greet: cookieApp
         .procedure()
         .input(wire.object({}))
@@ -408,7 +473,7 @@ describe("layer factory", () => {
     const session = SessionLayer.middleware(app, () => ok({ id: "u_composed" }));
     const viewer = ViewerLayer.middleware(app, session);
     const contract = ViewerLayer.contract(app);
-    const procedure = ViewerLayer.procedure(app, contract, viewer);
+    const procedure = ViewerLayer.implement(app, contract, viewer);
 
     expect(Object.values(contract._def.definitions).map((definition) => definition.tag)).toEqual([
       "auth/unauthorized",

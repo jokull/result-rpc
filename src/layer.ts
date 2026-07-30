@@ -1,45 +1,207 @@
 import type { Result } from "./result.js";
 import { err, ok } from "./result.js";
-import { wire, type WireCodec, type WireValue } from "./wire.js";
+import { wire, type AnyWireCodec, type WireCodec, type WireValue } from "./wire.js";
 import {
   mergeDefinitionMaps,
-  widenDefinitionError,
   type DefinitionMapCompatibility,
   type ErrorDefinitionMap,
   type ErrorUnion,
+  type MaterializeDefinitionSources,
   type MergeDefinitionMaps,
+  type MergeDefinitionSources,
 } from "./error-map.js";
-import type { Middleware, Procedure, ProcedureContract, RpcFactory } from "./server/contract.js";
+import type {
+  Middleware,
+  AnyMiddlewareTypes,
+  MiddlewareTypes,
+  MiddlewareDependencyTypes,
+  Procedure,
+  ProcedureContract,
+  ProcedureImplementationMiddlewareConstraint,
+  ProcedureTypes,
+  RpcFactory,
+} from "./server/contract.js";
+import type { RpcConstraintError } from "./type-diagnostics.js";
+import type { RpcFactoryTypeCarrier, RpcFactoryTypes } from "./factory-types.js";
+import type { UnaryProcedureCapability } from "./procedure-capability.js";
+import type { MaybePromise } from "./types.js";
 
-type MaybePromise<T> = T | Promise<T>;
-
-type LayerContext<TContext, TKey extends string, TValue> = TContext & {
+export type LayerContext<TContext, TKey extends string, TValue> = TContext & {
   readonly [K in TKey]: TValue;
 };
 
-type MiddlewareConstraint<
+export type LayerQueryTypes<
+  TContext,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> = ProcedureTypes<TContext, TContext, {}, TValue, TDefinitions, "query", UnaryProcedureCapability>;
+
+export type LayerQueryContract<
+  TContext,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> = ProcedureContract<LayerQueryTypes<TContext, TValue, TDefinitions>>;
+
+export type LayerQueryProcedure<
+  TContext,
+  TKey extends string,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> = Procedure<
+  ProcedureTypes<
+    TContext,
+    LayerContext<TContext, TKey, TValue>,
+    {},
+    TValue,
+    TDefinitions,
+    "query",
+    UnaryProcedureCapability
+  >
+>;
+
+export type LayerMiddleware<
+  TContext,
+  TKey extends string,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+  TDependencies extends readonly AnyMiddlewareTypes[] = readonly [],
+  TDefinitionSources extends ErrorDefinitionMap = TDefinitions,
+  TOwnDefinitionSources extends ErrorDefinitionMap = TDefinitionSources,
+> = Middleware<
+  MiddlewareTypes<
+    TContext,
+    LayerContext<TContext, TKey, TValue>,
+    TDefinitionSources,
+    TDependencies,
+    false,
+    { readonly [K in TKey]: TValue },
+    TOwnDefinitionSources
+  >
+>;
+
+export type IncompatibleDefinitionKeys<
+  TExpected extends ErrorDefinitionMap,
+  TActual extends ErrorDefinitionMap,
+> = {
+  [TKey in keyof TExpected & keyof TActual]: TExpected[TKey] extends TActual[TKey]
+    ? TActual[TKey] extends TExpected[TKey]
+      ? never
+      : TKey
+    : TKey;
+}[keyof TExpected & keyof TActual];
+
+export type MissingDefinitionKeys<
+  TExpected extends ErrorDefinitionMap,
+  TActual extends ErrorDefinitionMap,
+> = Exclude<keyof TExpected, keyof TActual> | IncompatibleDefinitionKeys<TExpected, TActual>;
+
+export type ExtraDefinitionKeys<
+  TExpected extends ErrorDefinitionMap,
+  TActual extends ErrorDefinitionMap,
+> = Exclude<keyof TActual, keyof TExpected> | IncompatibleDefinitionKeys<TExpected, TActual>;
+
+export type MiddlewareConstraint<
   TMiddleware,
   TContext,
   TKey extends string,
   TValue,
   TContractDefinitions extends ErrorDefinitionMap,
 > =
-  TMiddleware extends Middleware<
-    infer TInputContext,
-    infer TOutputContext,
-    infer TMiddlewareDefinitions
+  TMiddleware extends Middleware<infer TMiddlewareTypes>
+    ? TMiddlewareTypes extends MiddlewareTypes<
+        infer TInputContext,
+        infer TOutputContext,
+        infer TMiddlewareDefinitions,
+        readonly AnyMiddlewareTypes[],
+        infer TWritesHeaders,
+        unknown
+      >
+      ? TContext extends TInputContext
+        ? TOutputContext extends LayerContext<TContext, TKey, TValue>
+          ? [
+              MissingDefinitionKeys<
+                TContractDefinitions,
+                MaterializeDefinitionSources<TMiddlewareDefinitions>
+              >,
+            ] extends [never]
+            ? [
+                ExtraDefinitionKeys<
+                  TContractDefinitions,
+                  MaterializeDefinitionSources<TMiddlewareDefinitions>
+                >,
+              ] extends [never]
+              ? TWritesHeaders extends false
+                ? unknown
+                : RpcConstraintError<"layer-middleware-writes-headers", true>
+              : RpcConstraintError<
+                  "layer-middleware-has-extra-errors",
+                  ExtraDefinitionKeys<
+                    TContractDefinitions,
+                    MaterializeDefinitionSources<TMiddlewareDefinitions>
+                  >
+                >
+            : RpcConstraintError<
+                "layer-middleware-is-missing-errors",
+                MissingDefinitionKeys<
+                  TContractDefinitions,
+                  MaterializeDefinitionSources<TMiddlewareDefinitions>
+                >
+              >
+          : RpcConstraintError<
+              "layer-middleware-does-not-provide-value",
+              {
+                readonly expected: LayerContext<TContext, TKey, TValue>;
+                readonly actual: TOutputContext;
+              }
+            >
+        : RpcConstraintError<
+            "layer-middleware-requires-incompatible-context",
+            { readonly available: TContext; readonly required: TInputContext }
+          >
+      : RpcConstraintError<"layer-procedure-requires-middleware", TMiddleware>
+    : RpcConstraintError<"layer-procedure-requires-middleware", TMiddleware>;
+
+export type CheckedLayerMiddleware<
+  TMiddlewareTypes extends AnyMiddlewareTypes,
+  TContext,
+  TKey extends string,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> = Middleware<TMiddlewareTypes> &
+  LayerMiddlewareView<TMiddlewareTypes, TContext, TKey, TValue> &
+  MiddlewareConstraint<Middleware<TMiddlewareTypes>, TContext, TKey, TValue, TDefinitions> &
+  ProcedureImplementationMiddlewareConstraint<
+    LayerQueryTypes<TContext, TValue, TDefinitions>,
+    TContext,
+    TMiddlewareTypes
+  >;
+
+/**
+ * The middleware view proven by the layer constraint. Keeping this as an
+ * intersection lets `.use()` consume the proved output context directly;
+ * diagnostics still retain the middleware's original associated record.
+ */
+export type LayerMiddlewareView<
+  TMiddlewareTypes extends AnyMiddlewareTypes,
+  TContext,
+  TKey extends string,
+  TValue,
+> = Middleware<
+  MiddlewareTypes<
+    TContext,
+    LayerContext<TContext, TKey, TValue>,
+    TMiddlewareTypes["definitionSources"],
+    TMiddlewareTypes["dependencies"],
+    TMiddlewareTypes["writesHeaders"],
+    TMiddlewareTypes["providedContext"],
+    TMiddlewareTypes["ownDefinitionSources"]
   >
-    ? TContext extends TInputContext
-      ? TOutputContext extends LayerContext<TContext, TKey, TValue>
-        ? TContractDefinitions extends TMiddlewareDefinitions
-          ? unknown
-          : never
-        : never
-      : never
-    : never;
+>;
 
 /** Contract-builder slice used by layers on either side of the server boundary. */
-interface LayerContractFactory<TContext> {
+export interface LayerContractFactory<TContext> extends RpcFactoryTypeCarrier<
+  RpcFactoryTypes<TContext>
+> {
   procedure(): {
     input<TInput, TInputData extends WireValue>(
       codec: WireCodec<TInput, TInputData>,
@@ -50,7 +212,17 @@ interface LayerContractFactory<TContext> {
         errors<const TDefinitions extends ErrorDefinitionMap>(
           definitions: TDefinitions,
         ): {
-          query(): ProcedureContract<TContext, TInput, TOutput, TDefinitions, "query">;
+          query(): ProcedureContract<
+            ProcedureTypes<
+              TContext,
+              TContext,
+              TInput,
+              TOutput,
+              TDefinitions,
+              "query",
+              UnaryProcedureCapability
+            >
+          >;
         };
       };
     };
@@ -61,9 +233,19 @@ interface LayerContractFactory<TContext> {
  * The structural surface shared by base and refined layers: enough to derive a
  * client shell without caring how the server half is built.
  */
-export interface LayerShape<TKey extends string, TValue, TDefinitions extends ErrorDefinitionMap> {
+export interface AnyLayer {
   readonly $layer: true;
   readonly name: string;
+  readonly key: string;
+  readonly provides: AnyWireCodec;
+  readonly errors: ErrorDefinitionMap;
+}
+
+export interface LayerShape<
+  TKey extends string,
+  TValue,
+  TDefinitions extends ErrorDefinitionMap,
+> extends AnyLayer {
   readonly key: TKey;
   readonly provides: WireCodec<TValue, WireValue>;
   readonly errors: TDefinitions;
@@ -101,32 +283,46 @@ export interface Layer<
       readonly context: TContext;
       readonly errors: TDefinitions;
     }) => MaybePromise<Result<TValue, ErrorUnion<TDefinitions>>>,
-  ): Middleware<TContext, TContext & { readonly [K in TKey]: TValue }, TDefinitions>;
+  ): LayerMiddleware<TContext, TKey, TValue, TDefinitions>;
 
   /** The context procedure's shared contract: `{} -> value` with the layer union. */
   contract<TContext>(
     app: LayerContractFactory<TContext>,
-  ): ProcedureContract<TContext, {}, TValue, TDefinitions, "query">;
+  ): LayerQueryContract<TContext, TValue, TDefinitions>;
 
   /**
    * The context procedure, implemented from the layer's middleware chain. The
    * handler is derived — it returns the value the middleware placed in
    * context — so the procedure cannot disagree with the middleware about
-   * either the value or the union. Code-first routers pass just the chain;
-   * contract-first routers pass the shared contract (from `layer.contract`)
-   * ahead of it.
+   * either the value or the union.
    */
-  procedure<TContext, TMiddleware>(
+  procedure<TContext, TMiddlewareTypes extends AnyMiddlewareTypes>(
     app: RpcFactory<TContext>,
-    middleware: TMiddleware &
-      MiddlewareConstraint<TMiddleware, TContext, TKey, TValue, TDefinitions>,
-  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
-  procedure<TContext, TContractDefinitions extends TDefinitions, TMiddleware>(
+    middleware: CheckedLayerMiddleware<
+      TMiddlewareTypes,
+      NoInfer<TContext>,
+      TKey,
+      TValue,
+      TDefinitions
+    >,
+  ): LayerQueryProcedure<TContext, TKey, TValue, TDefinitions>;
+
+  /** Implements a shared context-procedure contract with this layer's middleware. */
+  implement<
+    TContext,
+    TContractDefinitions extends TDefinitions,
+    TMiddlewareTypes extends AnyMiddlewareTypes,
+  >(
     app: RpcFactory<TContext>,
-    contract: ProcedureContract<TContext, {}, TValue, TContractDefinitions, "query">,
-    middleware: TMiddleware &
-      MiddlewareConstraint<TMiddleware, TContext, TKey, TValue, TContractDefinitions>,
-  ): Procedure<TContext, {}, TValue, TContractDefinitions, "query">;
+    contract: LayerQueryContract<NoInfer<TContext>, TValue, TContractDefinitions>,
+    middleware: CheckedLayerMiddleware<
+      TMiddlewareTypes,
+      NoInfer<TContext>,
+      TKey,
+      TValue,
+      TContractDefinitions
+    >,
+  ): LayerQueryProcedure<TContext, TKey, TValue, TContractDefinitions>;
 
   /**
    * Derives a layer that narrows this layer's value. The classic case: an
@@ -173,70 +369,89 @@ export interface RequiredLayer<
    * is composed with `.after()`: any `.use()` site pulls the whole chain in
    * dependency order, deduplicated by reference.
    */
-  middleware<TContext, TAfterDefinitions extends ErrorDefinitionMap>(
-    app: RpcFactory<TContext>,
-    after: Middleware<
-      TContext,
-      TContext & { readonly [K in TKey]: TParentValue },
-      TAfterDefinitions
-    >,
-  ): Middleware<
+  middleware<
     TContext,
-    TContext & { readonly [K in TKey]: TValue },
-    MergeDefinitionMaps<TAfterDefinitions, TDefinitions>
+    TAfterDefinitions extends ErrorDefinitionMap,
+    TAfterDependencies extends readonly AnyMiddlewareTypes[],
+    TAfterDefinitionSources extends ErrorDefinitionMap,
+    TAfterOwnDefinitionSources extends ErrorDefinitionMap,
+  >(
+    app: RpcFactory<TContext>,
+    after: LayerMiddleware<
+      TContext,
+      TKey,
+      TParentValue,
+      TAfterDefinitions,
+      TAfterDependencies,
+      TAfterDefinitionSources,
+      TAfterOwnDefinitionSources
+    >,
+  ): LayerMiddleware<
+    TContext,
+    TKey,
+    TValue,
+    MergeDefinitionMaps<TAfterDefinitions, TDefinitions>,
+    readonly [
+      MiddlewareDependencyTypes<
+        MiddlewareTypes<
+          TContext,
+          LayerContext<TContext, TKey, TParentValue>,
+          TAfterDefinitionSources,
+          TAfterDependencies,
+          false,
+          { readonly [K in TKey]: TParentValue },
+          TAfterOwnDefinitionSources
+        >
+      >,
+    ],
+    MergeDefinitionSources<TAfterDefinitionSources, TDefinitions>,
+    TDefinitions
   >;
 
   contract<TContext>(
     app: LayerContractFactory<TContext>,
-  ): ProcedureContract<
-    TContext,
-    {},
-    TValue,
-    MergeDefinitionMaps<TParentDefinitions, TDefinitions>,
-    "query"
-  >;
+  ): LayerQueryContract<TContext, TValue, MergeDefinitionMaps<TParentDefinitions, TDefinitions>>;
 
   /**
-   * The context procedure takes the single composed middleware. Pass the
-   * shared contract ahead of it when contract-first.
+   * The context procedure takes the single composed middleware.
    */
-  procedure<TContext, TMiddleware>(
+  procedure<TContext, TMiddlewareTypes extends AnyMiddlewareTypes>(
     app: RpcFactory<TContext>,
-    middleware: TMiddleware &
-      MiddlewareConstraint<
-        TMiddleware,
-        TContext,
-        TKey,
-        TValue,
-        MergeDefinitionMaps<TParentDefinitions, TDefinitions>
-      >,
-  ): Procedure<
+    middleware: CheckedLayerMiddleware<
+      TMiddlewareTypes,
+      NoInfer<TContext>,
+      TKey,
+      TValue,
+      MergeDefinitionMaps<TParentDefinitions, TDefinitions>
+    >,
+  ): LayerQueryProcedure<
     TContext,
-    {},
+    TKey,
     TValue,
-    MergeDefinitionMaps<TParentDefinitions, TDefinitions>,
-    "query"
+    MergeDefinitionMaps<TParentDefinitions, TDefinitions>
   >;
-  procedure<
+  implement<
     TContext,
     TContractDefinitions extends MergeDefinitionMaps<TParentDefinitions, TDefinitions>,
-    TMiddleware,
+    TMiddlewareTypes extends AnyMiddlewareTypes,
   >(
     app: RpcFactory<TContext>,
-    contract: ProcedureContract<TContext, {}, TValue, TContractDefinitions, "query">,
-    middleware: TMiddleware &
-      MiddlewareConstraint<TMiddleware, TContext, TKey, TValue, TContractDefinitions>,
-  ): Procedure<TContext, {}, TValue, TContractDefinitions, "query">;
+    contract: LayerQueryContract<NoInfer<TContext>, TValue, TContractDefinitions>,
+    middleware: CheckedLayerMiddleware<
+      TMiddlewareTypes,
+      NoInfer<TContext>,
+      TKey,
+      TValue,
+      TContractDefinitions
+    >,
+  ): LayerQueryProcedure<TContext, TKey, TValue, TContractDefinitions>;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyLayer = LayerShape<string, any, ErrorDefinitionMap>;
 
 export type LayerValue<TLayer> =
   TLayer extends LayerShape<string, infer TValue, ErrorDefinitionMap> ? TValue : never;
 
 export type LayerErrors<TLayer> =
-  TLayer extends LayerShape<string, any, infer TDefinitions> ? TDefinitions : never;
+  TLayer extends LayerShape<string, infer _TValue, infer TDefinitions> ? TDefinitions : never;
 
 export interface DefineLayerOptions<
   TName extends string,
@@ -255,13 +470,12 @@ export interface DefineLayerOptions<
   readonly errors: TDefinitions;
 }
 
-function withLayerValue<TContext, const TKey extends string, TValue>(
-  context: TContext,
+function layerValue<const TKey extends string, TValue>(
   key: TKey,
   value: TValue,
-): LayerContext<TContext, TKey, TValue>;
-function withLayerValue(context: unknown, key: string, value: unknown): unknown {
-  return Object.assign({}, context, { [key]: value });
+): { readonly [K in TKey]: TValue };
+function layerValue(key: string, value: unknown): unknown {
+  return { [key]: value };
 }
 
 const implementContextProcedure = <
@@ -269,21 +483,35 @@ const implementContextProcedure = <
   const TKey extends string,
   TValue,
   TDefinitions extends ErrorDefinitionMap,
-  TOutputContext extends LayerContext<TContext, TKey, TValue>,
-  TMiddlewareDefinitions extends ErrorDefinitionMap,
+  TMiddlewareTypes extends AnyMiddlewareTypes,
 >(
   app: RpcFactory<TContext>,
-  contract: ProcedureContract<TContext, {}, TValue, TDefinitions, "query">,
+  contract: LayerQueryContract<TContext, TValue, TDefinitions>,
   key: TKey,
-  middleware: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
-): Procedure<TContext, {}, TValue, TDefinitions, "query"> =>
-  app
+  middleware: Middleware<TMiddlewareTypes> &
+    LayerMiddlewareView<TMiddlewareTypes, TContext, TKey, TValue> &
+    MiddlewareConstraint<Middleware<TMiddlewareTypes>, TContext, TKey, TValue, TDefinitions> &
+    ProcedureImplementationMiddlewareConstraint<
+      LayerQueryTypes<TContext, TValue, TDefinitions>,
+      TContext,
+      TMiddlewareTypes
+    >,
+): LayerQueryProcedure<TContext, TKey, TValue, TDefinitions> => {
+  return app
     .implement(contract)
-    // Public layer overloads already prove the middleware's context and error
-    // obligations. This erased implementation cannot retain that conditional
-    // proof after overload selection, so only this internal handoff is cast.
-    .use(middleware as unknown as Middleware<TContext, TOutputContext, TDefinitions>)
+    .use<
+      MiddlewareTypes<
+        TContext,
+        LayerContext<TContext, TKey, TValue>,
+        TMiddlewareTypes["definitionSources"],
+        TMiddlewareTypes["dependencies"],
+        TMiddlewareTypes["writesHeaders"],
+        TMiddlewareTypes["providedContext"],
+        TMiddlewareTypes["ownDefinitionSources"]
+      >
+    >(middleware)
     .handler(({ context }) => ok(context[key]));
+};
 
 export const defineLayer = <
   const TName extends string,
@@ -303,7 +531,7 @@ export const defineLayer = <
       readonly context: TContext;
       readonly errors: TDefinitions;
     }) => MaybePromise<Result<TValue, ErrorUnion<TDefinitions>>>,
-  ): Middleware<TContext, LayerContext<TContext, TKey, TValue>, TDefinitions> =>
+  ): LayerMiddleware<TContext, TKey, TValue, TDefinitions> =>
     app
       .middleware<{ readonly [K in TKey]: TValue }>()
       .errors(options.errors)
@@ -311,46 +539,37 @@ export const defineLayer = <
         const resolved = await resolve({ context, errors: options.errors });
         if (!resolved.ok) return resolved;
         return next({
-          context: withLayerValue(context, options.key, resolved.value),
+          context: layerValue(options.key, resolved.value),
         });
       });
 
   const layerContract = <TContext>(
     app: LayerContractFactory<TContext>,
-  ): ProcedureContract<TContext, {}, TValue, TDefinitions, "query"> =>
+  ): LayerQueryContract<TContext, TValue, TDefinitions> =>
     app.procedure().input(wire.object({})).output(options.provides).errors(options.errors).query();
 
-  function layerProcedure<TContext, TMiddleware>(
+  const layerProcedure = <TContext, TMiddlewareTypes extends AnyMiddlewareTypes>(
     app: RpcFactory<TContext>,
-    middleware: TMiddleware &
-      MiddlewareConstraint<TMiddleware, TContext, TKey, TValue, TDefinitions>,
-  ): Procedure<TContext, {}, TValue, TDefinitions, "query">;
-  function layerProcedure<TContext, TContractDefinitions extends TDefinitions, TMiddleware>(
-    app: RpcFactory<TContext>,
-    contract: ProcedureContract<TContext, {}, TValue, TContractDefinitions, "query">,
-    middleware: TMiddleware &
-      MiddlewareConstraint<TMiddleware, TContext, TKey, TValue, TContractDefinitions>,
-  ): Procedure<TContext, {}, TValue, TContractDefinitions, "query">;
-  function layerProcedure<
+    middleware: CheckedLayerMiddleware<TMiddlewareTypes, TContext, TKey, TValue, TDefinitions>,
+  ): LayerQueryProcedure<TContext, TKey, TValue, TDefinitions> =>
+    implementContextProcedure(app, layerContract(app), options.key, middleware);
+
+  const implementLayerContract = <
     TContext,
-    TContractDefinitions extends ErrorDefinitionMap,
-    TOutputContext extends LayerContext<TContext, TKey, TValue>,
-    TMiddlewareDefinitions extends ErrorDefinitionMap,
+    TContractDefinitions extends TDefinitions,
+    TMiddlewareTypes extends AnyMiddlewareTypes,
   >(
     app: RpcFactory<TContext>,
-    contractOrMiddleware:
-      | ProcedureContract<TContext, {}, TValue, TContractDefinitions, "query">
-      | Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
-    middleware?: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
-  ): unknown {
-    if (contractOrMiddleware._kind === "procedure-contract") {
-      if (middleware === undefined) {
-        throw new TypeError("A layer's context procedure requires its middleware");
-      }
-      return implementContextProcedure(app, contractOrMiddleware, options.key, middleware);
-    }
-    return implementContextProcedure(app, layerContract(app), options.key, contractOrMiddleware);
-  }
+    contract: LayerQueryContract<TContext, TValue, TContractDefinitions>,
+    middleware: CheckedLayerMiddleware<
+      TMiddlewareTypes,
+      TContext,
+      TKey,
+      TValue,
+      TContractDefinitions
+    >,
+  ): LayerQueryProcedure<TContext, TKey, TValue, TContractDefinitions> =>
+    implementContextProcedure(app, contract, options.key, middleware);
 
   const layer: Layer<TName, TKey, TValue, TDefinitions> = {
     $layer: true,
@@ -362,6 +581,7 @@ export const defineLayer = <
     middleware: layerMiddleware,
     contract: layerContract,
     procedure: layerProcedure,
+    implement: implementLayerContract,
 
     require: <
       const TNewName extends string,
@@ -386,40 +606,58 @@ export const defineLayer = <
       }
       const allDefinitions = mergeDefinitionMaps(options.errors, refineOptions.errors);
 
-      const requiredMiddleware = <TContext, TAfterDefinitions extends ErrorDefinitionMap>(
-        app: RpcFactory<TContext>,
-        after: Middleware<TContext, LayerContext<TContext, TKey, TValue>, TAfterDefinitions> &
-          DefinitionMapCompatibility<TNewDefinitions, NoInfer<TAfterDefinitions>>,
-      ): Middleware<
+      const requiredMiddleware = <
         TContext,
-        LayerContext<TContext, TKey, TRefined>,
-        MergeDefinitionMaps<TAfterDefinitions, TNewDefinitions>
+        TAfterDefinitions extends ErrorDefinitionMap,
+        TAfterDependencies extends readonly AnyMiddlewareTypes[],
+        TAfterDefinitionSources extends ErrorDefinitionMap,
+        TAfterOwnDefinitionSources extends ErrorDefinitionMap,
+      >(
+        app: RpcFactory<TContext>,
+        after: LayerMiddleware<
+          TContext,
+          TKey,
+          TValue,
+          TAfterDefinitions,
+          TAfterDependencies,
+          TAfterDefinitionSources,
+          TAfterOwnDefinitionSources
+        >,
+      ): LayerMiddleware<
+        TContext,
+        TKey,
+        TRefined,
+        MergeDefinitionMaps<TAfterDefinitions, TNewDefinitions>,
+        readonly [
+          MiddlewareDependencyTypes<
+            MiddlewareTypes<
+              TContext,
+              LayerContext<TContext, TKey, TValue>,
+              TAfterDefinitionSources,
+              TAfterDependencies,
+              false,
+              { readonly [K in TKey]: TValue },
+              TAfterOwnDefinitionSources
+            >
+          >,
+        ],
+        MergeDefinitionSources<TAfterDefinitionSources, TNewDefinitions>,
+        TNewDefinitions
       > =>
         app
           .middleware<{ readonly [K in TKey]: TRefined }>()
+          .errors(refineOptions.errors)
           .after(after)
-          .errors<TNewDefinitions>(
-            refineOptions.errors as TNewDefinitions &
-              DefinitionMapCompatibility<
-                MergeDefinitionMaps<{}, TAfterDefinitions>,
-                TNewDefinitions
-              >,
-          )
           .use(async ({ context, next }) => {
             const resolved = await refineOptions.refine({
               value: context[options.key],
               errors: refineOptions.errors,
             });
             if (!resolved.ok) {
-              return err(
-                widenDefinitionError<
-                  TNewDefinitions,
-                  MergeDefinitionMaps<TAfterDefinitions, TNewDefinitions>
-                >(resolved.error),
-              );
+              return err(resolved.error);
             }
             return next({
-              context: withLayerValue(context, options.key, resolved.value),
+              context: layerValue(options.key, resolved.value),
             });
           });
 
@@ -427,7 +665,7 @@ export const defineLayer = <
 
       const requiredContract = <TContext>(
         app: LayerContractFactory<TContext>,
-      ): ProcedureContract<TContext, {}, TRefined, TAllDefinitions, "query"> =>
+      ): LayerQueryContract<TContext, TRefined, TAllDefinitions> =>
         app
           .procedure()
           .input(wire.object({}))
@@ -435,46 +673,34 @@ export const defineLayer = <
           .errors(allDefinitions)
           .query();
 
-      function requiredProcedure<TContext, TMiddleware>(
+      const requiredProcedure = <TContext, TMiddlewareTypes extends AnyMiddlewareTypes>(
         app: RpcFactory<TContext>,
-        middleware: TMiddleware &
-          MiddlewareConstraint<TMiddleware, TContext, TKey, TRefined, TAllDefinitions>,
-      ): Procedure<TContext, {}, TRefined, TAllDefinitions, "query">;
-      function requiredProcedure<
+        middleware: CheckedLayerMiddleware<
+          TMiddlewareTypes,
+          TContext,
+          TKey,
+          TRefined,
+          TAllDefinitions
+        >,
+      ): LayerQueryProcedure<TContext, TKey, TRefined, TAllDefinitions> =>
+        implementContextProcedure(app, requiredContract(app), options.key, middleware);
+
+      const implementRequiredContract = <
         TContext,
         TContractDefinitions extends TAllDefinitions,
-        TMiddleware,
+        TMiddlewareTypes extends AnyMiddlewareTypes,
       >(
         app: RpcFactory<TContext>,
-        contract: ProcedureContract<TContext, {}, TRefined, TContractDefinitions, "query">,
-        middleware: TMiddleware &
-          MiddlewareConstraint<TMiddleware, TContext, TKey, TRefined, TContractDefinitions>,
-      ): Procedure<TContext, {}, TRefined, TContractDefinitions, "query">;
-      function requiredProcedure<
-        TContext,
-        TContractDefinitions extends ErrorDefinitionMap,
-        TOutputContext extends LayerContext<TContext, TKey, TRefined>,
-        TMiddlewareDefinitions extends ErrorDefinitionMap,
-      >(
-        app: RpcFactory<TContext>,
-        contractOrMiddleware:
-          | ProcedureContract<TContext, {}, TRefined, TContractDefinitions, "query">
-          | Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
-        middleware?: Middleware<TContext, TOutputContext, TMiddlewareDefinitions>,
-      ): unknown {
-        if (contractOrMiddleware._kind === "procedure-contract") {
-          if (middleware === undefined) {
-            throw new TypeError("A layer's context procedure requires its middleware");
-          }
-          return implementContextProcedure(app, contractOrMiddleware, options.key, middleware);
-        }
-        return implementContextProcedure(
-          app,
-          requiredContract(app),
-          options.key,
-          contractOrMiddleware,
-        );
-      }
+        contract: LayerQueryContract<TContext, TRefined, TContractDefinitions>,
+        middleware: CheckedLayerMiddleware<
+          TMiddlewareTypes,
+          TContext,
+          TKey,
+          TRefined,
+          TContractDefinitions
+        >,
+      ): LayerQueryProcedure<TContext, TKey, TRefined, TContractDefinitions> =>
+        implementContextProcedure(app, contract, options.key, middleware);
 
       const refined: RequiredLayer<
         typeof refineOptions.name,
@@ -493,6 +719,7 @@ export const defineLayer = <
         middleware: requiredMiddleware,
         contract: requiredContract,
         procedure: requiredProcedure,
+        implement: implementRequiredContract,
       };
       return Object.freeze(refined);
     },

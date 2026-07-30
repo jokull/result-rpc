@@ -12,6 +12,22 @@ import { defineErrors } from "./error.js";
 import { err, ok, type Result } from "./result.js";
 import { wire } from "./wire.js";
 
+export type { NamespacedErrors } from "./error.js";
+export type * from "./error.js";
+export type * from "./result.js";
+export type {
+  AnyWireCodec,
+  CodecIssue,
+  DecodeResult,
+  EmptyObject,
+  EncodedOf,
+  InputOf,
+  WireCodec,
+  WireScalar,
+  WireTypedArray,
+  WireValue,
+} from "./wire.js";
+
 /**
  * The database failure vocabulary as tagged errors. These are server-side
  * composition currency, never wire errors: all are private and should be
@@ -60,18 +76,10 @@ const classify = (cause: unknown): DbError => {
     if (typeof current !== "object" || current === null) continue;
     if (visited.has(current)) continue;
     visited.add(current);
-    const failure = current as {
-      readonly cause?: unknown;
-      readonly code?: unknown;
-      readonly defect?: unknown;
-      readonly errcode?: unknown;
-      readonly error?: unknown;
-      readonly failure?: unknown;
-      readonly message?: unknown;
-    };
-    const message = typeof failure.message === "string" ? failure.message : "";
-    const code = failure.code;
-    const errcode = failure.errcode;
+    const messageValue = Reflect.get(current, "message");
+    const message = typeof messageValue === "string" ? messageValue : "";
+    const code = Reflect.get(current, "code");
+    const errcode = Reflect.get(current, "errcode");
     if (typeof code === "string") {
       const constraint = constraintFrom(message);
       if (
@@ -109,7 +117,9 @@ const classify = (cause: unknown): DbError => {
     }
     // Follow both ordinary Error.cause and the small set of Effect Cause
     // payload slots without taking an Effect dependency.
-    pending.push(failure.cause, failure.failure, failure.error, failure.defect);
+    pending.push(
+      ...["cause", "failure", "error", "defect"].map((key) => Reflect.get(current, key)),
+    );
   }
   return dbErrors.queryFailure({}, { cause });
 };
@@ -122,11 +132,18 @@ const classify = (cause: unknown): DbError => {
  * The original caught failure remains available as a non-enumerable,
  * non-wire `Error.cause` on the private tagged error.
  */
+function runDbQuery<T>(query: PromiseLike<T> | (() => PromiseLike<T> | T)): PromiseLike<T> | T;
+function runDbQuery(
+  query: PromiseLike<unknown> | (() => PromiseLike<unknown> | unknown),
+): PromiseLike<unknown> | unknown {
+  return typeof query === "function" ? query() : query;
+}
+
 export const tryDb = async <T>(
   query: PromiseLike<T> | (() => PromiseLike<T> | T),
 ): Promise<Result<T, DbError>> => {
   try {
-    return ok(await (typeof query === "function" ? (query as () => PromiseLike<T> | T)() : query));
+    return ok(await runDbQuery(query));
   } catch (cause) {
     return err(classify(cause));
   }

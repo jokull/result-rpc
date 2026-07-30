@@ -1,5 +1,4 @@
-import { isSerializable } from "./serializer.js";
-import type { StandardSchemaV1 } from "./standard-schema.js";
+import type { StandardSchemaResult, StandardSchemaV1 } from "./standard-schema.js";
 
 export type WireScalar = undefined | null | boolean | string | number | bigint;
 
@@ -83,15 +82,31 @@ export type DecodeResult<T> =
   | Readonly<{ ok: false; issues: readonly CodecIssue[] }>;
 
 export interface WireCodec<Input, Encoded extends WireValue = WireValue> {
+  /** Human-readable codec family used in diagnostics. */
   readonly kind: string;
+  /** Canonical structural identity used by contract-version computation. */
+  readonly schema: string;
   readonly encode: (input: Input) => DecodeResult<Encoded>;
   readonly decode: (value: unknown) => DecodeResult<Input>;
 }
 
-// `any` is intentional for runtime codec registries; concrete codecs recover
-// both associated types through `InputOf` and `EncodedOf` before use.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyWireCodec = WireCodec<any, any>;
+/**
+ * A true runtime-registry existential. Every concrete WireCodec is assignable
+ * to it, but erased consumers cannot feed `unknown` back into its encoder.
+ * Use the audited dynamic helper below only at an already-erased wire boundary.
+ */
+export interface AnyWireCodec {
+  readonly kind: string;
+  readonly schema: string;
+  readonly encode: (input: never) => DecodeResult<WireValue>;
+  readonly decode: (value: unknown) => DecodeResult<unknown>;
+}
+
+/** @internal Dynamic encode after a runtime registry has intentionally erased Input. */
+export const encodeUnknownWireValue = (
+  codec: AnyWireCodec,
+  input: unknown,
+): DecodeResult<WireValue> => codec.encode(input as never);
 
 /** An object with no string properties; unlike `{}`, primitives do not satisfy it. */
 export type EmptyObject = Readonly<Record<string, never>>;
@@ -101,17 +116,21 @@ export type EmptyObject = Readonly<Record<string, never>>;
  * treat `undefined` as the conventional options placeholder for a zero-input
  * procedure and try the default empty-object input.
  */
-export const encodeProcedureInput = <TInput, TEncoded extends WireValue>(
+export function encodeProcedureInput<TInput, TEncoded extends WireValue>(
   codec: WireCodec<TInput, TEncoded>,
   input: TInput,
-): DecodeResult<TEncoded> => {
-  const encoded = codec.encode(input);
-  return !encoded.ok && input === undefined ? codec.encode({} as TInput) : encoded;
-};
+): DecodeResult<TEncoded>;
+export function encodeProcedureInput(codec: AnyWireCodec, input: unknown): DecodeResult<WireValue>;
+export function encodeProcedureInput(codec: AnyWireCodec, input: unknown): DecodeResult<WireValue> {
+  const encoded = encodeUnknownWireValue(codec, input);
+  return !encoded.ok && input === undefined ? encodeUnknownWireValue(codec, {}) : encoded;
+}
 
-export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, WireValue> ? TInput : never;
+export type InputOf<TCodec> =
+  TCodec extends WireCodec<infer TInput, infer _TEncoded> ? TInput : never;
 
-export type EncodedOf<TCodec> = TCodec extends WireCodec<any, infer TEncoded> ? TEncoded : never;
+export type EncodedOf<TCodec> =
+  TCodec extends WireCodec<infer _TInput, infer TEncoded> ? TEncoded : never;
 
 const success = <T>(value: T): DecodeResult<T> => ({ ok: true, value });
 
@@ -120,6 +139,21 @@ const failure = (
   path: readonly (string | number)[] = [],
 ): DecodeResult<never> => ({ ok: false, issues: [{ path, message }] });
 
+/** Canonical array encoding avoids delimiter and object-key-order ambiguity. */
+const schemaOf = (...parts: readonly unknown[]): string => JSON.stringify(parts);
+
+const scalarSchema = (value: WireScalar): string => {
+  if (value === undefined) return schemaOf("undefined");
+  if (typeof value === "bigint") return schemaOf("bigint", value.toString());
+  if (typeof value === "number") {
+    if (Number.isNaN(value)) return schemaOf("number", "nan");
+    if (value === Infinity) return schemaOf("number", "+infinity");
+    if (value === -Infinity) return schemaOf("number", "-infinity");
+    if (Object.is(value, -0)) return schemaOf("number", "-0");
+  }
+  return schemaOf(typeof value, value);
+};
+
 const atPath = (issue: CodecIssue, segment: string | number): CodecIssue => ({
   ...issue,
   path: [segment, ...issue.path],
@@ -127,24 +161,28 @@ const atPath = (issue: CodecIssue, segment: string | number): CodecIssue => ({
 
 const stringCodec: WireCodec<string, string> = {
   kind: "string",
+  schema: schemaOf("string"),
   encode: (input) => (typeof input === "string" ? success(input) : failure("Expected a string")),
   decode: (value) => (typeof value === "string" ? success(value) : failure("Expected a string")),
 };
 
 const booleanCodec: WireCodec<boolean, boolean> = {
   kind: "boolean",
+  schema: schemaOf("boolean"),
   encode: (input) => (typeof input === "boolean" ? success(input) : failure("Expected a boolean")),
   decode: (value) => (typeof value === "boolean" ? success(value) : failure("Expected a boolean")),
 };
 
 const numberCodec: WireCodec<number, number> = {
   kind: "number",
+  schema: schemaOf("number"),
   encode: (input) => (typeof input === "number" ? success(input) : failure("Expected a number")),
   decode: (value) => (typeof value === "number" ? success(value) : failure("Expected a number")),
 };
 
 const finiteNumberCodec: WireCodec<number, number> = {
   kind: "finite-number",
+  schema: schemaOf("finite-number"),
   encode: (input) =>
     Number.isFinite(input) ? success(input) : failure("Expected a finite number"),
   decode: (value) =>
@@ -155,18 +193,21 @@ const finiteNumberCodec: WireCodec<number, number> = {
 
 const bigintCodec: WireCodec<bigint, bigint> = {
   kind: "bigint",
+  schema: schemaOf("bigint"),
   encode: (input) => (typeof input === "bigint" ? success(input) : failure("Expected a bigint")),
   decode: (value) => (typeof value === "bigint" ? success(value) : failure("Expected a bigint")),
 };
 
 const undefinedCodec: WireCodec<undefined, undefined> = {
   kind: "undefined",
+  schema: schemaOf("undefined"),
   encode: (input) => (input === undefined ? success(undefined) : failure("Expected undefined")),
   decode: (value) => (value === undefined ? success(undefined) : failure("Expected undefined")),
 };
 
 const dateCodec: WireCodec<Date, Date> = {
   kind: "date",
+  schema: schemaOf("date"),
   encode: (input) =>
     input instanceof Date && !Number.isNaN(input.getTime())
       ? success(new Date(input))
@@ -179,6 +220,7 @@ const dateCodec: WireCodec<Date, Date> = {
 
 const regexpCodec: WireCodec<RegExp, RegExp> = {
   kind: "regexp",
+  schema: schemaOf("regexp"),
   encode: (input) =>
     input instanceof RegExp
       ? success(new RegExp(input.source, input.flags))
@@ -191,16 +233,28 @@ const regexpCodec: WireCodec<RegExp, RegExp> = {
 
 const urlCodec: WireCodec<URL, URL> = {
   kind: "url",
+  schema: schemaOf("url"),
   encode: (input) => (input instanceof URL ? success(new URL(input)) : failure("Expected a URL")),
   decode: (value) => (value instanceof URL ? success(new URL(value)) : failure("Expected a URL")),
 };
 
-type StandardOutput<TSchema extends StandardSchemaV1<any, unknown>> = NonNullable<
-  TSchema["~standard"]["types"]
->["output"];
+type StandardOutput<TSchema extends StandardSchemaV1<unknown, unknown>> =
+  TSchema extends StandardSchemaV1<unknown, infer TOutput> ? TOutput : never;
 
 const toPathKey = (key: PropertyKey): string | number =>
   typeof key === "number" ? key : String(key);
+
+const isTypedWireValue = <T>(value: T): value is T & WireValue => isWireValue(value);
+
+export interface ExternalWireSchemaOptions {
+  /** Stable application-owned identity; change it whenever accepted data changes. */
+  readonly id: string;
+}
+
+const externalSchemaId = (kind: string, options: ExternalWireSchemaOptions): string => {
+  if (options.id.trim().length === 0) throw new TypeError(`${kind} schema id must not be empty`);
+  return options.id;
+};
 
 /**
  * Adopts a Standard Schema (Valibot, Zod, ArkType, ...) as a wire input
@@ -213,13 +267,23 @@ const toPathKey = (key: PropertyKey): string | number =>
  * encode/decode symmetry. This adopts a validator for the WIRE; it does not
  * make the input codec a form schema — forms validate humans, wires validate
  * applications.
+ *
+ * `options.id` is part of the RPC contract fingerprint. Standard Schema does
+ * not expose a portable structural description, so the application owns this
+ * stable identifier and must change it whenever the accepted wire shape or
+ * semantics change.
  */
-const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
+const standard = <TSchema extends StandardSchemaV1<unknown, unknown>>(
   schema: TSchema,
+  options: ExternalWireSchemaOptions,
 ): WireCodec<StandardOutput<TSchema>, WireValue> => {
-  const validate = (value: unknown): DecodeResult<StandardOutput<TSchema>> => {
-    let result: ReturnType<TSchema["~standard"]["validate"]>;
+  const validate = (value: unknown): DecodeResult<StandardOutput<TSchema> & WireValue> => {
+    let result:
+      | StandardSchemaResult<StandardOutput<TSchema>>
+      | Promise<StandardSchemaResult<StandardOutput<TSchema>>>;
     try {
+      // Standard Schema's optional `types` carrier and validate method are
+      // specified to agree; this is the one adoption boundary for that fact.
       result = schema["~standard"].validate(value) as typeof result;
     } catch {
       return failure("Schema validation failed");
@@ -240,25 +304,38 @@ const standard = <TSchema extends StandardSchemaV1<any, unknown>>(
         })),
       };
     }
-    if (!isSerializable(result.value)) {
+    if (!isTypedWireValue(result.value)) {
       return failure("Expected a value supported by the wire serializer");
     }
-    return success(result.value as StandardOutput<TSchema>);
+    return success(result.value);
   };
   return {
     kind: `standard(${schema["~standard"].vendor})`,
-    encode: (input) => validate(input) as DecodeResult<WireValue>,
+    schema: schemaOf(
+      "standard",
+      schema["~standard"].vendor,
+      externalSchemaId("Standard Schema", options),
+    ),
+    encode: (input) => validate(input),
     decode: validate,
   };
 };
 
 export type WireGuard<T> = (value: unknown) => value is T;
 
-const serializable = <T>(guard: WireGuard<T>): WireCodec<T, T & WireValue> => ({
+/**
+ * Adopts a guarded rich wire value. `options.id` is its stable contract schema
+ * identity and must change whenever the guard's accepted shape changes.
+ */
+const serializable = <T>(
+  guard: WireGuard<T>,
+  options: ExternalWireSchemaOptions,
+): WireCodec<T, T & WireValue> => ({
   kind: "serializable",
+  schema: schemaOf("serializable", externalSchemaId("Serializable", options)),
   encode: (input) =>
     guard(input) && isWireValue(input)
-      ? success(input as T & WireValue)
+      ? success(input)
       : failure("Expected a validated value supported by the wire serializer"),
   decode: (value) =>
     guard(value) && isWireValue(value)
@@ -268,6 +345,7 @@ const serializable = <T>(guard: WireGuard<T>): WireCodec<T, T & WireValue> => ({
 
 const nullCodec: WireCodec<null, null> = {
   kind: "null",
+  schema: schemaOf("null"),
   encode: (input) => (input === null ? success(null) : failure("Expected null")),
   decode: (value) => (value === null ? success(null) : failure("Expected null")),
 };
@@ -279,6 +357,7 @@ export interface IntegerOptions {
 
 const integer = (options: IntegerOptions = {}): WireCodec<number, number> => ({
   kind: "integer",
+  schema: schemaOf("integer", options.min ?? null, options.max ?? null),
   encode: (input) => validateInteger(input, options),
   decode: (value) => validateInteger(value, options),
 });
@@ -298,6 +377,7 @@ const validateInteger = (value: unknown, options: IntegerOptions): DecodeResult<
 
 const literal = <const TValue extends WireScalar>(expected: TValue): WireCodec<TValue, TValue> => ({
   kind: "literal",
+  schema: schemaOf("literal", scalarSchema(expected)),
   encode: (input) =>
     Object.is(input, expected) ? success(input) : failure(`Expected ${String(expected)}`),
   decode: (value) =>
@@ -308,6 +388,7 @@ const array = <TInput, TEncoded extends WireValue>(
   item: WireCodec<TInput, TEncoded>,
 ): WireCodec<readonly TInput[], readonly TEncoded[]> => ({
   kind: "array",
+  schema: schemaOf("array", item.schema),
   encode: (input) => {
     if (!Array.isArray(input)) return failure("Expected an array");
     const output: TEncoded[] = [];
@@ -340,9 +421,15 @@ const union = <const TCodecs extends readonly AnyWireCodec[]>(
   codecs: TCodecs,
 ): WireCodec<CodecInputUnion<TCodecs>, CodecEncodedUnion<TCodecs>> => ({
   kind: "union",
+  schema: schemaOf(
+    "union",
+    codecs.map((codec) => codec.schema),
+  ),
   encode: (input) => {
     for (const codec of codecs) {
-      const result = codec.encode(input);
+      const result = encodeUnknownWireValue(codec, input);
+      // A successful member necessarily contributes one member of the
+      // associated encoded union; registry iteration erased which member.
       if (result.ok) return result as DecodeResult<CodecEncodedUnion<TCodecs>>;
     }
     return failure("Value did not match any union member");
@@ -350,6 +437,8 @@ const union = <const TCodecs extends readonly AnyWireCodec[]>(
   decode: (value) => {
     for (const codec of codecs) {
       const result = codec.decode(value);
+      // As above, success identifies one member even though dynamic iteration
+      // cannot retain its tuple index.
       if (result.ok) return result as DecodeResult<CodecInputUnion<TCodecs>>;
     }
     return failure("Value did not match any union member");
@@ -365,10 +454,10 @@ interface OptionalWireCodec<TInput, TEncoded extends WireValue> extends WireCode
   readonly optional: true;
 }
 
-type OptionalShapeKeys<TShape extends CodecShape> = {
+export type OptionalShapeKeys<TShape extends CodecShape> = {
   [TKey in keyof TShape]: TShape[TKey] extends { readonly optional: true } ? TKey : never;
 }[keyof TShape];
-type RequiredShapeKeys<TShape extends CodecShape> = Exclude<
+export type RequiredShapeKeys<TShape extends CodecShape> = Exclude<
   keyof TShape,
   OptionalShapeKeys<TShape>
 >;
@@ -393,6 +482,7 @@ const optional = <TInput, TEncoded extends WireValue>(
   codec: WireCodec<TInput, TEncoded>,
 ): OptionalWireCodec<TInput, TEncoded> => ({
   kind: `optional(${codec.kind})`,
+  schema: schemaOf("optional", codec.schema),
   optional: true,
   encode: (input) => (input === undefined ? success(undefined) : codec.encode(input)),
   decode: (value) => (value === undefined ? success(undefined) : codec.decode(value)),
@@ -402,19 +492,32 @@ const record = <TInput, TEncoded extends WireValue>(
   codec: WireCodec<TInput, TEncoded>,
 ): WireCodec<Readonly<Record<string, TInput>>, Readonly<Record<string, TEncoded>>> => ({
   kind: `record(${codec.kind})`,
+  schema: schemaOf("record", codec.schema),
   encode: (input) => processRecord(input, codec, "encode"),
   decode: (value) => processRecord(value, codec, "decode"),
 });
 
-const processRecord = <TInput, TEncoded extends WireValue>(
+function processRecord<TInput, TEncoded extends WireValue>(
+  value: Readonly<Record<string, TInput>>,
+  codec: WireCodec<TInput, TEncoded>,
+  direction: "encode",
+): DecodeResult<Readonly<Record<string, TEncoded>>>;
+function processRecord<TInput, TEncoded extends WireValue>(
+  value: unknown,
+  codec: WireCodec<TInput, TEncoded>,
+  direction: "decode",
+): DecodeResult<Readonly<Record<string, TInput>>>;
+function processRecord<TInput, TEncoded extends WireValue>(
   value: unknown,
   codec: WireCodec<TInput, TEncoded>,
   direction: "encode" | "decode",
-): DecodeResult<Record<string, any>> => {
+): DecodeResult<Record<string, unknown>> {
   if (!isPlainObject(value)) return failure("Expected a plain object record");
-  const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  const output: Record<string, unknown> = Object.create(null);
   const issues: CodecIssue[] = [];
   for (const [key, entry] of Object.entries(value)) {
+    // The encode overload admitted Record<string, TInput>; the shared
+    // encode/decode implementation intentionally erased that branch.
     const result = direction === "encode" ? codec.encode(entry as TInput) : codec.decode(entry);
     if (result.ok) {
       Object.defineProperty(output, key, {
@@ -426,11 +529,11 @@ const processRecord = <TInput, TEncoded extends WireValue>(
     } else issues.push(...result.issues.map((issue) => atPath(issue, key)));
   }
   return issues.length > 0 ? { ok: false, issues } : success(output);
-};
+}
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value) as unknown;
+  const prototype: unknown = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 };
 
@@ -438,6 +541,12 @@ const object = <const TShape extends CodecShape>(
   shape: TShape,
 ): WireCodec<ShapeInput<TShape>, ShapeEncoded<TShape>> => ({
   kind: "object",
+  schema: schemaOf(
+    "object",
+    Object.entries(shape)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, codec]) => [key, codec.schema]),
+  ),
   encode: (input) => {
     const result = processObject(input, shape, "encode");
     // SAFETY: encode invokes every shape codec's encode method, so the mapped
@@ -472,7 +581,8 @@ const processObject = <const TShape extends CodecShape>(
   const issues: CodecIssue[] = [];
   for (const [key, codec] of Object.entries(shape)) {
     if (!(key in value) && "optional" in codec && codec.optional === true) continue;
-    const result = direction === "encode" ? codec.encode(value[key]) : codec.decode(value[key]);
+    const result =
+      direction === "encode" ? encodeUnknownWireValue(codec, value[key]) : codec.decode(value[key]);
     if (result.ok) {
       Object.defineProperty(output, key, {
         value: result.value,
@@ -486,7 +596,51 @@ const processObject = <const TShape extends CodecShape>(
   return issues.length > 0 ? { ok: false, issues } : success(output);
 };
 
-export const wire = {
+/** The complete built-in codec vocabulary. */
+export interface WireNamespace {
+  readonly string: WireCodec<string, string>;
+  readonly boolean: WireCodec<boolean, boolean>;
+  readonly number: WireCodec<number, number>;
+  readonly finiteNumber: WireCodec<number, number>;
+  readonly bigint: WireCodec<bigint, bigint>;
+  readonly undefined: WireCodec<undefined, undefined>;
+  readonly date: WireCodec<Date, Date>;
+  readonly regexp: WireCodec<RegExp, RegExp>;
+  readonly url: WireCodec<URL, URL>;
+  readonly null: WireCodec<null, null>;
+  readonly integer: (options?: IntegerOptions) => WireCodec<number, number>;
+  readonly literal: <const TValue extends WireScalar>(
+    expected: TValue,
+  ) => WireCodec<TValue, TValue>;
+  readonly array: <TInput, TEncoded extends WireValue>(
+    item: WireCodec<TInput, TEncoded>,
+  ) => WireCodec<readonly TInput[], readonly TEncoded[]>;
+  readonly union: <const TCodecs extends readonly AnyWireCodec[]>(
+    codecs: TCodecs,
+  ) => WireCodec<InputOf<TCodecs[number]>, EncodedOf<TCodecs[number]>>;
+  readonly optional: <TInput, TEncoded extends WireValue>(
+    codec: WireCodec<TInput, TEncoded>,
+  ) => WireCodec<TInput | undefined, TEncoded | undefined> & { readonly optional: true };
+  readonly record: <TInput, TEncoded extends WireValue>(
+    codec: WireCodec<TInput, TEncoded>,
+  ) => WireCodec<Readonly<Record<string, TInput>>, Readonly<Record<string, TEncoded>>>;
+  readonly object: <const TShape extends CodecShape>(
+    shape: TShape,
+  ) => WireCodec<ShapeInput<TShape>, ShapeEncoded<TShape>>;
+  readonly serializable: <T>(
+    guard: WireGuard<T>,
+    options: ExternalWireSchemaOptions,
+  ) => WireCodec<T, T & WireValue>;
+  readonly standard: <TSchema extends StandardSchemaV1<unknown, unknown>>(
+    schema: TSchema,
+    options: ExternalWireSchemaOptions,
+  ) => WireCodec<
+    TSchema extends StandardSchemaV1<unknown, infer TOutput> ? TOutput : never,
+    WireValue
+  >;
+}
+
+export const wire: WireNamespace = {
   string: stringCodec,
   boolean: booleanCodec,
   number: numberCodec,
@@ -506,4 +660,4 @@ export const wire = {
   object,
   serializable,
   standard,
-} as const;
+};

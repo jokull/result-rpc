@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { createBrowserClient, fetchTransport } from "result-rpc/client";
+import { createQueryRuntime } from "result-rpc/query";
 import { createTestHarness } from "wrangler";
 import { appContract } from "../shared/contract.ts";
 
@@ -77,4 +78,38 @@ test("keeps server-only implementation out of browser assets", async () => {
   ).join("\n");
   assert.doesNotMatch(browserCode, /RESULT_RPC_DEMO_SERVER_GRAPH_DO_NOT_SHIP/);
   assert.doesNotMatch(browserCode, /CREATE TABLE IF NOT EXISTS tickets/);
+});
+
+test("rejects production-Worker cache state from a different client contract", async () => {
+  const fetchThroughWorker = (input, init) => server.fetch(input, init);
+  const transport = fetchTransport({
+    url: "http://result-rpc-demo.test/api/rpc",
+    fetch: fetchThroughWorker,
+    headers: { "x-demo-workspace": "ws_hydrationtest" },
+  });
+  const currentClient = createBrowserClient({
+    contract: appContract,
+    transport,
+    contractVersion: "result-rpc-demo-v1",
+  });
+  const currentRuntime = createQueryRuntime({ client: currentClient });
+  const prefetched = await currentRuntime.prefetchPaginated(currentClient.tickets.list, {
+    status: "all",
+    search: "",
+  });
+  assert.equal(prefetched.ok, true);
+  const state = currentRuntime.dehydrate();
+
+  const staleClient = createBrowserClient({
+    contract: appContract,
+    transport,
+    contractVersion: "result-rpc-demo-stale",
+  });
+  const staleRuntime = createQueryRuntime({ client: staleClient });
+  assert.throws(
+    () => staleRuntime.hydrate(state),
+    /does not match client contract result-rpc-demo-stale/,
+  );
+  currentRuntime.clear();
+  staleRuntime.clear();
 });

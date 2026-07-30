@@ -1,5 +1,6 @@
 import {
   createClientErrorRegistry,
+  normalizeClientCallInput,
   type BaseClientOf,
   type ClientCallArgs,
   type ClientErrorOf,
@@ -7,13 +8,14 @@ import {
   type ProcedureClient,
 } from "../client/base-client.js";
 import { registerClientLike } from "../client/client-metadata.js";
+import { effectiveContractVersion, type EffectiveContractVersion } from "../contract-digest.js";
 import { ServerBadRequest, ServerInternal } from "../framework-errors.js";
 import {
   executeProcedure,
   executeSubscription,
+  type AnyRouter,
   type AnyProcedure,
   type InternalErrorEvent,
-  type Router,
   type RouterContext,
   type RouterRecord,
 } from "./contract.js";
@@ -53,9 +55,11 @@ export type ServerClientOf<TRouter> = BaseClientOf<
   "iterable"
 >;
 
-export interface CreateServerClientOptions<TRouter extends Router<any, RouterRecord>> {
+export interface CreateServerClientOptions<TRouter extends AnyRouter> {
   readonly context: RouterContext<TRouter>;
   readonly onInternalError?: (event: InternalErrorEvent) => void;
+  /** Overrides the automatic digest used to bind dehydrated RSC state. */
+  readonly contractVersion?: EffectiveContractVersion;
   /**
    * Collects what `.headers()` procedures write. Pass the response's headers
    * from a server action or route handler to make a login mutation's cookie
@@ -76,10 +80,11 @@ const isProcedure = (value: AnyProcedure | RouterRecord): value is AnyProcedure 
  * Mutations execute normally, but cache declarations are inert because there
  * is no browser cache to patch or invalidate.
  */
-export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
+export const createServerClient = <TRouter extends AnyRouter>(
   router: TRouter,
   options: CreateServerClientOptions<TRouter>,
 ): ServerClientOf<TRouter> => {
+  const boundaryDefinitions = [ServerBadRequest, ServerInternal] as const;
   const registry = new Map<string, { readonly fn: Function; readonly procedure: AnyProcedure }>();
 
   const executionOptions = (path: string, call: ServerCallOptions | undefined) => ({
@@ -92,14 +97,10 @@ export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
 
   const callable = (procedure: AnyProcedure, path: string): Function => {
     const fn = (...args: [unknown?, ServerCallOptions?]) => {
-      const input = args.length === 0 ? {} : args[0];
+      const input = normalizeClientCallInput(args);
       return procedure._kind === "subscription-procedure"
-        ? executeSubscription(procedure, input as never, executionOptions(path, args[1]) as never)
-        : executeProcedure(
-            procedure as never,
-            input as never,
-            executionOptions(path, args[1]) as never,
-          );
+        ? executeSubscription(procedure, input, executionOptions(path, args[1]))
+        : executeProcedure(procedure, input, executionOptions(path, args[1]));
     };
     Object.defineProperty(fn, "$kind", { value: procedure._def.kind, enumerable: true });
     registry.set(path, { fn, procedure });
@@ -110,21 +111,24 @@ export const createServerClient = <TRouter extends Router<any, RouterRecord>>(
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node)) {
       const path = [...prefix, key];
-      out[key] = isProcedure(value)
-        ? callable(value, path.join("."))
-        : build(value as RouterRecord, path);
+      out[key] = isProcedure(value) ? callable(value, path.join(".")) : build(value, path);
     }
     return out;
   };
 
   const client = build(router.record, []);
   Object.defineProperty(client, "$errors", {
-    value: createClientErrorRegistry<ServerClientErrorOf<TRouter>>(router, [
-      ServerBadRequest,
-      ServerInternal,
-    ]),
+    value: createClientErrorRegistry<ServerClientErrorOf<TRouter>>(router, boundaryDefinitions),
     enumerable: true,
   });
-  registerClientLike(client, router, registry);
+  registerClientLike(
+    client,
+    router,
+    registry,
+    boundaryDefinitions,
+    effectiveContractVersion(router, options.contractVersion),
+  );
+  // build() mirrors TRouter's checked record recursively and registration
+  // attached metadata to every leaf; only dynamic property assembly is lost.
   return client as ServerClientOf<TRouter>;
 };

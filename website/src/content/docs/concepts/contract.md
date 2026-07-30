@@ -100,7 +100,7 @@ const authenticated = server
     }
 
     return next({
-      context: { ...context, user },
+      context: { user },
     });
   });
 

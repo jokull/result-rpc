@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Component, type ReactNode } from "react";
+import { Component, StrictMode, Suspense, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { defectErrors, err, error, ok, transportErrors, wire } from "../index.js";
 import type { ClientEvent } from "../client/client.js";
@@ -8,7 +8,7 @@ import { createQueryRuntime } from "../query/runtime.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
 import { createFixtureClient } from "../testing/index.js";
-import { ResultRpcProvider, defineShell, useResultQuery } from "./index.js";
+import { ResultRpcProvider, defineShell, useResultQuery, useResultSuspenseQuery } from "./index.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -350,6 +350,7 @@ describe("shells", () => {
 
   test("a tag can only be claimed once per chain", () => {
     expect(() =>
+      // @ts-expect-error A parent already owns every transport definition.
       defineShell({
         name: "duplicate",
         from: AppShell,
@@ -541,6 +542,355 @@ describe("claim breadcrumbs", () => {
 });
 
 describe("resume lifecycle", () => {
+  test("a first-render claimed Suspense failure reaches its shell and resumes", async () => {
+    let sessionValid = false;
+    const r2 = rpc.context<{}>();
+    const guarded = r2
+      .procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.string)
+      .errors({ SessionExpired })
+      .query(({ input, errors }) =>
+        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})),
+      );
+    const router2 = r2.router({ guarded });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createFixtureClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: client2 });
+    const seen: string[] = [];
+    const AuthShell = defineShell({
+      name: "suspense-auth",
+      claims: authErrors,
+      onError: (failure) => seen.push(failure._tag),
+    });
+
+    let affected = 0;
+    let errorCount = 0;
+    let latestTag: string | undefined;
+    let resume: (() => void) | undefined;
+    function Holdings() {
+      const held = AuthShell.useHeld();
+      affected = held.affected;
+      errorCount = held.errors.length;
+      latestTag = held.latest?._tag;
+      resume = held.resume;
+      return <span>affected:{held.affected}</span>;
+    }
+    function Probe() {
+      const state = useResultSuspenseQuery(client2.guarded, { id: "a" }, { retry: false });
+      return <span>{state.state === "success" ? state.value : state.error._tag}</span>;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <StrictMode>
+          <ResultRpcProvider runtime={runtime}>
+            <AuthShell.Provider>
+              <Holdings />
+              <Suspense fallback={<span>loading</span>}>
+                <Probe />
+              </Suspense>
+            </AuthShell.Provider>
+          </ResultRpcProvider>
+        </StrictMode>,
+      );
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("loading");
+    expect(affected).toBe(1);
+    expect(errorCount).toBe(1);
+    expect(latestTag).toBe("auth/session-expired");
+    expect(seen).toEqual(["auth/session-expired"]);
+
+    sessionValid = true;
+    await act(async () => {
+      resume!();
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("data:a");
+    expect(affected).toBe(0);
+    expect(seen).toEqual(["auth/session-expired"]);
+
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("Strict Mode collapses replay but preserves distinct suspended query operations", async () => {
+    let sessionValid = false;
+    const r2 = rpc.context<{}>();
+    const guarded = r2
+      .procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.string)
+      .errors({ SessionExpired })
+      .query(({ input, errors }) =>
+        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})),
+      );
+    const router2 = r2.router({ guarded });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createFixtureClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: client2 });
+    const seen: string[] = [];
+    const AuthShell = defineShell({
+      name: "suspense-siblings",
+      claims: authErrors,
+      onError: (failure) => seen.push(failure._tag),
+    });
+
+    let affected = 0;
+    let errorCount = 0;
+    let latestTag: string | undefined;
+    let resume: (() => void) | undefined;
+    function Holdings() {
+      const held = AuthShell.useHeld();
+      affected = held.affected;
+      errorCount = held.errors.length;
+      latestTag = held.latest?._tag;
+      resume = held.resume;
+      return null;
+    }
+    function Probe({ id }: { readonly id: string }) {
+      const state = useResultSuspenseQuery(client2.guarded, { id }, { retry: false });
+      return <span>{state.state === "success" ? state.value : state.error._tag}</span>;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <StrictMode>
+          <ResultRpcProvider runtime={runtime}>
+            <AuthShell.Provider>
+              <Holdings />
+              <Suspense fallback={<span>loading-a</span>}>
+                <Probe id="a" />
+              </Suspense>
+              <Suspense fallback={<span>loading-b</span>}>
+                <Probe id="b" />
+              </Suspense>
+            </AuthShell.Provider>
+          </ResultRpcProvider>
+        </StrictMode>,
+      );
+      await settle();
+    });
+    expect(affected).toBe(2);
+    expect(errorCount).toBe(2);
+    expect(latestTag).toBe("auth/session-expired");
+    expect(seen).toHaveLength(2);
+
+    sessionValid = true;
+    await act(async () => {
+      resume!();
+      await settle();
+    });
+    const rendered = JSON.stringify(renderer?.toJSON());
+    expect(rendered).toContain("data:a");
+    expect(rendered).toContain("data:b");
+    expect(affected).toBe(0);
+
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("a claimed background refetch keeps stale Suspense data and remains resumable", async () => {
+    let sessionValid = true;
+    const r2 = rpc.context<{}>();
+    const guarded = r2
+      .procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.string)
+      .errors({ SessionExpired })
+      .query(({ input, errors }) =>
+        sessionValid ? ok(`data:${input.id}`) : err(errors.SessionExpired({})),
+      );
+    const router2 = r2.router({ guarded });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createFixtureClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const runtime = createQueryRuntime({ client: client2 });
+    const seen: string[] = [];
+    const AuthShell = defineShell({
+      name: "suspense-background",
+      claims: authErrors,
+      onError: (failure) => seen.push(failure._tag),
+    });
+
+    let refetch: (() => Promise<void>) | undefined;
+    let affected = 0;
+    let resume: (() => void) | undefined;
+    function Holdings() {
+      const held = AuthShell.useHeld();
+      affected = held.affected;
+      resume = held.resume;
+      return null;
+    }
+    function Probe() {
+      const state = useResultSuspenseQuery(client2.guarded, { id: "a" }, { retry: false });
+      refetch = state.refetch;
+      return <span>{state.state === "success" ? state.value : state.error._tag}</span>;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AuthShell.Provider>
+            <Holdings />
+            <Suspense fallback={<span>loading</span>}>
+              <Probe />
+            </Suspense>
+          </AuthShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("data:a");
+
+    sessionValid = false;
+    await act(async () => {
+      await refetch!();
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("data:a");
+    expect(affected).toBe(1);
+    expect(seen).toEqual(["auth/session-expired"]);
+
+    sessionValid = true;
+    await act(async () => {
+      resume!();
+      await settle();
+    });
+    expect(affected).toBe(0);
+    expect(JSON.stringify(renderer?.toJSON())).toContain("data:a");
+
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
+  test("a hydrated success can become a claimed background failure without suspending forever", async () => {
+    let sessionValid = true;
+    const r2 = rpc.context<{}>();
+    const guarded = r2
+      .procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.string)
+      .errors({ SessionExpired })
+      .query(({ input, errors }) =>
+        sessionValid ? ok(`hydrated:${input.id}`) : err(errors.SessionExpired({})),
+      );
+    const router2 = r2.router({ guarded });
+    const handler2 = createFetchHandler({ router: router2, createContext: () => ({}) });
+    const client2 = createFixtureClient({
+      router: router2,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: ((input: string | URL | Request, init?: RequestInit) =>
+          handler2(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    const serverRuntime = createQueryRuntime({ client: client2 });
+    await serverRuntime.prefetch(client2.guarded, { id: "a" });
+    const dehydrated = serverRuntime.dehydrate();
+    const browserRuntime = createQueryRuntime({ client: client2 });
+    sessionValid = false;
+
+    const AuthShell = defineShell({ name: "suspense-hydrated", claims: authErrors });
+    let affected = 0;
+    let resume: (() => void) | undefined;
+    function Holdings() {
+      const held = AuthShell.useHeld();
+      affected = held.affected;
+      resume = held.resume;
+      return null;
+    }
+    function Probe() {
+      const state = useResultSuspenseQuery(client2.guarded, { id: "a" }, { retry: false });
+      return <span>{state.state === "success" ? state.value : state.error._tag}</span>;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={browserRuntime} hydrate={dehydrated}>
+          <AuthShell.Provider>
+            <Holdings />
+            <Suspense fallback={<span>loading</span>}>
+              <Probe />
+            </Suspense>
+          </AuthShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("hydrated:a");
+    expect(affected).toBe(1);
+
+    sessionValid = true;
+    await act(async () => {
+      resume!();
+      await settle();
+    });
+    expect(affected).toBe(0);
+    expect(JSON.stringify(renderer?.toJSON())).toContain("hydrated:a");
+
+    await act(async () => renderer?.unmount());
+    browserRuntime.clear();
+    serverRuntime.clear();
+  });
+
+  test("an escalated first-render Suspense failure reaches the error boundary", async () => {
+    const client = clientFor(httpTransport);
+    const runtime = createQueryRuntime({ client });
+
+    function Probe() {
+      useResultSuspenseQuery(client.trip, { id: "boom" }, { retry: false });
+      return <span>unreachable</span>;
+    }
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(
+        <ResultRpcProvider runtime={runtime}>
+          <AppShell.Provider>
+            <DefectShell.Provider>
+              <Boundary>
+                <Suspense fallback={<span>loading</span>}>
+                  <Probe />
+                </Suspense>
+              </Boundary>
+            </DefectShell.Provider>
+          </AppShell.Provider>
+        </ResultRpcProvider>,
+      );
+      await settle();
+    });
+    expect(JSON.stringify(renderer?.toJSON())).toContain("server/internal");
+
+    await act(async () => renderer?.unmount());
+    runtime.clear();
+  });
+
   test("resume() retries held queries after the condition is fixed", async () => {
     // a server whose session validity is mutable mid-flight
     let sessionValid = false;

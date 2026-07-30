@@ -159,15 +159,15 @@ clean boundary automatically — in **both** dimensions:
 
 - **Runtime**: they import `appContract` from the package's built output; the
   handler code lives in a server entry the client build never touches.
-- **Types**: the client's types do **not** drag in your server type graph. The
-  client type is derived as `RouterContract<any, TRecord>` — the root context
-  (your `db`, your drizzle inference) is matched as `any` and discarded. A
-  consumer typechecks client calls even if the server context type is absent
-  entirely. You get tRPC-style end-to-end inference **without** a consumer's
-  `tsc` chewing through your database types.
+- **Types**: client callables are projected from the contract's associated
+  `record`; the root context never appears in their input, output, or error
+  types. TypeScript still has to resolve whatever declarations the shared
+  contract itself imports, so keep that module's context shape browser-safe
+  (or put the public context interface in its own type-only module). Runtime
+  bundlers erase those imports, but a declaration graph is still a graph.
 
-So the split that protects your secrets also gives you a fast, decoupled type
-boundary — the thing a "nasty server type graph" would otherwise cost you.
+The split protects the runtime bundle completely; keeping the shared contract's
+type imports narrow does the corresponding job for editor and `tsc` performance.
 
 ## What is safe to expose
 

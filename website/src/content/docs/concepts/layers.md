@@ -44,8 +44,8 @@ export const whoami = AuthLayer.procedure(server, authenticated);
 // endpoint *cannot* disagree with the middleware. That is the drift, deleted.
 ```
 
-(Contract-first codebases put `AuthLayer.contract(app)` in the shared contract
-and pass it as `AuthLayer.procedure(server, contract, authenticated)`.)
+(Contract-first codebases put `AuthLayer.contract(app)` in the shared contract,
+then call `AuthLayer.implement(server, contract, authenticated)` on the server.)
 
 And the React half is its sibling:
 

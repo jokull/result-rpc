@@ -47,6 +47,7 @@ describe("wire codecs", () => {
         typeof value === "object" &&
         "id" in value &&
         typeof value.id === "string",
+      { id: "core/user/v1" },
     );
     expect(User.decode({ id: "u1" })).toEqual({ ok: true, value: { id: "u1" } });
     expect(User.decode("shape-compatible only by assertion").ok).toBe(false);
@@ -162,6 +163,16 @@ describe("tagged errors", () => {
     expect(message.is({ _tag: "test/not-found", data: { id: "trip_1" } })).toBe(false);
   });
 
+  test("catalogs reject distinct definitions that reuse one tag", () => {
+    const DuplicateNotFound = error({
+      tag: "test/not-found",
+      data: wire.object({ id: wire.string }),
+    });
+    expect(() =>
+      errorCatalog({ NotFound, DuplicateNotFound }, { "test/not-found": () => "unreachable" }),
+    ).toThrow(/conflicting definitions/);
+  });
+
   test("creates frozen instances with a structural wire representation", () => {
     const value = NotFound({ id: "trip_1" });
     expect(value.toJSON()).toEqual({ _tag: "test/not-found", data: { id: "trip_1" } });
@@ -203,6 +214,7 @@ describe("tagged errors", () => {
   test("serializer preflight rejects a custom codec that lies", () => {
     const lyingCodec = {
       kind: "lying",
+      schema: '["test","lying"]',
       encode: () => ({ ok: true, value: () => undefined }),
       decode: () => ({ ok: true, value: "claimed-safe" }),
     } as unknown as WireCodec<string, WireValue>;
@@ -219,6 +231,7 @@ describe("tagged errors", () => {
   test("error definition guards contain throwing custom decoders", () => {
     const throwingCodec = {
       kind: "throwing",
+      schema: '["test","throwing"]',
       encode: (value: string) => ({ ok: true as const, value }),
       decode: () => {
         throw new Error("decoder defect");

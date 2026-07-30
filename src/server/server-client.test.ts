@@ -65,7 +65,7 @@ const requireUser = d
   .use(({ context, errors, next }) =>
     context.userId === null
       ? err(errors.Missing({ at: new Date(0) }))
-      : next({ context: { ...context, userId: context.userId } }),
+      : next({ context: { userId: context.userId } }),
   );
 
 const whoami = d
@@ -105,6 +105,9 @@ const brokenStream = d.implement(streamContract).stream(async function* () {
 });
 const malformedStreamContract = d.procedure().input(wire.string).output(wire.string).subscription();
 const malformedStream = d.implement(malformedStreamContract).stream(() => ({}) as never);
+const malformedStreamItem = d.implement(malformedStreamContract).stream(async function* () {
+  yield { ok: "not-a-result" } as never;
+});
 
 const directRouter = d.router({
   whoami,
@@ -113,6 +116,7 @@ const directRouter = d.router({
   acceptNull,
   brokenStream,
   malformedStream,
+  malformedStreamItem,
 });
 
 describe("server client", () => {
@@ -189,6 +193,15 @@ describe("server client", () => {
     const client = createServerClient(directRouter, { context: { userId: "u_1" } });
     const results = [];
     for await (const result of client.malformedStream("input")) results.push(result);
+    expect(results).toHaveLength(1);
+    expect(results[0]?.ok).toBe(false);
+    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+  });
+
+  test("contains malformed subscription items before consumers observe them", async () => {
+    const client = createServerClient(directRouter, { context: { userId: "u_1" } });
+    const results = [];
+    for await (const result of client.malformedStreamItem("input")) results.push(result);
     expect(results).toHaveLength(1);
     expect(results[0]?.ok).toBe(false);
     if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");

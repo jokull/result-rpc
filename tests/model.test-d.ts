@@ -36,6 +36,7 @@ contentWrite.writes(Content, (input) => ({ id: input.id, locale: input.locale })
 contentWrite.writes(Content, (input) => ({ id: input.id }));
 
 const acceptsContentKey = (_key: ModelKeyInput<typeof Content>) => undefined;
+// @ts-expect-error composite identity segments must remain structured
 acceptsContentKey("content:en");
 acceptsContentKey({ id: "content", locale: "en" });
 entityIdFor(Content, { id: "content", locale: "en" });

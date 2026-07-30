@@ -1,4 +1,4 @@
-import type { AnyPublicTaggedError, AnyTaggedError } from "../error.js";
+import type { AnyPublicErrorDefinition, AnyPublicTaggedError, AnyTaggedError } from "../error.js";
 import {
   ClientDecodeFailure,
   ServerBadRequest,
@@ -13,7 +13,7 @@ import {
   ServerInternal,
   type ClientBoundaryError,
 } from "../framework-errors.js";
-import { contractDigest } from "../contract-digest.js";
+import { effectiveContractVersion, type EffectiveContractVersion } from "../contract-digest.js";
 import { getOnlineSnapshot } from "../connectivity.js";
 import {
   decodeStreamFrame,
@@ -25,13 +25,11 @@ import {
 import { err, ok, type Result } from "../result.js";
 import { DEFAULT_MAX_WIRE_BYTES, deserialize } from "../serializer.js";
 import { encodeProcedureInput } from "../wire.js";
-import type {
-  ContractRouterRecord,
-  ErrorDefinitionMap,
-  RouterContract,
-} from "../server/contract.js";
+import type { AnyRouterContract, ErrorDefinitionMap } from "../server/contract.js";
 import {
   createClientErrorRegistry,
+  createProcedureClientErrorRegistry,
+  normalizeClientCallInput,
   type BaseClientOf,
   type ClientErrorOf,
   type ClientErrorRegistry,
@@ -51,6 +49,7 @@ import {
   registerProcedureClient,
   type ProcedureClientMetadata,
 } from "./client-metadata.js";
+import { entityCacheKeyFromWire } from "../model.js";
 import {
   cancelled,
   isCancelled,
@@ -122,7 +121,7 @@ export type ClientEvent =
       effect: "pause" | "escalate";
     }>
   | Readonly<{
-      /** The server's contract digest stopped matching this client's — a
+      /** The server's effective contract version stopped matching this client's — a
        * deploy left this client behind. Emitted once per client. */
       type: "skew";
       clientContract: string;
@@ -131,15 +130,13 @@ export type ClientEvent =
 
 export type ClientEventListener = (event: ClientEvent) => void;
 
-export interface CreateBrowserClientOptions<
-  TRouter extends RouterContract<any, ContractRouterRecord>,
-> {
+export interface CreateBrowserClientOptions<TRouter extends AnyRouterContract> {
   /** Runtime contract used to encode inputs and validate outputs and errors. */
   readonly contract: TRouter;
   readonly transport: ClientTransport;
   readonly onEvent?: ClientEventListener;
   /** Overrides the automatic contract digest; set the same value server-side. */
-  readonly contractVersion?: string;
+  readonly contractVersion?: EffectiveContractVersion;
 }
 
 const clientEventListeners = new WeakMap<object, ClientEventListener>();
@@ -206,7 +203,7 @@ const decodeEnvelope = (
 
 /**
  * Contract-skew reconciliation. The server stamps every response with its
- * contract digest; when it stops matching this client's, the client is a
+ * effective contract version; when it stops matching this client's, the client is a
  * stale deploy. Contract-shaped failures are then reclassified into
  * `client/stale` (whose built-in shell reloads), and a `skew` event fires
  * once. Matching digests leave every failure exactly as it was — a real
@@ -217,6 +214,7 @@ interface SkewMonitor {
     result: Result<unknown, AnyTaggedError>,
     serverContract: string | undefined,
   ): Result<unknown, AnyTaggedError>;
+  reconcileStream(serverContract: string | null): Result<void, AnyTaggedError>;
 }
 
 const createSkewMonitor = (
@@ -224,17 +222,28 @@ const createSkewMonitor = (
   onEvent: ClientEventListener | undefined,
 ): SkewMonitor => {
   let reported = false;
+  const mismatch = (serverContract: string): boolean => {
+    if (serverContract === contract) return false;
+    if (!reported) {
+      reported = true;
+      onEvent?.({ type: "skew", clientContract: contract, serverContract });
+    }
+    return true;
+  };
   return {
     reconcile: (result, serverContract) => {
-      if (serverContract === undefined || serverContract === contract) return result;
-      if (!reported) {
-        reported = true;
-        onEvent?.({ type: "skew", clientContract: contract, serverContract });
-      }
+      if (serverContract === undefined || !mismatch(serverContract)) return result;
       if (!result.ok && STALE_RECLASSIFIABLE_TAGS.has(result.error._tag)) {
         return err(ClientStale({ reclassifiedFrom: result.error._tag }));
       }
       return result;
+    },
+    reconcileStream: (serverContract) => {
+      if (serverContract === null) {
+        return err(ClientProtocolViolation({ reason: "version" }));
+      }
+      if (!mismatch(serverContract)) return ok(undefined);
+      return err(ClientStale({ reclassifiedFrom: "client/protocol-violation" }));
     },
   };
 };
@@ -296,7 +305,11 @@ const decodeTransportResponse = (
 
   const result = decodeEnvelope(procedure, envelope, response.status);
   if (envelope.touched !== undefined) {
-    const keys = envelope.touched.filter((key): key is string => typeof key === "string");
+    const keys = envelope.touched.flatMap((key) => {
+      if (typeof key !== "string") return [];
+      const parsed = entityCacheKeyFromWire(key);
+      return parsed === undefined ? [] : [parsed];
+    });
     if (keys.length > 0) recordTouchedEntities(result, keys);
   }
   return result;
@@ -415,6 +428,7 @@ const subscribeProcedure = (
   input: unknown,
   transport: ClientTransport,
   onEvent: ClientEventListener | undefined,
+  skew: SkewMonitor,
   options: TransportRequestOptions = {},
 ): ResultSubscription<unknown, AnyTaggedError> => {
   const controller = new AbortController();
@@ -437,12 +451,28 @@ const subscribeProcedure = (
       return;
     }
     const { response } = outcome;
+    const cancelBody = async () => {
+      if (!response.body) return;
+      try {
+        await response.body.cancel();
+      } catch {
+        // Cancellation is best-effort cleanup; it never makes an unsafe
+        // handshake readable or changes the failure exposed to the caller.
+      }
+    };
+    const handshake = skew.reconcileStream(response.contract);
+    if (!handshake.ok) {
+      await cancelBody();
+      yield handshake;
+      return;
+    }
     if (
       response.status < 200 ||
       response.status >= 300 ||
       !isStreamContentType(response.contentType) ||
       !response.body
     ) {
+      await cancelBody();
       yield err(
         response.status >= 400
           ? ClientHttpFailure({ status: response.status })
@@ -454,9 +484,20 @@ const subscribeProcedure = (
     const decoder = new TextDecoder();
     let buffer = "";
     let expectedSequence = 0;
+    let sourceClosed = false;
+    let readerCancellation: Promise<void> | undefined;
+    const cancelReader = (): Promise<void> => {
+      readerCancellation ??= reader.cancel().catch(() => undefined);
+      return readerCancellation;
+    };
+    const abortReader = () => void cancelReader();
+    if (signal.aborted) abortReader();
+    else signal.addEventListener("abort", abortReader, { once: true });
     try {
       while (true) {
         const chunk = await reader.read();
+        if (signal.aborted) throw cancelled;
+        if (chunk.done) sourceClosed = true;
         buffer += decoder.decode(chunk.value, { stream: !chunk.done });
         if (new TextEncoder().encode(buffer).byteLength > DEFAULT_MAX_WIRE_BYTES) {
           yield err(ClientProtocolViolation({ reason: "envelope" }));
@@ -486,6 +527,8 @@ const subscribeProcedure = (
       if (isCancelled(failure)) throw failure;
       yield err(ClientNetworkFailure({ retryable: false }));
     } finally {
+      signal.removeEventListener("abort", abortReader);
+      if (!sourceClosed) await cancelReader();
       reader.releaseLock();
     }
   }
@@ -542,6 +585,7 @@ const createProxy = (
   cache: Map<string, unknown>,
   clientIdentity: object,
   errorRegistry: ClientErrorRegistry<AnyPublicTaggedError>,
+  boundaryDefinitions: readonly AnyPublicErrorDefinition[],
 ): unknown => {
   const procedurePath = path.join(".");
   const cached = cache.get(procedurePath);
@@ -571,11 +615,12 @@ const createProxy = (
         cache,
         clientIdentity,
         errorRegistry,
+        boundaryDefinitions,
       );
     },
     apply: (_target, _thisArg, argumentsList: [unknown?, TransportRequestOptions?]) => {
       if (!procedure) throw new TypeError(`Unknown procedure ${procedurePath}`);
-      const input = argumentsList.length === 0 ? {} : argumentsList[0];
+      const input = normalizeClientCallInput(argumentsList);
       if (procedure._def.kind === "subscription") {
         return subscribeProcedure(
           procedure,
@@ -583,6 +628,7 @@ const createProxy = (
           input,
           transport,
           onEvent,
+          skew,
           argumentsList[1],
         );
       }
@@ -599,7 +645,12 @@ const createProxy = (
   });
   registerClientIdentity(proxy, clientIdentity);
   if (procedure) {
-    registerProcedureClient(proxy, { path: procedurePath, procedure, clientIdentity });
+    registerProcedureClient(proxy, {
+      path: procedurePath,
+      procedure,
+      errors: createProcedureClientErrorRegistry(procedure, boundaryDefinitions),
+      clientIdentity,
+    });
   }
   cache.set(procedurePath, proxy);
   return proxy;
@@ -611,19 +662,18 @@ export const createClientRuntime = <TRouter extends ClientRouter>(
   options: {
     readonly transport: ClientTransport;
     readonly onEvent?: ClientEventListener;
-    readonly contractVersion?: string;
+    readonly contractVersion?: EffectiveContractVersion;
   },
 ): BrowserClientOf<TRouter> => {
   const clientIdentity = Object.freeze({});
-  registerClientIdentity(clientIdentity, clientIdentity, router);
+  const contractVersion = effectiveContractVersion(router, options.contractVersion);
+  registerClientIdentity(clientIdentity, clientIdentity, router, contractVersion);
   if (options.onEvent) clientEventListeners.set(clientIdentity, options.onEvent);
-  const skew = createSkewMonitor(
-    options.contractVersion ?? contractDigest(router),
-    options.onEvent,
-  );
+  const skew = createSkewMonitor(contractVersion, options.onEvent);
+  const boundaryDefinitions = Object.values(frameworkErrorDefinitions);
   const errorRegistry = createClientErrorRegistry<BrowserClientErrorOf<TRouter>>(
     router,
-    Object.values(frameworkErrorDefinitions),
+    boundaryDefinitions,
   );
   return createProxy(
     router,
@@ -634,10 +684,13 @@ export const createClientRuntime = <TRouter extends ClientRouter>(
     new Map(),
     clientIdentity,
     errorRegistry,
+    boundaryDefinitions,
+    // The proxy only mints paths present in TRouter and registers each leaf's
+    // exact procedure metadata; this final assertion restores that tree.
   ) as BrowserClientOf<TRouter>;
 };
 
-export const createBrowserClient = <TRouter extends RouterContract<any, ContractRouterRecord>>(
+export const createBrowserClient = <TRouter extends AnyRouterContract>(
   options: CreateBrowserClientOptions<TRouter>,
 ): BrowserClientOf<TRouter> => {
   if (options.contract?._kind !== "router-contract") {

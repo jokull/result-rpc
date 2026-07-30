@@ -49,6 +49,8 @@ export const deserialize = (
     if (options.maxBytes !== undefined && encodedBytes(value) > options.maxBytes) {
       return { ok: false, message: `Encoded value exceeds ${options.maxBytes} bytes` };
     }
+    // devalue.parse is typed loosely by the dependency. Keep the result
+    // unknown until the surrounding protocol or wire codec validates it.
     return { ok: true, value: parse(value) as unknown };
   } catch (cause) {
     return {

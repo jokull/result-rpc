@@ -39,7 +39,7 @@ const authenticated = r
   .errors({ Unauthorized })
   .use(async ({ context, errors, next }) => {
     if (!context.authenticated) return err(errors.Unauthorized({}));
-    return next({ context: { ...context, userId: "user_1" } });
+    return next({ context: { userId: "user_1" } });
   });
 
 const byId = r
@@ -302,7 +302,7 @@ describe("procedure bases", () => {
       .use(({ context, errors, next }) =>
         context.user === undefined
           ? err(errors.Denied())
-          : next({ context: { ...context, viewer: context.user } }),
+          : next({ context: { viewer: context.user } }),
       );
 
     // the tRPC protectedProcedure pattern: builders are immutable, so a base forks freely
@@ -317,9 +317,9 @@ describe("procedure bases", () => {
     });
 
     const run = (path: "whoami" | "shout", user: string | undefined, input: unknown) =>
-      executeProcedure(router.procedures.get(path)! as never, input as never, {
-        context: { user },
-      });
+      path === "whoami"
+        ? executeProcedure(router.record.whoami, input as {}, { context: { user } })
+        : executeProcedure(router.record.shout, input as { word: string }, { context: { user } });
     expect(await run("whoami", "u_1", {})).toEqual(ok("u_1"));
     expect(await run("shout", "u_1", { word: "hey" })).toEqual(ok("u_1: hey!"));
     expect(await run("shout", undefined, { word: "hey" })).toEqual(err(Denied()));

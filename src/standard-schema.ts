@@ -3,7 +3,7 @@ import type { ServerBadRequest } from "./framework-errors.js";
 /**
  * The Standard Schema V1 interface (standardschema.dev), declared locally —
  * no dependency. result-rpc consumes it in one deliberate direction:
- * `wire.standard(schema)` adopts a validator (Valibot, Zod, ArkType) as a
+ * `wire.standard(schema, { id })` adopts a validator (Valibot, Zod, ArkType) as a
  * wire input codec.
  *
  * There is intentionally no codec→form direction. A form validates a human

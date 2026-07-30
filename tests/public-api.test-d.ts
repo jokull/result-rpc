@@ -1,9 +1,19 @@
 import {
   type InputOf,
+  type AnyWireCodec,
+  type AnyLayer,
+  type AnyModel,
+  type AnyProcedure,
+  type AnyProcedureContract,
+  type AnyRouter,
+  type AnyRouterContract,
+  type AnyTaggedError,
   type ClientBoundaryError,
   type ModelKeyInput,
   type ProcedureError,
   type ErrorUnion,
+  type ErrorDefinition,
+  type ErrorVisibility,
   type ServerBadRequest,
   type Result,
   TaggedError,
@@ -13,6 +23,7 @@ import {
   ok,
   wire,
   type WireCodec,
+  type WireValue,
   matchError,
   isTaggedError,
 } from "../src/index.js";
@@ -29,26 +40,42 @@ import {
   type ClientErrors,
 } from "../src/client/index.js";
 import { createServerClient, serverRpc } from "../src/server/index.js";
-import { defineModel } from "../src/model.js";
+import { defineModel, type ModelProjection, type ModelValue } from "../src/model.js";
 import {
   createResultRpcReact,
-  getLayerProcedureResolver,
   type MutationStateOf,
+  type MutationOptions,
   type PaginatedClientCursor,
   type PaginatedClientItem,
   type PaginatedClientListInput,
   type PaginatedState,
   type PaginatedStateOf,
   type QueryState,
+  type QueryOptions,
   type QueryStateOf,
   type SubscriptionState,
+  type SubscriptionOptions,
   useResultClient,
+  useResultMutation,
+  useResultPaginatedQuery,
+  useResultQuery,
+  useResultSubscription,
+  useResultSuspenseQuery,
 } from "../src/react/index.js";
 import { createQueryRuntime } from "../src/query/runtime.js";
 // @ts-expect-error the React entry is `use client`; runtime construction belongs to result-rpc/query
 import { createQueryRuntime as unsafeReactRuntime } from "../src/react/index.js";
 void unsafeReactRuntime;
-import { rpc, type RouterErrors, type RouterInputs, type RouterOutputs } from "../src/index.js";
+import {
+  rpc,
+  type RouterContext,
+  type RouterErrors,
+  type RouterInputs,
+  type RouterOutputs,
+  type RouterRecordOf,
+  type RouterTypesOf,
+  type RpcFactoryContext,
+} from "../src/index.js";
 import {
   defectErrors,
   defineErrors,
@@ -56,6 +83,8 @@ import {
   type LayerErrors,
   type LayerValue,
   defineService,
+  type AnyServiceDefinition,
+  type ServiceTypesOf,
   errorCatalog,
   resolveServices,
   staleErrors,
@@ -66,6 +95,8 @@ import {
   layerShell,
   type ClaimedBy,
   type ClaimedErrorsBy,
+  type AnyLayerShell,
+  type AnyShell,
   type SubtractClaimedErrors,
   type ValueOf,
 } from "../src/react/index.js";
@@ -102,6 +133,36 @@ const WiderMissing = error({
   data: wire.object({ id: wire.string, note: wire.optional(wire.string) }),
 });
 
+// Callback-bearing options are contravariant: a handler prepared for every
+// tagged error is safe where one specific error is expected, never vice versa.
+declare const broadQueryOptions: QueryOptions<AnyTaggedError>;
+const narrowQueryOptions: QueryOptions<ReturnType<typeof Missing>> = broadQueryOptions;
+declare const onlyMissingQueryOptions: QueryOptions<ReturnType<typeof Missing>>;
+// @ts-expect-error A Missing-only callback cannot receive every tagged error.
+const unsafeBroadQueryOptions: QueryOptions<AnyTaggedError> = onlyMissingQueryOptions;
+void narrowQueryOptions;
+void unsafeBroadQueryOptions;
+
+declare const broadMutationOptions: MutationOptions<unknown, unknown, AnyTaggedError>;
+const narrowMutationOptions: MutationOptions<
+  { readonly id: string },
+  string,
+  ReturnType<typeof Missing>
+> = broadMutationOptions;
+void narrowMutationOptions;
+
+declare const broadSubscriptionOptions: SubscriptionOptions<AnyTaggedError>;
+const narrowSubscriptionOptions: SubscriptionOptions<ReturnType<typeof Missing>> =
+  broadSubscriptionOptions;
+void narrowSubscriptionOptions;
+
+declare const narrowSubscriptionState: SubscriptionState<
+  { readonly id: string },
+  ReturnType<typeof Missing>
+>;
+const broadSubscriptionState: SubscriptionState<object, AnyTaggedError> = narrowSubscriptionState;
+void broadSubscriptionState;
+
 const DefaultPublic = error({
   tag: "type/default-public",
   data: wire.object({}),
@@ -124,6 +185,52 @@ const stringOnlyCodec: WireCodec<string, string> = wire.string;
 // @ts-expect-error Codec inputs are invariant: a string codec cannot claim to encode numbers.
 const unsafelyWidenedCodec: WireCodec<string | number, string> = stringOnlyCodec;
 void unsafelyWidenedCodec;
+const erasedStringCodec: AnyWireCodec = wire.string;
+// @ts-expect-error An erased codec registry cannot feed arbitrary input into a specific encoder.
+erasedStringCodec.encode("value");
+export type _ErasedCodecDoesNotLeakInput = Assert<Equal<InputOf<AnyWireCodec>, never>>;
+const structuralSchema: string = wire.object({ id: wire.string }).schema;
+void structuralSchema;
+wire.serializable((value): value is string => typeof value === "string", {
+  id: "public/string/v1",
+});
+// @ts-expect-error External guards require a stable contract schema identity.
+wire.serializable((value): value is string => typeof value === "string");
+
+declare const stringInputDefinition: ErrorDefinition<"variance/input", string, string, "public">;
+declare const wideInputDefinition: ErrorDefinition<
+  "variance/input",
+  string | number,
+  string,
+  "public"
+>;
+// @ts-expect-error A definition that accepts only strings cannot claim to accept numbers.
+const unsafelyWidenedDefinitionInput: typeof wideInputDefinition = stringInputDefinition;
+// @ts-expect-error Decode makes definition input invariant, not merely contravariant.
+const unsafelyNarrowedDefinitionInput: typeof stringInputDefinition = wideInputDefinition;
+void unsafelyWidenedDefinitionInput;
+void unsafelyNarrowedDefinitionInput;
+
+declare const narrowDataDefinition: ErrorDefinition<"variance/data", string, string, "public">;
+declare const wideDataDefinition: ErrorDefinition<
+  "variance/data",
+  string,
+  string | number,
+  "public"
+>;
+const covariantDefinitionData: typeof wideDataDefinition = narrowDataDefinition;
+// @ts-expect-error Encoded error data cannot be narrowed from string | number to string.
+const unsafelyNarrowedDefinitionData: typeof narrowDataDefinition = wideDataDefinition;
+void covariantDefinitionData;
+void unsafelyNarrowedDefinitionData;
+
+declare const publicTagged: TaggedError<"variance/visibility", string, "public">;
+declare const anyVisibilityTagged: TaggedError<"variance/visibility", WireValue, ErrorVisibility>;
+const covariantTaggedError: typeof anyVisibilityTagged = publicTagged;
+// @ts-expect-error An unknown visibility cannot be narrowed to public.
+const unsafelyPublicTaggedError: typeof publicTagged = anyVisibilityTagged;
+void covariantTaggedError;
+void unsafelyPublicTaggedError;
 
 const PrivateFailure = error({
   tag: "type/private-failure",
@@ -178,6 +285,24 @@ interface Context {
 
 const contractR = rpc.context<Context>();
 const r = serverRpc.context<Context>();
+export type _ContractFactoryCarriesContext = Assert<
+  Equal<RpcFactoryContext<typeof contractR>, Context>
+>;
+export type _ServerFactoryCarriesContext = Assert<Equal<RpcFactoryContext<typeof r>, Context>>;
+
+// Procedure builders expose only legal terminal states.
+// @ts-expect-error A terminal procedure requires an output codec.
+contractR.procedure().query();
+// @ts-expect-error A terminal executable procedure requires an output codec.
+r.procedure().mutation(() => ok("missing output"));
+// @ts-expect-error Header-writing procedures cannot become subscriptions.
+contractR.procedure().headers().output(wire.string).subscription();
+// @ts-expect-error Mutation declarations narrow the builder to mutation.
+contractR
+  .procedure()
+  .output(wire.string)
+  .affects(contractR.procedure().output(wire.string).query())
+  .query();
 
 r.procedure().errors({ Missing }).errors({ Missing });
 // @ts-expect-error One definition-map key cannot identify two different errors.
@@ -271,6 +396,26 @@ const paginatedContract = contractR
   .output(wire.string)
   .errors({ Missing })
   .paginate({ cursor: wire.string });
+const alternateQueryContract = contractR
+  .procedure()
+  .input(wire.object({ page: wire.number }))
+  .output(wire.number)
+  .query();
+const alternateMutationContract = contractR
+  .procedure()
+  .input(wire.object({ count: wire.number }))
+  .output(wire.number)
+  .mutation();
+const alternateSubscriptionContract = contractR
+  .procedure()
+  .input(wire.object({ channel: wire.string }))
+  .output(wire.number)
+  .subscription();
+const alternatePaginatedContract = contractR
+  .procedure()
+  .input(wire.object({ pageSize: wire.number }))
+  .output(wire.number)
+  .paginate({ cursor: wire.number });
 const paginationLookalikeContract = contractR
   .procedure()
   .input(
@@ -292,6 +437,13 @@ contractR
   .output(wire.string)
   .affects(paginatedContract, (input) => ({ q: input.q }))
   .mutation();
+const inputBoundByAffects = contractR
+  .procedure()
+  .input(wire.object({ q: wire.string }))
+  .output(wire.string)
+  .affects(paginatedContract, (input) => ({ q: input.q }));
+// @ts-expect-error Cache mappers stay bound to the input codec they were declared against.
+inputBoundByAffects.input(wire.object({ id: wire.string }));
 contractR
   .procedure()
   .input(wire.object({ q: wire.string }))
@@ -304,7 +456,7 @@ const zeroInputSubscriptionContract = contractR.procedure().output(wire.string).
 const missingMiddleware = r
   .middleware()
   .errors({ Missing })
-  .use(({ context, next }) => next({ context }));
+  .use(({ next }) => next({ context: {} }));
 const contractWithoutMissing = contractR.procedure().output(wire.string).query();
 // @ts-expect-error Contract-first middleware cannot add an undeclared recoverable error.
 r.implement(contractWithoutMissing).use(missingMiddleware);
@@ -314,10 +466,14 @@ r.implement(contractR.procedure().output(wire.string).errors({ Missing }).query(
 const headerMiddleware = r
   .middleware()
   .headers()
-  .use(({ context, next }) => next({ context }));
+  .use(({ next }) => next({ context: {} }));
 // @ts-expect-error Header-writing middleware requires `.headers()` on the shared contract.
 r.implement(contractWithoutMissing).use(headerMiddleware);
 r.implement(contractR.procedure().headers().output(wire.string).query()).use(headerMiddleware);
+r.implement(contractR.procedure().headers().output(wire.string).query()).handler(({ context }) => {
+  context.headers.append("set-cookie", "session=typed");
+  return ok("ok");
+});
 declare const zeroInputClient: BrowserProcedureClient<typeof zeroInputContract>;
 declare const zeroInputSubscriptionClient: BrowserProcedureClient<
   typeof zeroInputSubscriptionContract
@@ -343,6 +499,18 @@ const contract = contractR.contract({
     paginationLookalike: paginationLookalikeContract,
   },
 });
+export type _ExecutableRouterCarriesRootContext = Assert<
+  Equal<RouterContext<typeof router>, Context>
+>;
+export type _ExecutableRouterCarriesExactRecord = Assert<
+  Equal<RouterRecordOf<typeof router>, typeof router.record>
+>;
+export type _ContractRouterCarriesRootContext = Assert<
+  Equal<RouterContext<typeof contract>, Context>
+>;
+export type _ContractRouterCarriesExactRecord = Assert<
+  Equal<RouterTypesOf<typeof contract>["record"], typeof contract.record>
+>;
 const client = createBrowserClient({
   contract,
   transport: { request: async () => ({ ok: false, reason: "network" }) },
@@ -427,6 +595,38 @@ void client.example.procedure({ id: 123 });
 void client.example.procedure({ id: "valid" });
 
 const runtime = createQueryRuntime({ client });
+declare const alternateQueryClient: BrowserProcedureClient<typeof alternateQueryContract>;
+declare const alternateMutationClient: BrowserProcedureClient<typeof alternateMutationContract>;
+declare const alternateSubscriptionClient: BrowserProcedureClient<
+  typeof alternateSubscriptionContract
+>;
+declare const alternatePaginatedClient: BrowserProcedureClient<typeof alternatePaginatedContract>;
+declare const selectedQuery: typeof client.example.procedure | typeof alternateQueryClient;
+declare const selectedMutation: typeof client.example.mutation | typeof alternateMutationClient;
+declare const selectedSubscription:
+  | typeof client.example.subscription
+  | typeof alternateSubscriptionClient;
+declare const selectedPaginated: typeof client.example.paginated | typeof alternatePaginatedClient;
+// @ts-expect-error A procedure union must be narrowed before its associated input can be supplied.
+runtime.observe(selectedQuery, { id: "valid" });
+// @ts-expect-error Cache operations preserve the same procedure/input correlation.
+runtime.cache.get(selectedQuery, { id: "valid" });
+// @ts-expect-error A union mutation would expose an independently unioned mutate input.
+runtime.mutation(selectedMutation);
+// @ts-expect-error Subscription procedure and input remain one associated fact.
+runtime.subscription(selectedSubscription, { id: "valid" });
+// @ts-expect-error Paginated procedure and list input remain one associated fact.
+runtime.observePaginated(selectedPaginated, { q: "valid" });
+// @ts-expect-error React query hooks reject an unresolved procedure union too.
+useResultQuery(selectedQuery, { id: "valid" });
+// @ts-expect-error Suspense uses the same procedure/input algebra.
+useResultSuspenseQuery(selectedQuery, { id: "valid" });
+// @ts-expect-error A mutation hook cannot expose a mutate function over unrelated inputs.
+useResultMutation(selectedMutation);
+// @ts-expect-error Subscription hooks preserve procedure/input correlation.
+useResultSubscription(selectedSubscription, { id: "valid" });
+// @ts-expect-error Paginated hooks preserve procedure/list-input correlation.
+useResultPaginatedQuery(selectedPaginated, { q: "valid" });
 const ProjectionUser = defineModel("projection-user", {
   key: "id",
   shape: {
@@ -442,6 +642,8 @@ runtime.cache.updateEntity(ProjectionUser, "u1", (current) => {
   current.secret.toUpperCase();
   return { name: "safe without reading an absent field" };
 });
+// @ts-expect-error Projection updates cannot invent fields outside the canonical model.
+runtime.cache.updateEntity(ProjectionUser, "u1", () => ({ invented: true }));
 export type _RuntimeRetainsItsExactClient = Assert<Equal<typeof runtime.client, typeof client>>;
 // @ts-expect-error Mutation procedures cannot be used as cache keys.
 runtime.cache.get(client.example.mutation, { id: "valid" });
@@ -533,6 +735,30 @@ const AuthShell = defineShell({
   from: StaleShell,
   claims: { Conflict },
   provide: (props: { readonly userId: string }) => ({ userId: props.userId }),
+});
+
+// @ts-expect-error Shell subtraction cannot make an unresolved query/input pair safe.
+AuthShell.useQuery(selectedQuery, { id: "valid" });
+// @ts-expect-error Suspense shell hooks use the same narrowed procedure boundary.
+AuthShell.useSuspenseQuery(selectedQuery, { id: "valid" });
+// @ts-expect-error Shell mutation hooks reject unrelated mutate-input unions.
+AuthShell.useMutation(selectedMutation);
+// @ts-expect-error Shell subscription hooks preserve procedure/input correlation.
+AuthShell.useSubscription(selectedSubscription, { id: "valid" });
+// @ts-expect-error Shell pagination preserves procedure/list-input correlation.
+AuthShell.usePaginatedQuery(selectedPaginated, { q: "valid" });
+
+// @ts-expect-error A non-void shell value must come from a real provider callback.
+defineShell<typeof transportErrors, Record<never, never>, string>({
+  name: "fictional-value",
+  claims: transportErrors,
+});
+
+// @ts-expect-error A shell whose associated parent is concrete must name that parent.
+defineShell<typeof defectErrors, Record<never, never>, void, typeof TransportShell>({
+  name: "missing-parent",
+  claims: defectErrors,
+  provide: () => undefined,
 });
 
 const IncompatibleMissingShell = defineShell({
@@ -736,29 +962,29 @@ r.procedure()
 const sessionContract = SessionLayer.contract(contractR);
 declare const sessionClientProcedure: BrowserProcedureClient<typeof sessionContract>;
 SessionLayer.procedure(r, sessionMiddleware);
-SessionLayer.procedure(r, sessionContract, sessionMiddleware);
+SessionLayer.implement(r, sessionContract, sessionMiddleware);
 
 const tenantMiddleware = serverRpc
   .context<Context & { readonly tenantId: string }>()
   .middleware<{ readonly viewer: Viewer }>()
   .errors({ Conflict })
-  .use(({ context, next }) => next({ context: { ...context, viewer: { id: context.tenantId } } }));
+  .use(({ context, next }) => next({ context: { viewer: { id: context.tenantId } } }));
 // @ts-expect-error The procedure's root context cannot satisfy this middleware's tenant input.
-SessionLayer.procedure(r, sessionContract, tenantMiddleware);
+SessionLayer.implement(r, sessionContract, tenantMiddleware);
 
 const wrongLayerValue = r
   .middleware<{ readonly viewer: number }>()
   .errors({ Conflict })
-  .use(({ context, next }) => next({ context: { ...context, viewer: 42 } }));
+  .use(({ next }) => next({ context: { viewer: 42 } }));
 // @ts-expect-error The final context must contain viewer with the layer's codec type.
-SessionLayer.procedure(r, sessionContract, wrongLayerValue);
+SessionLayer.implement(r, sessionContract, wrongLayerValue);
 
 const undeclaredLayerError = r
   .middleware<{ readonly viewer: Viewer }>()
   .errors({ Conflict, Missing })
-  .use(({ context, next }) => next({ context: { ...context, viewer: { id: "u_1" } } }));
+  .use(({ next }) => next({ context: { viewer: { id: "u_1" } } }));
 // @ts-expect-error Every composed middleware error must be declared by the contract.
-SessionLayer.procedure(r, sessionContract, undeclaredLayerError);
+SessionLayer.implement(r, sessionContract, undeclaredLayerError);
 
 type SessionOutput = typeof sessionContract extends {
   readonly _def: { readonly output: WireCodec<infer T, any> };
@@ -772,6 +998,13 @@ const SessionShell = layerShell(SessionLayer, {
   from: DefectShell,
   procedure: sessionClientProcedure,
 });
+const ConflictOwnerShell = defineShell({
+  name: "conflict-owner",
+  from: DefectShell,
+  claims: { Conflict },
+});
+// @ts-expect-error A layer cannot claim a definition already owned by its parent chain.
+layerShell(SessionLayer, { from: ConflictOwnerShell, procedure: sessionClientProcedure });
 // @ts-expect-error A layer shell must load the exact layer value from an empty-input procedure.
 layerShell(SessionLayer, { from: DefectShell, procedure: client.example.procedure });
 export type _LayerShellValue = Assert<Equal<ValueOf<typeof SessionShell>, Viewer>>;
@@ -787,7 +1020,7 @@ const ScopedSessionShell = scopedReact.layerShell(SessionLayer, {
     return sessionClientProcedure;
   },
 });
-const resolveSessionProcedure = getLayerProcedureResolver(ScopedSessionShell);
+const resolveSessionProcedure = ScopedSessionShell.resolveProcedure;
 const expectedSessionResolver: (selectedClient: typeof client) => typeof sessionClientProcedure =
   resolveSessionProcedure;
 void expectedSessionResolver;
@@ -838,7 +1071,7 @@ const accountContract = AccountLayer.contract(contractR);
 declare const cookieClientProcedure: BrowserProcedureClient<typeof cookieContract>;
 declare const accountClientProcedure: BrowserProcedureClient<typeof accountContract>;
 AccountLayer.procedure(r, accountMiddleware);
-AccountLayer.procedure(r, accountContract, accountMiddleware);
+AccountLayer.implement(r, accountContract, accountMiddleware);
 
 // context grows and narrows monotonically through the chain
 r.procedure()
@@ -878,6 +1111,25 @@ export type _RequiredShellHandled = Assert<
 
 // --- Middleware dependencies and services ----------------------------------
 
+const contributesMissing = r
+  .middleware()
+  .errors({ Missing })
+  .use(({ errors, next }) => {
+    void errors.Missing;
+    return next({ context: {} });
+  });
+const contributesConflict = r
+  .middleware()
+  .errors({ Conflict })
+  .after(contributesMissing)
+  .use(({ errors, next }) => {
+    void errors.Conflict;
+    // @ts-expect-error A handler constructs only its own errors; dependency errors still accumulate.
+    void errors.Missing;
+    return next({ context: {} });
+  });
+void contributesConflict;
+
 // `.after` shifts the handler's input to the dependency's output and joins unions.
 const auditedAccount = r
   .middleware<{ audited: true }>()
@@ -886,7 +1138,7 @@ const auditedAccount = r
   .use(({ context, next }) => {
     type _SeesDepOutput = Assert<Equal<typeof context.account, MaybeViewer>>;
     void (0 as unknown as _SeesDepOutput);
-    return next({ context: { ...context, audited: true } });
+    return next({ context: { audited: true } });
   });
 
 const auditedProcedure = r
@@ -926,15 +1178,34 @@ const needsViewer = r
   .use(({ context, next }) => {
     type _FullyNarrowed = Assert<Equal<typeof context.account, Viewer>>;
     void (0 as unknown as _FullyNarrowed);
-    return next({ context: { ...context, ok: true } });
+    return next({ context: { ok: true } });
   });
 void needsViewer;
 
+// Sibling dependencies compose contributions; the later edge cannot erase
+// context established by an earlier edge.
+const siblingA = r
+  .middleware<{ siblingA: true }>()
+  .use(({ next }) => next({ context: { siblingA: true as const } }));
+const siblingB = r
+  .middleware<{ siblingB: true }>()
+  .use(({ next }) => next({ context: { siblingB: true as const } }));
+const joinedSiblings = r
+  .middleware<{ joined: true }>()
+  .after(siblingA)
+  .after(siblingB)
+  .use(({ context, next }) => {
+    const a: true = context.siblingA;
+    const b: true = context.siblingB;
+    void a;
+    void b;
+    return next({ context: { joined: true as const } });
+  });
+void joinedSiblings;
+
 // A middleware whose input demands context the procedure cannot supply is rejected.
 declare const demandsViewer: import("../src/index.js").Middleware<
-  { viewer: Viewer },
-  { viewer: Viewer; ok: true },
-  {}
+  import("../src/index.js").MiddlewareTypes<{ viewer: Viewer }, { viewer: Viewer; ok: true }, {}>
 >;
 r.procedure()
   .input(wire.object({}))
@@ -958,6 +1229,15 @@ const UsersService = defineService("users", {
     return { byId: (id: string) => db.query(id) };
   },
 });
+export type _ServiceNeedsStayAssociated = Assert<
+  Equal<ServiceTypesOf<typeof UsersService>["needs"], { readonly db: typeof DbService }>
+>;
+export type _ServiceConstructionHasNoRecoverableError = Assert<
+  Equal<ServiceTypesOf<typeof UsersService>["error"], never>
+>;
+const erasedUsersService: AnyServiceDefinition = UsersService;
+// @ts-expect-error An erased service cannot be invoked without the resolver's dependency proof.
+erasedUsersService.create({});
 declare const resolved: Awaited<
   ReturnType<
     typeof resolveServices<{
@@ -1014,13 +1294,20 @@ export type _NsDataTyped = Assert<
 >;
 // data-free members call with no arguments
 void nsErrors.planExpired();
+const billingMessage = errorCatalog(nsErrors, {
+  "billing/card-declined": () => "declined" as const,
+  "billing/plan-expired": () => 403 as const,
+});
+export type _CatalogReturnUnion = Assert<
+  Equal<ReturnType<typeof billingMessage>, "declined" | 403>
+>;
 // @ts-expect-error the namespaced map is exhaustive for catalogs too
 errorCatalog(nsErrors, { "billing/card-declined": () => "" });
 
 // --- Result composition ------------------------------------------------------
 
 import { toResult as toResultReact } from "../src/react/index.js";
-import { all, gen, tryPromise } from "../src/index.js";
+import { all, andThen, gen, map, mapError, tryPromise } from "../src/index.js";
 void toResultReact;
 
 const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 });
@@ -1054,11 +1341,40 @@ export type _GenAsyncIsPromise = Assert<
 const allOutcome = all([findResult, parseResult]);
 type AllValue = Extract<typeof allOutcome, { ok: true }>["value"];
 type AllError = Extract<typeof allOutcome, { ok: false }>["error"];
-export type _AllTupleIsPositional = Assert<
-  Equal<[AllValue[0], AllValue[1], AllValue["length"]], [string, number, 2]>
->;
+export type _AllTupleIsPositional = Assert<Equal<AllValue, readonly [string, number]>>;
 export type _AllUnionsErrors = Assert<
   Equal<AllError, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
+const allRecordOutcome = all({ doc: findResult, size: parseResult });
+type AllRecordValue = Extract<typeof allRecordOutcome, { ok: true }>["value"];
+export type _AllRecordPreservesReadonlyKeys = Assert<
+  Equal<AllRecordValue, { readonly doc: string; readonly size: number }>
+>;
+
+class SpecializedFailure extends TaggedError<
+  "type/specialized",
+  { readonly code: string },
+  "public"
+> {
+  constructor(code: string) {
+    super("type/specialized", { code }, "public");
+  }
+}
+declare const specializedResult: Result<string, SpecializedFailure>;
+const mappedSpecialized = map(specializedResult, (value) => value.length);
+export type _MapPreservesTaggedSubclass = Assert<
+  Equal<typeof mappedSpecialized, Result<number, SpecializedFailure>>
+>;
+const chainedSpecialized = andThen(specializedResult, () => parseResult);
+export type _AndThenAccumulatesSubclassUnion = Assert<
+  Equal<
+    typeof chainedSpecialized,
+    Result<number, SpecializedFailure | ReturnType<typeof Conflict2>>
+  >
+>;
+const remappedSpecialized = mapError(specializedResult, () => Missing({ id: "mapped" }));
+export type _MapErrorReplacesSubclassExactly = Assert<
+  Equal<typeof remappedSpecialized, Result<string, ReturnType<typeof Missing>>>
 >;
 
 // tryPromise requires a tagged error from the catch handler.
@@ -1209,6 +1525,28 @@ const LocalizedContent = defineModel("localized-content", {
   },
 });
 
+const OptionalProfile = defineModel("optional-profile", {
+  key: "id",
+  shape: {
+    id: wire.string,
+    nickname: wire.optional(wire.string),
+  },
+});
+type OptionalProfileView = Flat<InputOf<ReturnType<typeof OptionalProfile.all>>>;
+export type _OptionalModelFieldsStayOptional = Assert<
+  Equal<OptionalProfileView, { readonly id: string; readonly nickname?: string }>
+>;
+
+export type _UnionModelValuesDistribute = Assert<
+  Equal<
+    ModelValue<typeof ScopedUser | typeof LocalizedContent>,
+    ModelValue<typeof ScopedUser> | ModelValue<typeof LocalizedContent>
+  >
+>;
+declare const safeUnionProjection: ModelProjection<typeof ScopedUser | typeof LocalizedContent>;
+const sharedUnionIdentity: string = safeUnionProjection.id;
+void sharedUnionIdentity;
+
 LocalizedContent.pick("id", "locale", "title");
 LocalizedContent.select({ id: true, locale: true, title: true });
 // @ts-expect-error — every field in a composite identity is mandatory.
@@ -1217,6 +1555,7 @@ LocalizedContent.pick("id", "title");
 LocalizedContent.select({ id: true, title: true });
 
 const acceptsLocalizedKey = (_key: ModelKeyInput<typeof LocalizedContent>) => undefined;
+// @ts-expect-error — ambiguous pre-joined composite identities are not accepted.
 acceptsLocalizedKey("doc:en");
 acceptsLocalizedKey({ id: "doc", locale: "en" });
 // @ts-expect-error — model-specific key records require every identity field.
@@ -1235,3 +1574,25 @@ defineModel("invalid-nullable-key", {
   key: "identity",
   shape: { identity: wire.union([wire.string, wire.null]) },
 });
+
+// Every exported Any* surface is a real existential: a specific value widens
+// into it without an assertion, while the erased form cannot manufacture a
+// codec input, service dependency record, or layer procedure argument.
+const erasedProcedure: AnyProcedure = procedure;
+const erasedProcedureContract: AnyProcedureContract = contractProcedure;
+const erasedRouter: AnyRouter = router;
+const erasedRouterContract: AnyRouterContract = kindRouterContract;
+const erasedModel: AnyModel = ScopedUser;
+const erasedLayer: AnyLayer = SessionLayer;
+const erasedShell: AnyShell = AuthShell;
+const erasedLayerShell: AnyLayerShell = SessionShell;
+void [
+  erasedProcedure,
+  erasedProcedureContract,
+  erasedRouter,
+  erasedRouterContract,
+  erasedModel,
+  erasedLayer,
+  erasedShell,
+  erasedLayerShell,
+];

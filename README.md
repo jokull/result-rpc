@@ -213,6 +213,10 @@ consumers do not inspect HTTP status or match an error message.
 npm install result-rpc
 ```
 
+Requires Node 20 or newer and TypeScript 5.4 or newer. Packed declarations are
+tested with TypeScript 5.4, 5.9, and 7.0 rather than only the compiler used to
+build the repository.
+
 One versioned package, one entry per runtime — the root is everything
 isomorphic (the contract language):
 
@@ -340,7 +344,7 @@ appRouter.errors;
 
 The key stays `string` on purpose. `ReadonlyMap` is invariant in its key type,
 so narrowing it to the tag union would make a concrete router stop satisfying
-`Router<any, RouterRecord>` — the bound every function here accepts. For
+`AnyRouter` — the erased runtime bound every function here accepts. For
 compile-time exhaustiveness over declared errors, reach for
 `errorCatalog` instead; that is
 the typed door, and this is the runtime window.
@@ -492,7 +496,7 @@ const authenticated = server
     }
 
     return next({
-      context: { ...context, user },
+      context: { user },
     });
   });
 
@@ -591,12 +595,14 @@ runs after; the dependency's output becomes its input, the dependency's errors
 join the union, and any `.use()` site pulls the whole chain in dependency
 order:
 
+`next` accepts only the context this middleware contributes. The executor
+merges it into the established context, so upstream fields cannot be dropped
+and refinements do not require an ever-growing object spread.
+
 ```ts
 const session = server
   .middleware<{ viewer: User | null }>()
-  .use(async ({ context, next }) =>
-    next({ context: { ...context, viewer: await userFromCookie(context) } }),
-  );
+  .use(async ({ context, next }) => next({ context: { viewer: await userFromCookie(context) } }));
 
 const requireViewer = server
   .middleware<{ viewer: User }>()
@@ -605,7 +611,7 @@ const requireViewer = server
   .use(({ context, errors, next }) =>
     context.viewer === null
       ? err(errors.Unauthorized())
-      : next({ context: { ...context, viewer: context.viewer } }),
+      : next({ context: { viewer: context.viewer } }),
   );
 ```
 
@@ -1243,8 +1249,9 @@ Mid-session revocation therefore plays out as: refetch fails → shell holds it
 → the stale value keeps rendering → re-auth → held work refetches fresh. The
 screen never blanks and no component ever branched on it.
 
-Unmounting a holding shell releases its holdings cleanly — observers release
-on their own unmount, `onError` does not re-fire, nothing leaks. A fresh mount
+Unmounting a holding shell releases its holdings cleanly — each distinct query
+operation (runtime plus cache key) releases on unmount, `onError` does not
+re-fire, and Strict Mode replay cannot create phantom holdings. A fresh mount
 is a fresh world: a cached failure encountered again is claimed again.
 
 ### Ambient failures are aggregate, not per-operation
@@ -1335,8 +1342,8 @@ export const whoami = AuthLayer.procedure(server, authenticated);
 // endpoint *cannot* disagree with the middleware. That is the drift, deleted.
 ```
 
-(Contract-first codebases put `AuthLayer.contract(app)` in the shared contract
-and pass it as `AuthLayer.procedure(server, contract, authenticated)`.)
+(Contract-first codebases put `AuthLayer.contract(app)` in the shared contract,
+then call `AuthLayer.implement(server, contract, authenticated)` on the server.)
 
 And the React half is its sibling:
 
@@ -1502,18 +1509,20 @@ const { BoundaryProvider } = boundaryShells({
 });
 ```
 
-The automatic digest reads what codecs expose, so a field-level change inside
-an object codec does not flip it on its own (the failure it causes usually
-travels with a visible change — but not always). For per-deploy exactness,
-stamp both sides with the build:
+The automatic digest is structural: built-in codecs contribute their complete
+nested shape, constraints, literals, model projections, and error-data schemas.
+Adopted Standard Schemas and guarded serializable values contribute the stable
+schema `id` you supplied. A field-level contract change therefore changes the
+digest. You may instead make a deployment build stamp the effective version on
+both sides:
 
 ```ts
 createFetchHandler({ router, contractVersion: BUILD_SHA, ... })
 createBrowserClient({ contract, contractVersion: BUILD_SHA, ... })
 ```
 
-Detection is failure-gated, so the coarser stamp is safe: matching successful
-calls are never reclassified.
+The explicit stamp replaces the structural digest. Detection remains
+failure-gated, so matching successful calls are never reclassified.
 
 The whole mid-deploy arc is pinned as a runnable test in
 `examples/07-tracker`: a deliberately _stale-shaped_ client — the old
@@ -1861,7 +1870,7 @@ the serializer preflight a plain validator can't give you:
 ```ts
 const rename = app
   .procedure()
-  .input(wire.standard(RenameInput)) // your Valibot/Zod schema, as the wire codec
+  .input(wire.standard(RenameInput, { id: "rename-input/v1" }))
   .output(DocCodec)
   .mutation();
 ```
@@ -1870,7 +1879,9 @@ const rename = app
 schema must accept its own output, so one-way transforms don't fit. And when
 a form's shape happens to coincide exactly with an input, sharing the schema
 is free — but treat that as a coincidence to notice, not an architecture to
-force.)
+force. The stable `id` becomes part of the contract digest because Standard
+Schema does not expose a portable structural fingerprint; change it whenever
+the accepted wire shape or semantics change.)
 
 **And the form runs the same schema first**, with `validateStandard` — the
 form-side companion to `wire.standard`. Per-field feedback before a request
@@ -2055,7 +2066,9 @@ For a recursive or otherwise richer application type, supply an actual type
 guard. Serializer support alone cannot prove an application shape:
 
 ```ts
-const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value));
+const Graph = wire.serializable((value): value is DocGraph => isDocGraph(value), {
+  id: "doc-graph/v1",
+});
 ```
 
 Functions, symbols, unsupported class instances, and arbitrary `Error` causes
@@ -2376,10 +2389,10 @@ Named here so they are not discovered at 2am:
   hand-rolled shape opts out silently. Model identity is reference identity,
   same rule as services and middleware: one `defineModel` in a module
   constant; two calls are two models.
-- **The automatic contract digest is shape-coarse.** It flips on paths, kinds,
-  and error unions — not on field-level codec edits. If your deploys routinely
-  change only object fields, stamp both sides with `contractVersion` (a build
-  SHA) so stale-client detection is exact; it is failure-gated either way.
+- **External codecs own their schema identity.** `wire.standard` and
+  `wire.serializable` require a stable `id` because validator/guard internals
+  are not portably introspectable. Change that id whenever accepted wire
+  semantics change; built-in codecs are fingerprinted structurally.
 - **Two caches during a tRPC coexistence period** — see the migration section.
 
 ## Examples

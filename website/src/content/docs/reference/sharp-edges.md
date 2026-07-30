@@ -32,8 +32,8 @@ Named here so they are not discovered at 2am:
   hand-rolled shape opts out silently. Model identity is reference identity,
   same rule as services and middleware: one `defineModel` in a module
   constant; two calls are two models.
-- **The automatic contract digest is shape-coarse.** It flips on paths, kinds,
-  and error unions — not on field-level codec edits. If your deploys routinely
-  change only object fields, stamp both sides with `contractVersion` (a build
-  SHA) so stale-client detection is exact; it is failure-gated either way.
+- **External codecs own their schema identity.** `wire.standard` and
+  `wire.serializable` require a stable `id` because validator/guard internals
+  are not portably introspectable. Change it whenever accepted wire semantics
+  change. Built-in codecs are fingerprinted structurally.
 - **Two caches during a tRPC coexistence period** — see the migration section.

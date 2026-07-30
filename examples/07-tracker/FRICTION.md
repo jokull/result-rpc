@@ -33,7 +33,7 @@ fixes came from.
 
 ## 1. [blocker] `wire.standard` rejection on the same-version client THROWS — and crashes the mutation engine
 
-What I did: wired the forms-guide flow verbatim — `wire.standard(schema)` as
+What I did: wired the forms-guide flow verbatim — `wire.standard(schema, { id })` as
 the create input, `fieldIssues(result.error)` on `server/bad-request` — and
 submitted an invalid title through `useResultMutation`.
 
@@ -166,7 +166,7 @@ forms guide needs a loud "mount your form outside the defect shell (or catch
 
 I wrote ~700 lines against APIs I had only read prose about — layer contract
 
-- `SessionLayer.procedure(app, contract, middleware)`, `layerShell` with a
+- `SessionLayer.implement(app, contract, middleware)`, `layerShell` with a
   `select:` client selector, `.affects()` contract-first, `touch(Project, id)` in
   a handler, `wire.standard` over a hand-rolled Standard Schema object,
   `errorCatalog` over a shell-narrowed union — and the first full `tsc` pass

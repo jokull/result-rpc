@@ -7,6 +7,9 @@ description: "One versioned package with one entry per runtime; the root is the 
 npm install result-rpc
 ```
 
+Use Node 20 or newer and TypeScript 5.4 or newer. The published declaration
+surface is tested with TypeScript 5.4, 5.9, and 7.0.
+
 One versioned package, one entry per runtime — the root is everything
 isomorphic (the contract language):
 

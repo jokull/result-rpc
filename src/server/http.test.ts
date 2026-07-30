@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { err, error, ok, wire } from "../index.js";
+import { err, error, ok, wire, type WireCodec, type WireValue } from "../index.js";
 import { createFetchHandler } from "./http.js";
 import { rpc, type ErrorDefinitionMap } from "./contract.js";
 import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
@@ -63,7 +63,50 @@ const deniedStream = r.implement(deniedStreamContract).stream(async function* ()
   yield err(StreamDenied());
 });
 
-const router = r.router({ boom, leakyPrivate, fine, noHttpStatus, deniedStream });
+const throwingInputCodec: WireCodec<Record<never, never>, WireValue> = {
+  kind: "throwing-input",
+  schema: '["test","throwing-input"]',
+  encode: () => ({ ok: true, value: {} }),
+  decode: () => {
+    throw new Error("input codec exploded");
+  },
+};
+const throwingOutputCodec: WireCodec<string, WireValue> = {
+  kind: "throwing-output",
+  schema: '["test","throwing-output"]',
+  encode: () => {
+    throw new Error("output codec exploded");
+  },
+  decode: (value) =>
+    typeof value === "string"
+      ? { ok: true, value }
+      : { ok: false, issues: [{ path: [], message: "Expected string" }] },
+};
+const throwingInput = r
+  .procedure()
+  .input(throwingInputCodec)
+  .output(wire.string)
+  .query(() => ok("unreachable"));
+const throwingOutput = r
+  .procedure()
+  .output(throwingOutputCodec)
+  .query(() => ok("unencodable"));
+const explodingStreamContract = r.procedure().output(wire.string).subscription();
+// oxlint-disable-next-line eslint/require-yield -- a pre-first-item stream defect is the behavior under test
+const explodingStream = r.implement(explodingStreamContract).stream(async function* () {
+  throw new Error("stream handler exploded");
+});
+
+const router = r.router({
+  boom,
+  leakyPrivate,
+  fine,
+  noHttpStatus,
+  deniedStream,
+  throwingInput,
+  throwingOutput,
+  explodingStream,
+});
 
 const post = (path: string, input: unknown) => {
   const encoded = serialize({ v: 1, path, input });
@@ -73,6 +116,19 @@ const post = (path: string, input: unknown) => {
     headers: { "content-type": PROTOCOL_CONTENT_TYPE },
     body: encoded.value,
   });
+};
+
+const protocolPost = (body: string) =>
+  new Request("https://example.test/rpc", {
+    method: "POST",
+    headers: { "content-type": PROTOCOL_CONTENT_TYPE },
+    body,
+  });
+
+const encodedPost = (body: unknown) => {
+  const encoded = serialize(body);
+  if (!encoded.ok) throw new Error("failed to encode test request");
+  return protocolPost(encoded.value);
 };
 
 describe("fetch handler wire boundary", () => {
@@ -119,6 +175,17 @@ describe("fetch handler wire boundary", () => {
     expect(response.headers.get("x-result-rpc-contract")).toBeTruthy();
   });
 
+  test("a streaming response carries the configured effective contract before its body", async () => {
+    const stamped = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      contractVersion: "release-42",
+    });
+    const response = await stamped(post("deniedStream", {}));
+    expect(response.headers.get("x-result-rpc-contract")).toBe("release-42");
+    await response.body?.cancel();
+  });
+
   test("an unknown procedure path is a clean 404, not a defect", async () => {
     const response = await handler(post("nope", {}));
     const text = await response.text();
@@ -149,6 +216,219 @@ describe("fetch handler wire boundary", () => {
     expect(response.status).toBe(200);
     expect(text).toContain("stream/denied");
     expect(observed).toEqual([{ tag: "stream/denied", path: "deniedStream", status: 401 }]);
+  });
+
+  test("onError is exactly-once and path-aware across every response exit family", async () => {
+    type Expected = {
+      readonly tag: string;
+      readonly path?: string;
+      readonly status: number;
+      readonly policyStatus: number | undefined;
+    };
+    const cases: readonly {
+      readonly name: string;
+      readonly request: () => Request;
+      readonly expected: Expected;
+      readonly contextThrows?: true;
+      readonly maxBatchItems?: number;
+      readonly maxRequestBytes?: number;
+      readonly internalPhase?: "input" | "context" | "handler" | "output" | "error";
+    }[] = [
+      {
+        name: "route/method mismatch",
+        request: () => new Request("https://example.test/rpc"),
+        expected: {
+          tag: "protocol/procedure-not-found",
+          status: 404,
+          policyStatus: 404,
+        },
+      },
+      {
+        name: "content type",
+        request: () =>
+          new Request("https://example.test/rpc", { method: "POST", body: "missing type" }),
+        expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "body limit",
+        request: () => post("fine", { name: "far too large" }),
+        maxRequestBytes: 8,
+        expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "malformed serialization",
+        request: () => protocolPost("not-devalue"),
+        expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "invalid envelope",
+        request: () => encodedPost({ v: 1, nope: true }),
+        expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "batch limit",
+        request: () =>
+          encodedPost({
+            v: 1,
+            batch: [
+              { v: 1, id: "a", path: "fine", input: { name: "a" } },
+              { v: 1, id: "b", path: "fine", input: { name: "b" } },
+            ],
+          }),
+        maxBatchItems: 1,
+        expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "context creation",
+        request: () => post("fine", { name: "ada" }),
+        contextThrows: true,
+        internalPhase: "context",
+        expected: { tag: "server/internal", path: "fine", status: 500, policyStatus: 500 },
+      },
+      {
+        name: "unknown procedure",
+        request: () => post("missing", {}),
+        expected: {
+          tag: "protocol/procedure-not-found",
+          path: "missing",
+          status: 404,
+          policyStatus: 404,
+        },
+      },
+      {
+        name: "input validation",
+        request: () => post("fine", { name: 42 }),
+        expected: { tag: "server/bad-request", path: "fine", status: 400, policyStatus: 400 },
+      },
+      {
+        name: "input codec defect",
+        request: () => post("throwingInput", {}),
+        expected: {
+          tag: "server/internal",
+          path: "throwingInput",
+          status: 500,
+          policyStatus: 500,
+        },
+        internalPhase: "input",
+      },
+      {
+        name: "subscription in batch",
+        request: () =>
+          encodedPost({
+            v: 1,
+            batch: [{ v: 1, id: "s", path: "deniedStream", input: {} }],
+          }),
+        expected: {
+          tag: "protocol/invalid-request",
+          path: "deniedStream",
+          status: 400,
+          policyStatus: 400,
+        },
+      },
+      {
+        name: "declared domain failure",
+        request: () => post("noHttpStatus", {}),
+        expected: {
+          tag: "value/no-http-status",
+          path: "noHttpStatus",
+          status: 200,
+          policyStatus: undefined,
+        },
+      },
+      {
+        name: "handler defect",
+        request: () => post("boom", {}),
+        expected: { tag: "server/internal", path: "boom", status: 500, policyStatus: 500 },
+        internalPhase: "handler",
+      },
+      {
+        name: "private sanitization",
+        request: () => post("leakyPrivate", {}),
+        expected: {
+          tag: "server/internal",
+          path: "leakyPrivate",
+          status: 500,
+          policyStatus: 500,
+        },
+        internalPhase: "error",
+      },
+      {
+        name: "output codec defect",
+        request: () => post("throwingOutput", {}),
+        expected: {
+          tag: "server/internal",
+          path: "throwingOutput",
+          status: 500,
+          policyStatus: 500,
+        },
+        internalPhase: "output",
+      },
+      {
+        name: "subscription input validation",
+        request: () => post("deniedStream", { extra: true }),
+        expected: {
+          tag: "server/bad-request",
+          path: "deniedStream",
+          status: 400,
+          policyStatus: 400,
+        },
+      },
+      {
+        name: "stream declared failure",
+        request: () => post("deniedStream", {}),
+        expected: {
+          tag: "stream/denied",
+          path: "deniedStream",
+          status: 401,
+          policyStatus: 401,
+        },
+      },
+      {
+        name: "stream handler defect",
+        request: () => post("explodingStream", {}),
+        expected: {
+          tag: "server/internal",
+          path: "explodingStream",
+          status: 500,
+          policyStatus: 500,
+        },
+        internalPhase: "handler",
+      },
+    ];
+
+    for (const scenario of cases) {
+      const observed: Expected[] = [];
+      const internalPhases: string[] = [];
+      const scenarioHandler = createFetchHandler({
+        router,
+        createContext: () => {
+          if (scenario.contextThrows) throw new Error("context exploded");
+          return {};
+        },
+        ...(scenario.maxBatchItems === undefined ? {} : { maxBatchItems: scenario.maxBatchItems }),
+        ...(scenario.maxRequestBytes === undefined
+          ? {}
+          : { maxRequestBytes: scenario.maxRequestBytes }),
+        onError: ({ error: failure, procedurePath, httpStatus, policy }) =>
+          observed.push({
+            tag: failure._tag,
+            ...(procedurePath === undefined ? {} : { path: procedurePath }),
+            status: httpStatus,
+            policyStatus: policy?.httpStatus,
+          }),
+        onInternalError: ({ phase }) => void internalPhases.push(phase),
+      });
+      const response = await scenarioHandler(scenario.request());
+      await response.text();
+      expect({ name: scenario.name, observed }).toEqual({
+        name: scenario.name,
+        observed: [scenario.expected],
+      });
+      expect({ name: scenario.name, internalPhases }).toEqual({
+        name: scenario.name,
+        internalPhases: scenario.internalPhase === undefined ? [] : [scenario.internalPhase],
+      });
+    }
   });
 });
 
@@ -272,6 +552,7 @@ describe("the .headers() declaration", () => {
 
   test("a subscription cannot declare it — its headers are sent before it runs", () => {
     expect(() =>
+      // @ts-expect-error Runtime defense for JavaScript and type-erased callers.
       rpc.context<HeaderCtx>().procedure().headers().output(wire.string).subscription(),
     ).toThrow(/subscription cannot write response headers/);
   });
@@ -282,7 +563,7 @@ describe("the .headers() declaration", () => {
       .headers()
       .use(({ context, next }) => {
         context.headers.append("set-cookie", "session=rotated; Path=/");
-        return next({ context });
+        return next({ context: {} });
       });
 
     const contract = h.procedure().output(wire.string).query();
@@ -300,7 +581,7 @@ describe("the .headers() declaration", () => {
       .headers()
       .use(({ context, next }) => {
         context.headers.append("set-cookie", "rotated=1; Path=/");
-        return next({ context });
+        return next({ context: {} });
       });
     const contract = h.procedure().headers().output(wire.string).query();
     const rotated = h

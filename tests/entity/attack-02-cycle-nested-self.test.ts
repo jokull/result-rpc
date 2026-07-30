@@ -12,12 +12,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { wire } from "../../src/index.js";
-import { defineModel, mergeByExistingKeys, patchEntity } from "../../src/model.js";
+import { defineModel, entityIdFor, mergeByExistingKeys, patchEntity } from "../../src/model.js";
 
 const Node = defineModel("a02-node", {
   key: "id",
   shape: { id: wire.string, title: wire.string },
 });
+const nodeId = entityIdFor(Node, "n1");
+if (nodeId === undefined) throw new Error("invalid test identity");
 
 describe("attack-02 nested self occurrence", () => {
   test("self-cycle: the inner occurrence keeps the stale title and the cycle breaks", () => {
@@ -31,7 +33,7 @@ describe("attack-02 nested self occurrence", () => {
     const node = decoded.value as unknown as N;
     node.self = node;
 
-    const { value, changed } = patchEntity([node], Node as never, "n1", (current) =>
+    const { value, changed } = patchEntity([node], Node, nodeId, (current) =>
       mergeByExistingKeys(current, { title: "new" }),
     );
     expect(changed).toBe(true);
@@ -52,7 +54,7 @@ describe("attack-02 nested self occurrence", () => {
       child: { id: "n1", title: "old" },
     });
     if (!decoded.ok) throw new Error("decode failed");
-    const { value } = patchEntity(decoded.value, Node as never, "n1", (current) =>
+    const { value } = patchEntity(decoded.value, Node, nodeId, (current) =>
       mergeByExistingKeys(current, { title: "new" }),
     );
     expect((value as { child: { title: string } }).child.title).toBe("new");

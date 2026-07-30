@@ -36,18 +36,20 @@ const { BoundaryProvider } = boundaryShells({
 });
 ```
 
-The automatic digest reads what codecs expose, so a field-level change inside
-an object codec does not flip it on its own (the failure it causes usually
-travels with a visible change — but not always). For per-deploy exactness,
-stamp both sides with the build:
+The automatic digest is structural: built-in codecs contribute their complete
+nested shape, constraints, literals, model projections, and error-data schemas.
+Adopted Standard Schemas and guarded serializable values contribute their
+application-owned stable schema `id`. A field-level contract change therefore
+changes the digest. You may instead make a build stamp the effective version on
+both sides:
 
 ```ts
 createFetchHandler({ router, contractVersion: BUILD_SHA, ... })
 createBrowserClient({ contract, contractVersion: BUILD_SHA, ... })
 ```
 
-Detection is failure-gated, so the coarser stamp is safe: matching successful
-calls are never reclassified.
+Detection is failure-gated, so matching successful calls are never
+reclassified.
 
 `contractVersion` _replaces_ the structural digest entirely — it does not
 combine with it. Matching version strings on both sides suppress stale

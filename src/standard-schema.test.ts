@@ -17,7 +17,7 @@ describe("validators on the wire", () => {
         },
       },
     };
-    const codec = wire.standard(LoginSchema);
+    const codec = wire.standard(LoginSchema, { id: "login/v1" });
     expect(codec.kind).toBe("standard(hand-rolled)");
     expect(codec.decode({ email: "a@b.c" })).toEqual({ ok: true, value: { email: "a@b.c" } });
     expect(codec.encode({ email: "nope" })).toEqual({
@@ -28,7 +28,7 @@ describe("validators on the wire", () => {
     const Hostile: StandardSchemaV1<unknown> = {
       "~standard": { version: 1, vendor: "x", validate: (value) => ({ value }) },
     };
-    expect(wire.standard(Hostile).encode(() => undefined).ok).toBe(false);
+    expect(wire.standard(Hostile, { id: "hostile/v1" }).encode(() => undefined).ok).toBe(false);
   });
 
   test("async schemas are rejected: wire validation is synchronous", () => {
@@ -39,7 +39,7 @@ describe("validators on the wire", () => {
         validate: async (value) => ({ value: value as string }),
       },
     };
-    const result = wire.standard(AsyncSchema).decode("x");
+    const result = wire.standard(AsyncSchema, { id: "async/v1" }).decode("x");
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
     expect(result.issues[0]!.message).toContain("Async schemas");

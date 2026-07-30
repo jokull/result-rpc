@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { contractDigest } from "./contract-digest.js";
+import { contractDigest, effectiveContractVersion } from "./contract-digest.js";
 import { error } from "./error.js";
 import { err, ok } from "./result.js";
 import { rpc } from "./server/contract.js";
-import { wire } from "./wire.js";
+import { wire, type AnyWireCodec } from "./wire.js";
 
 const Missing = error({
   tag: "digest/missing",
@@ -30,6 +30,7 @@ const build = () =>
 describe("contractDigest", () => {
   test("is stable across identical builds", () => {
     expect(contractDigest(build())).toBe(contractDigest(build()));
+    expect(contractDigest(build())).toBe("e57c214fcca71446");
   });
 
   test("a router and the contract it implements digest identically", () => {
@@ -48,7 +49,7 @@ describe("contractDigest", () => {
     expect(contractDigest(router)).toBe(contractDigest(contract));
   });
 
-  test("changes when the error union, a path, or a codec kind changes", () => {
+  test("changes when the error union, a path, or a codec schema changes", () => {
     const base = contractDigest(build());
     const Extra = error({ tag: "digest/extra", httpStatus: 409 });
 
@@ -88,6 +89,73 @@ describe("contractDigest", () => {
     });
     expect(contractDigest(differentOutput)).not.toBe(base);
   });
+
+  test("fingerprints nested schema structure, constraints, literals, and error data", () => {
+    const digestOf = (input: AnyWireCodec, output: AnyWireCodec) =>
+      contractDigest({
+        procedures: new Map([
+          ["value", { _def: { kind: "query", input, output, definitions: {} } }],
+        ]),
+      });
+
+    const nested = digestOf(
+      wire.object({ filter: wire.object({ id: wire.string }) }),
+      wire.object({ state: wire.literal("open") }),
+    );
+    expect(
+      digestOf(
+        wire.object({ filter: wire.object({ slug: wire.string }) }),
+        wire.object({ state: wire.literal("open") }),
+      ),
+    ).not.toBe(nested);
+    expect(
+      digestOf(
+        wire.object({ filter: wire.object({ id: wire.string }) }),
+        wire.object({ state: wire.literal("closed") }),
+      ),
+    ).not.toBe(nested);
+    expect(
+      digestOf(
+        wire.object({ filter: wire.object({ id: wire.string }) }),
+        wire.object({ state: wire.literal("open"), count: wire.integer({ min: 1 }) }),
+      ),
+    ).not.toBe(nested);
+
+    const MissingV2 = error({
+      tag: "digest/missing",
+      data: wire.object({ slug: wire.string }),
+      httpStatus: 404,
+    });
+    const changedErrorData = app.router({
+      thing: {
+        byId: app
+          .procedure()
+          .input(wire.object({ id: wire.string }))
+          .output(wire.string)
+          .errors({ MissingV2 })
+          .query(({ input }) => ok(input.id)),
+      },
+    });
+    expect(contractDigest(changedErrorData)).not.toBe(contractDigest(build()));
+  });
+
+  test("object declaration order does not change the structural fingerprint", () => {
+    const left = app.router({
+      value: app
+        .procedure()
+        .input(wire.object({ a: wire.string, b: wire.number }))
+        .output(wire.string)
+        .query(() => ok("ok")),
+    });
+    const right = app.router({
+      value: app
+        .procedure()
+        .input(wire.object({ b: wire.number, a: wire.string }))
+        .output(wire.string)
+        .query(() => ok("ok")),
+    });
+    expect(contractDigest(left)).toBe(contractDigest(right));
+  });
   test("a .headers() declaration changes the digest", () => {
     // Skew on this flag is exactly the failure the declaration exists to
     // prevent: a client batching a header-writing call as if it were not one.
@@ -108,5 +176,41 @@ describe("contractDigest", () => {
         }),
     });
     expect(contractDigest(with_)).not.toBe(contractDigest(without));
+  });
+
+  test("pagination cursor structure and every error policy field affect the digest", () => {
+    const stringCursor = app.contract({
+      list: app.procedure().output(wire.string).paginate({ cursor: wire.string }),
+    });
+    const integerCursor = app.contract({
+      list: app
+        .procedure()
+        .output(wire.string)
+        .paginate({ cursor: wire.integer({ min: 1 }) }),
+    });
+    expect(contractDigest(stringCursor)).not.toBe(contractDigest(integerCursor));
+
+    const digestWithPolicy = (options: {
+      readonly httpStatus?: number;
+      readonly retry?: "never" | "transient";
+      readonly severity?: "info" | "error";
+    }) => {
+      const Failure = error({ tag: "digest/policy", ...options });
+      return contractDigest(
+        app.contract({
+          value: app.procedure().output(wire.string).errors({ Failure }).query(),
+        }),
+      );
+    };
+    const baseline = digestWithPolicy({});
+    expect(digestWithPolicy({ httpStatus: 409 })).not.toBe(baseline);
+    expect(digestWithPolicy({ retry: "transient" })).not.toBe(baseline);
+    expect(digestWithPolicy({ severity: "error" })).not.toBe(baseline);
+  });
+
+  test("an explicit effective version deliberately replaces the structural digest", () => {
+    expect(effectiveContractVersion(build(), "release-42")).toBe("release-42");
+    expect(effectiveContractVersion(build())).toBe(contractDigest(build()));
+    expect(() => effectiveContractVersion(build(), "")).toThrow(/must not be empty/);
   });
 });
