@@ -182,7 +182,7 @@ const mutationRetryMatrix = async () => {
       );
       let rejection;
       await act(async () => {
-        await mutation.mutate({ mode }).catch((reason) => {
+        await mutation.mutateAsync({ mode }).catch((reason) => {
           rejection = reason;
         });
         await settle();
@@ -251,7 +251,7 @@ const residualMutationRetryMatrix = async () => {
       );
       let outcome;
       await act(async () => {
-        outcome = await mutation.mutate({ mode });
+        outcome = await mutation.mutateAsync({ mode });
         await settle();
       });
       const expectedTag =
@@ -296,7 +296,7 @@ const mutationRetryCallbackFreshness = async () => {
   const mounted = await mountHarness(harness, createElement(Host));
   let pending;
   await act(async () => {
-    pending = mutation.mutate({ mode: "residual-never" });
+    pending = mutation.mutateAsync({ mode: "residual-never" });
     await firstRetry;
   });
   await act(async () => {
@@ -355,7 +355,7 @@ const mutationDefinitionCollision = async () => {
     console.error = () => undefined;
     try {
       await act(async () => {
-        await mutation.mutate({ mode: "never" }).catch((reason) => {
+        await mutation.mutateAsync({ mode: "never" }).catch((reason) => {
           rejection = reason;
         });
         await settle();
