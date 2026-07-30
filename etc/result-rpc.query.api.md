@@ -540,6 +540,9 @@ export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
 // @public
 export const getOrElse: <T, T2, E extends AnyTaggedError>(result: Result<T, E>, fallback: (error: E) => T2) => T | T2;
 
+// @public
+export type HasStrictNullChecks = [null] extends [string] ? false : true;
+
 // @public (undocumented)
 export type HttpStatusName = keyof typeof httpStatusNames;
 
@@ -736,6 +739,9 @@ export type NarrowProcedureClient<TProcedureClient> = true extends IsUnion<TProc
 export const normalizeClientCallInput: (args: readonly unknown[]) => unknown;
 
 // @public
+export type NullabilityCaveat = HasStrictNullChecks extends true ? "" : " (strictNullChecks is off, so nullability was not compared)";
+
+// @public
 export interface Ok<T> {
     [Symbol.iterator](): Iterator<never, T>;
     // (undocumented)
@@ -855,7 +861,10 @@ export interface PaginationManifest {
 export const pickErrors: <const TDefinitions extends Readonly<Record<string, AnyErrorDefinition>>, const TKeys extends readonly (keyof TDefinitions & string)[]>(definitions: TDefinitions, ...keys: TKeys) => Pick<TDefinitions, TKeys[number]>;
 
 // @public
-export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
+export type PrintModelScalar<T> = [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
+
+// @public
+export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : HasStrictNullChecks extends false ? PrintModelScalar<T> : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : PrintModelScalar<T>;
 
 // @public (undocumented)
 export type ProcedureAffectsInput<TTarget extends QueryAffectsTarget> = TTarget extends {
@@ -1291,7 +1300,7 @@ export type ShapeInput<TShape extends CodecShape> = keyof TShape extends never ?
 export type ShapeKeySpec<TShape extends CodecShape> = (keyof TShape & string) | readonly (keyof TShape & string)[];
 
 // @public
-export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}` : `field '${TKey}' is missing from the source`;
+export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}${NullabilityCaveat}` : `field '${TKey}' is missing from the source`;
 
 // @public (undocumented)
 export type SpecData<TSpec> = TSpec extends {

@@ -188,6 +188,33 @@ export type MismatchedSourceFields<TModel extends object, TSource> = {
 }[keyof TModel];
 
 /**
+ * Whether the consumer compiles with `strictNullChecks`.
+ *
+ * Without it `null` is assignable to every type, which the printer below must
+ * know: its nullable branch would otherwise match everything and never
+ * terminate.
+ */
+export type HasStrictNullChecks = [null] extends [string] ? false : true;
+
+/**
+ * The scalar tail of {@link PrintModelType}, shared by both branches so the
+ * nullable prefix is the only thing `strictNullChecks` decides.
+ */
+export type PrintModelScalar<T> = [T] extends [string]
+  ? "string"
+  : [T] extends [number]
+    ? "number"
+    : [T] extends [boolean]
+      ? "boolean"
+      : [T] extends [bigint]
+        ? "bigint"
+        : [T] extends [Date]
+          ? "Date"
+          : [T] extends [readonly (infer TItem)[]]
+            ? `${PrintModelType<TItem>}[]`
+            : "a different type";
+
+/**
  * Renders a field's type as text.
  *
  * A template literal can only interpolate literal types, so there is no way to
@@ -199,30 +226,40 @@ export type MismatchedSourceFields<TModel extends object, TSource> = {
  * `string | null` into two messages that each claim the type is something it
  * partly is not, and `string | null` is precisely what a nullable column looks
  * like.
+ *
+ * The nullable branches are skipped entirely without `strictNullChecks`. There,
+ * `[null] extends [T]` holds for every `T` while `Exclude<T, null>` removes
+ * nothing, so the recursion has no base case: it emitted `${any} | null | null
+ * | …` until the compiler gave up with TS2589. A reader whose config cannot
+ * distinguish `string` from `string | null` is told so by
+ * {@link ModelSourceMismatch} rather than shown a type that is wrong.
  */
 export type PrintModelType<T> = [T] extends [never]
   ? "never"
   : unknown extends T
     ? "an unspecified type"
-    : [T] extends [null]
-      ? "null"
-      : [null] extends [T]
-        ? `${PrintModelType<Exclude<T, null>>} | null`
-        : [undefined] extends [T]
-          ? `${PrintModelType<Exclude<T, undefined>>} | undefined`
-          : [T] extends [string]
-            ? "string"
-            : [T] extends [number]
-              ? "number"
-              : [T] extends [boolean]
-                ? "boolean"
-                : [T] extends [bigint]
-                  ? "bigint"
-                  : [T] extends [Date]
-                    ? "Date"
-                    : [T] extends [readonly (infer TItem)[]]
-                      ? `${PrintModelType<TItem>}[]`
-                      : "a different type";
+    : HasStrictNullChecks extends false
+      ? PrintModelScalar<T>
+      : [T] extends [null]
+        ? "null"
+        : [null] extends [T]
+          ? `${PrintModelType<Exclude<T, null>>} | null`
+          : [undefined] extends [T]
+            ? `${PrintModelType<Exclude<T, undefined>>} | undefined`
+            : PrintModelScalar<T>;
+
+/**
+ * Without `strictNullChecks` a nullable column and a non-nullable one are the
+ * same type, so the assertion's main job is silently not being done. The note
+ * is interpolated into the message rather than unioned alongside it: a union
+ * containing a deferred conditional makes TypeScript print
+ * `ModelSourceMismatch<…>` by name, which is the alias-printing failure this
+ * whole design exists to avoid. Inside a template literal it resolves eagerly
+ * and the reader still gets text.
+ */
+export type NullabilityCaveat = HasStrictNullChecks extends true
+  ? ""
+  : " (strictNullChecks is off, so nullability was not compared)";
 
 /** One line per failing field, naming it and both sides. */
 export type SourceFieldMessage<
@@ -230,7 +267,7 @@ export type SourceFieldMessage<
   TSource,
   TKey extends string,
 > = TKey extends keyof TSource
-  ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}`
+  ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}${NullabilityCaveat}`
   : `field '${TKey}' is missing from the source`;
 
 /**

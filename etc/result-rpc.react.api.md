@@ -513,6 +513,9 @@ export type FetchState = "idle" | "fetching" | "paused";
 // @public (undocumented)
 export type HasExactClaim<TError, TClaimedError> = TClaimedError extends AnyTaggedError ? IsTypeEqual<keyof ErrorData<TError>, keyof ErrorData<TClaimedError>> extends true ? IsTypeEqual<ErrorSignature<TError>, ErrorSignature<TClaimedError>> extends true ? true : never : never : never;
 
+// @public
+export type HasStrictNullChecks = [null] extends [string] ? false : true;
+
 // @public (undocumented)
 export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, infer _TEncoded> ? TInput : never;
 
@@ -711,6 +714,9 @@ export type MutationStateOf<TProcedureClient extends MutationProcedureClientLike
 export type NarrowProcedureClient<TProcedureClient> = true extends IsUnion<TProcedureClient> ? TProcedureClient & RpcConstraintError<"procedure-union-must-be-narrowed", TProcedureClient> : TProcedureClient;
 
 // @public
+export type NullabilityCaveat = HasStrictNullChecks extends true ? "" : " (strictNullChecks is off, so nullability was not compared)";
+
+// @public
 export interface Ok<T> {
     [Symbol.iterator](): Iterator<never, T>;
     // (undocumented)
@@ -824,7 +830,10 @@ export interface PaginationManifest {
 export const prefetchLayer: <TShell extends AnyLayerShell>(runtime: QueryRuntime<LayerShellClient<TShell>>, shell: TShell, client: LayerShellClient<TShell>) => Promise<ProcedureClientResult<LayerShellProcedure<TShell>>>;
 
 // @public
-export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
+export type PrintModelScalar<T> = [T] extends [string] ? "string" : [T] extends [number] ? "number" : [T] extends [boolean] ? "boolean" : [T] extends [bigint] ? "bigint" : [T] extends [Date] ? "Date" : [T] extends [readonly (infer TItem)[]] ? `${PrintModelType<TItem>}[]` : "a different type";
+
+// @public
+export type PrintModelType<T> = [T] extends [never] ? "never" : unknown extends T ? "an unspecified type" : HasStrictNullChecks extends false ? PrintModelScalar<T> : [T] extends [null] ? "null" : [null] extends [T] ? `${PrintModelType<Exclude<T, null>>} | null` : [undefined] extends [T] ? `${PrintModelType<Exclude<T, undefined>>} | undefined` : PrintModelScalar<T>;
 
 // @public (undocumented)
 export type ProcedureCapability = UnaryProcedureCapability<boolean> | PaginatedProcedureCapability<unknown, unknown, unknown, boolean>;
@@ -1240,7 +1249,7 @@ export type ShellProviderOption<TProps, TValue> = {
 } : never);
 
 // @public
-export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}` : `field '${TKey}' is missing from the source`;
+export type SourceFieldMessage<TModel extends object, TSource, TKey extends string> = TKey extends keyof TSource ? `field '${TKey}': the model declares ${PrintModelType<TModel[TKey & keyof TModel]>}, the source has ${PrintModelType<TSource[TKey]>}${NullabilityCaveat}` : `field '${TKey}' is missing from the source`;
 
 // @public (undocumented)
 export type SpecificModelKeyInput<TModel extends AnyModel, TKey = TModel["key"]> = TKey extends readonly string[] ? ModelKeyRecord<TModel> : TKey extends keyof ModelValue<TModel> ? Extract<ModelValue<TModel>[TKey], string | number> | ModelKeyRecord<TModel> : never;
