@@ -137,15 +137,21 @@ Reported as: `wire.union([X, wire.null])` written constantly. Confirmed absent.
 - **Mutable decode shapes.** `readonly` output is correct and stays. P1 removes
   the place it caused a false failure, which was the actual complaint.
 
-## Open — changelog tooling
+## Changelog tooling — done
 
-`CHANGELOG.md` is hand-written and the release flow is a signed tag plus
-`pnpm verify:release`. That works for one package with one author; it does not
-survive a second contributor, because the person who knows what broke is not
-the person cutting the release. Candidate: Changesets — intent captured in a
-file at PR time, prerelease mode matching the `next` dist-tag flow already in
-`RELEASING.md`, no conventional-commit requirement (these commit messages are
-prose and should stay that way).
+Changesets, versioning only. `changeset publish` is not wired up: the version
+and `CHANGELOG.md` are computed, the tag is still signed by a human and still
+decides what publishes. `release:check` closes the gap between them — no
+`## <version>` heading, or unconsumed changesets, and the tag is refused.
+
+Below 1.0.0 a breaking change is a `minor` changeset, because Changesets
+applies plain semver and would otherwise jump to `1.0.0`. Conventions in
+`.changeset/README.md`; flow in `RELEASING.md`.
+
+Deliberately not added: a CI check that every pull request carries a changeset.
+It fires on doc-only changes, and the answer is always an empty changeset,
+which is friction teaching people to defeat the check. Worth revisiting only
+with a second regular contributor.
 
 ## Follow-up, not blocking
 
