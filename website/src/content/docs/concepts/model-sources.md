@@ -41,12 +41,11 @@ type-checking. The compiler points at the bare `$satisfies<Source>()` call and
 prints each mismatched field together with the model and source types; no
 runtime argument is involved.
 
-:::caution[`strictNullChecks` is doing half the work]
-Without it, `string` and `string | null` are the same type to the compiler, so
-the nullability half of this assertion cannot run — a model that forgot a
-column was nullable will pass. Mismatched scalars are still caught, and the
-message says so explicitly rather than implying a guarantee it did not check.
-:::
+> **`strictNullChecks` is doing half the work.** Without it, `string` and
+> `string | null` are the same type to the compiler, so the nullability half of
+> this assertion cannot run — a model that forgot a column was nullable will
+> pass. Mismatched scalars are still caught, and the message says so explicitly
+> rather than implying a guarantee it did not check.
 
 ## Type-only sources
 

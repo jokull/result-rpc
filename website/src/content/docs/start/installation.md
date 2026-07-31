@@ -56,11 +56,10 @@ import { createParityClient } from "result-rpc/testing";
 | `result-rpc/db`      | ORM-independent database Result helpers                                            |
 | `result-rpc/testing` | Test clients that exercise the real wire boundary                                  |
 
-::::note[Keep implementations out of browser bundles]
-Put the contract in a shared module and import that value when creating a
-browser client. Do not import the implemented server router: it retains its
-handlers and may retain database drivers, environment access, and private error
-classes. See [The client boundary](/concepts/client-boundary/).
-::::
+> **Keep implementations out of browser bundles.** Put the contract in a shared
+> module and import that value when creating a browser client. Do not import the
+> implemented server router: it retains its handlers and may retain database
+> drivers, environment access, and private error classes. See [The client
+> boundary](/concepts/client-boundary/).
 
 Continue with the [quickstart](/start/quickstart/) to build one complete query.

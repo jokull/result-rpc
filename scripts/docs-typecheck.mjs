@@ -66,6 +66,32 @@ const rewrite = (code) =>
     return target ? `from "${target.replace(/\.d\.ts$/, ".js")}"` : match;
   });
 
+/**
+ * The site renders neither Starlight `:::` directives nor GitHub `[!NOTE]`
+ * alerts — it emits them as literal text in a paragraph, and the build still
+ * succeeds. Four callouts shipped that way before anyone read the rendered
+ * page. A bold lead inside a blockquote renders everywhere.
+ */
+const UNSUPPORTED_CALLOUTS = [
+  [/^:{3,}\w/m, "`:::` directive (use `> **Title.** …` instead)"],
+  [/^>\s*\[!\w+\]/m, "GitHub alert syntax (use `> **Title.** …` instead)"],
+];
+
+// Checked before any scratch directory exists, so a failure here cannot leave
+// residue behind for the linter to trip over.
+for (const document of documents) {
+  const source = readFileSync(document, "utf8");
+  for (const [pattern, description] of UNSUPPORTED_CALLOUTS) {
+    const found = pattern.exec(source);
+    if (found) {
+      const line = source.slice(0, found.index).split("\n").length;
+      throw new Error(
+        `${relative(root, document)}:${line} uses ${description} — it renders as literal text.`,
+      );
+    }
+  }
+}
+
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
 

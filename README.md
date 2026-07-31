@@ -114,10 +114,15 @@ The [ticket demo](https://demo.result-rpc.com) exercises optimistic updates,
 pagination, invalidation, entity patching, offline behavior, and layered error
 ownership.
 
+The target architecture, the invariants it holds itself to, and the research
+behind them ship with the package: [ARCHITECTURE.md](ARCHITECTURE.md) and
+[DESIGN.md](DESIGN.md).
+
 ## Status
 
 `0.1.0` is published with npm provenance. The project is pre-1.0, so its API
-may still change between minor releases. See [RELEASING.md](RELEASING.md) for
-the release and verification process.
+may still change between minor releases. [CHANGELOG.md](CHANGELOG.md) records
+what changed; [RELEASING.md](RELEASING.md) documents the release and
+verification process.
 
 MIT

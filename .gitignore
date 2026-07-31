@@ -5,6 +5,7 @@ dist/
 .blume/
 website/dist/
 /temp/
+.docs-typecheck/
 WAVES.md
 PLAN.md
 src/**/*.d.ts

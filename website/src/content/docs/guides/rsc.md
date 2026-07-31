@@ -34,20 +34,19 @@ export const getServerRpc = cache(() => {
 });
 ```
 
-:::note[Two entries: `result-rpc/query` on the server, `result-rpc/react` in components]
-`result-rpc/react` is marked `"use client"`. Rendering its **components** from a
-server component is fine and expected — `<ResultRpcHydrationBoundary>` below is
-imported straight into a server component, and the bundler turns it into a
-client reference rather than executing it on the server. That is the boundary
-working as designed.
-
-The cache runtime has no React dependency, so it ships as its own entry.
-`createQueryRuntime` is intentionally **not exported** from
-`result-rpc/react`: importing it from a `"use client"` entry can compile yet
-fail when a React server evaluates the call. Import it and its types from
-**`result-rpc/query`** in server code, where the mistake is caught at the
-module boundary instead of on a production request.
-:::
+> **Two entries: `result-rpc/query` on the server, `result-rpc/react` in
+> components.** `result-rpc/react` is marked `"use client"`. Rendering its
+> **components** from a server component is fine and expected —
+> `<ResultRpcHydrationBoundary>` below is imported straight into a server
+> component, and the bundler turns it into a client reference rather than
+> executing it on the server. That is the boundary working as designed.
+>
+> The cache runtime has no React dependency, so it ships as its own entry.
+> `createQueryRuntime` is intentionally **not exported** from
+> `result-rpc/react`: importing it from a `"use client"` entry can compile yet
+> fail when a React server evaluates the call. Import it and its types from
+> **`result-rpc/query`** in server code, where the mistake is caught at the
+> module boundary instead of on a production request.
 
 `cache()` (React's per-request memo) means every server component in one request
 shares a runtime — prefetches accumulate, and you dehydrate once at the boundary.
@@ -192,13 +191,12 @@ three honest options:
 The rule of thumb: **server components own the failures that change the HTTP
 response; shells own the failures that change the UI.**
 
-:::caution[Mutations from server actions lose the cache]
-A mutation called through a direct caller executes normally and returns its
-`Result`, but its cache declarations are inert — `.affects()`, entity patching,
-and `touch` are client-runtime behaviors, and there is no client cache on a
-server. The write lands; the browser's cache learns nothing about it. Refresh
-the route, or perform the mutation from the client where the machinery lives.
-:::
+> **Mutations from server actions lose the cache.** A mutation called through a
+> direct caller executes normally and returns its `Result`, but its cache
+> declarations are inert — `.affects()`, entity patching, and `touch` are
+> client-runtime behaviors, and there is no client cache on a server. The write
+> lands; the browser's cache learns nothing about it. Refresh the route, or
+> perform the mutation from the client where the machinery lives.
 
 ## Declared failures hydrate; transport failures do not
 
