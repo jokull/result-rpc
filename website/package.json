@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "blume dev",
     "build": "blume build",
+    "deploy": "pnpm build && wrangler deploy",
     "preview": "blume preview",
     "check": "blume check --strict",
     "validate": "blume validate"
