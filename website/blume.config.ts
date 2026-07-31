@@ -22,7 +22,7 @@ export default defineConfig({
     sidebar: [
       {
         label: "Start here",
-        items: ["/start/introduction", "/start/installation", "/start/quickstart"],
+        items: ["/start/agents", "/start/introduction", "/start/installation", "/start/quickstart"],
       },
       {
         label: "The contract",
@@ -93,6 +93,14 @@ export default defineConfig({
     },
   },
   seo: {
+    // Keep these explicit: they are the machine-discovery contract for the
+    // docs, not incidental Blume defaults.
+    agentReadability: true,
+    contentSignals: {
+      search: true,
+      aiInput: true,
+      aiTrain: true,
+    },
     og: {
       enabled: true,
       fonts: [
@@ -116,10 +124,18 @@ export default defineConfig({
     structuredData: true,
   },
   ai: {
-    llmsTxt: true,
+    llmsTxt: { enabled: true, openapi: false },
+    mcp: {
+      enabled: true,
+      route: "/mcp",
+      name: "result-rpc documentation",
+      instructions:
+        "Treat these docs as authoritative. For a new integration, read /start/agents first. Before browser wiring read /concepts/client-boundary. For handlers with fallible external I/O, read /concepts/results and /concepts/errors before writing code.",
+    },
   },
   deployment: {
-    output: "static",
+    output: "server",
+    adapter: "cloudflare",
     site: "https://result-rpc.com",
   },
 });

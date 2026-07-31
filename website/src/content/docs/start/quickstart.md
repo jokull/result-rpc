@@ -51,6 +51,33 @@ export const appContract = app.contract({
 This shared module contains only the runtime contract: codecs, error
 definitions, and policies. It is safe to import from either side of the wire.
 
+Infer application types from the procedure instead of restating the codec or
+its error union:
+
+```ts
+import type { ProcedureError, ProcedureOutput } from "result-rpc";
+
+type Greeting = ProcedureOutput<typeof greetContract>; // string
+type GreetingFailure = ProcedureError<typeof greetContract>; // GreetingNotFound
+```
+
+Use `RouterInputs`, `RouterOutputs`, and `RouterErrors` instead when the nested
+application shape is more useful than one named procedure.
+
+For rich values, describe the real value on the contract. Do not flatten it to
+a JSON-shaped substitute:
+
+```ts
+const availabilityContract = app
+  .procedure()
+  .input(wire.object({ propertyId: wire.string }))
+  .output(wire.object({ available: wire.boolean, updatedAt: wire.date }))
+  .query();
+```
+
+The browser receives `updatedAt` as a `Date`. See [The wire](/concepts/wire/)
+for the full codec table.
+
 ## Implement and serve it
 
 ```ts
@@ -113,6 +140,25 @@ The handler must return the declared Result. Returning an undeclared tag is a
 type error; throwing unexpectedly or smuggling a malformed error is treated as
 a defect and yields a sanitized `server/internal`. Configure `onInternalError`
 on the fetch handler to report the private cause.
+
+## Adopt fallible external I/O
+
+An anticipated failed fetch, database call, or SDK call belongs in a declared
+Result branch. Use `tryPromise` at that throwing boundary:
+
+```ts
+const response =
+  yield *
+  (await tryPromise(
+    () => fetch(url),
+    () => errors.GreetingNotFound({ name: input.name }),
+  ));
+```
+
+Fold provider-specific detail into the public error the caller can act on;
+unexpected programmer defects may still throw and become sanitized
+`server/internal`. The complete pattern is in
+[Result composition](/concepts/results/) and [Errors](/concepts/errors/).
 
 ## Call it
 

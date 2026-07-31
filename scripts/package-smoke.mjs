@@ -362,6 +362,30 @@ export type EveryPublicSubpath = readonly [
 
   const installedPackage = join(fixture, "node_modules/result-rpc");
   const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
+  const packagedReadme = readFileSync(join(installedPackage, "README.md"), "utf8");
+  const packagedSkillPath = join(installedPackage, "skills/result-rpc/SKILL.md");
+  assert(
+    statSync(packagedSkillPath, { throwIfNoEntry: false })?.isFile(),
+    "Published package is missing skills/result-rpc/SKILL.md",
+  );
+  assert(
+    packagedReadme.includes(`\`${manifest.version}\` is published`),
+    `Packaged README status does not match package version ${manifest.version}`,
+  );
+  for (const url of [
+    "https://result-rpc.com/skill.md",
+    "https://result-rpc.com/start/quickstart/",
+  ]) {
+    assert(packagedReadme.includes(url), `Packaged README does not link ${url}`);
+  }
+  const packagedSkill = readFileSync(packagedSkillPath, "utf8");
+  for (const rule of [
+    "Browser imports a contract value",
+    "Expected failures are declared and returned",
+    "At least one real wire round-trip is exercised",
+  ]) {
+    assert(packagedSkill.includes(rule), `Packaged skill is missing preflight rule: ${rule}`);
+  }
   for (const [subpath, conditions] of Object.entries(manifest.exports)) {
     for (const condition of ["types", "import"]) {
       const target = join(installedPackage, conditions[condition]);

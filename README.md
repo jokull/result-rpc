@@ -18,6 +18,11 @@
 
 ---
 
+> **Coding agent?** Start at [`https://result-rpc.com/skill.md`](https://result-rpc.com/skill.md).
+>
+> Package already installed? Read
+> `node_modules/result-rpc/skills/result-rpc/SKILL.md`.
+
 result-rpc is an RPC layer for React with one closed, wire-safe failure union
 per operation. Procedures return expected failures as tagged values; unexpected
 exceptions remain defects and cross the server boundary only as a sanitized
@@ -100,6 +105,7 @@ graphs out of client bundles.
 
 ## Documentation
 
+- [Coding-agent start and canonical skill](https://result-rpc.com/start/agents/)
 - [Introduction](https://result-rpc.com/start/introduction/)
 - [Quickstart](https://result-rpc.com/start/quickstart/)
 - [Errors and visibility](https://result-rpc.com/concepts/errors/)

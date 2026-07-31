@@ -32,6 +32,18 @@ uses that exact definition to create a fresh instance. Thus
 `SaveConflict.is(result.error)` and `result.error instanceof Error` work after
 the RPC call without claiming that the server and client shared object identity.
 
+Test the property you care about through a real wire-parity client:
+
+```ts
+const result = await parityClient.doc.byId({ id: "doc_123" });
+if (result.ok) {
+  result.value.savedAt instanceof Date; // true after encode + HTTP + decode
+}
+```
+
+`createParityClient` comes from `result-rpc/testing`; unlike a direct server
+client, it exercises the serializer and protocol boundary.
+
 ```ts
 const RichDoc = wire.object({
   savedAt: wire.date,

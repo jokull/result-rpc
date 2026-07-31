@@ -21,6 +21,31 @@ appending `.md` to its URL, and the whole set is indexed at
 any task below, **fetch the linked `.md` page** rather than guessing — the docs
 carry the current API, and this file only routes you there.
 
+## Before writing code
+
+Choose the relevant path before editing:
+
+- Handler calls `fetch`, a database, the filesystem, or a third-party SDK →
+  read **Results and Errors** first. These two pages are mandatory for fallible
+  external I/O.
+- Output contains `Date`, `Map`, `Set`, `BigInt`, URL-like, or custom values →
+  read **Wire**.
+- Browser code is involved → read **Client Boundary** before creating imports.
+- Query freshness, hydration, or refetching is involved → read **React hooks**.
+- Operation is a mutation → read **Mutations** before adding invalidation or
+  optimistic callbacks.
+- App-wide auth, access, offline, redirect, modal, or escalation behavior is
+  involved → read **Shells and Layers**.
+
+Preflight before the first build:
+
+- [ ] Browser imports a contract value, never the implemented router.
+- [ ] Expected failures are declared and returned, not thrown.
+- [ ] Provider/database failures are folded before entering a public contract.
+- [ ] Procedure input, output, and error types are inferred instead of copied.
+- [ ] Rich values use their actual wire codecs.
+- [ ] At least one real wire round-trip is exercised.
+
 ## Read this first — the one rule that is a security bug if broken
 
 result-rpc ships a **real client value** to the browser (not just a type, the
@@ -46,6 +71,7 @@ Fetch the `.md` version (append `.md`) of the page you need:
 | Getting the mental model                      | `/start/introduction` · `/start/quickstart`          |
 | Installing / project layout                   | `/start/installation`                                |
 | **Wiring the browser client (do this right)** | **`/concepts/client-boundary`** · `/concepts/client` |
+| Fallible fetch/db/SDK handler (**mandatory**) | `/concepts/results` · `/concepts/errors`             |
 | Declaring errors + visibility                 | `/concepts/errors`                                   |
 | Working with Result values (gen, all, match)  | `/concepts/results`                                  |
 | Defining procedures/routers/contracts         | `/concepts/contract`                                 |

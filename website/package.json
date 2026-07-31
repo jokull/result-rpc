@@ -4,21 +4,26 @@
   "type": "module",
   "scripts": {
     "dev": "blume dev",
-    "build": "blume build",
-    "deploy": "pnpm build && wrangler deploy",
+    "build": "blume build && node scripts/finalize-agent-assets.mjs",
+    "deploy": "pnpm build && wrangler deploy --config dist/server/wrangler.json",
+    "og:render": "node scripts/render-home-og.mjs",
     "preview": "blume preview",
     "check": "blume check --strict",
-    "validate": "blume validate"
+    "validate": "blume validate",
+    "eval": "blume eval --agent codex"
   },
   "dependencies": {
     "astro": "^7.1.1",
-    "blume": "1.2.0"
+    "blume": "1.2.1"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
+    "@astrojs/cloudflare": "14.1.5",
     "@astrojs/mdx": "7.0.3",
+    "@cloudflare/vite-plugin": "1.48.0",
     "@tailwindcss/vite": "^4.3.3",
+    "takumi-js": "2.4.2",
     "typescript": "^5.9.3",
-    "wrangler": "^4.111.0"
+    "wrangler": "^4.115.0"
   }
 }

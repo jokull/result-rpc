@@ -1,0 +1,48 @@
+version: 1
+questions:
+  - id: browser-client-boundary
+    question: How should I create a result-rpc browser client, and what import would leak server code?
+    routes:
+      - /concepts/client-boundary
+      - /start/quickstart
+    expected:
+      - Build the browser client from the shared runtime contract value.
+      - Never value-import the implemented router or a contract module that imports server implementation code.
+
+  - id: expected-upstream-failure
+    question: A procedure calls fetch and an anticipated upstream rejection occurs. How should it cross the result-rpc boundary?
+    routes:
+      - /start/quickstart
+      - /concepts/results
+      - /concepts/errors
+    expected:
+      - Adopt the throwing promise with tryPromise and return a declared tagged error branch.
+      - Fold provider-specific or private detail into a public domain failure before it enters the RPC contract.
+      - Unexpected defects become sanitized server/internal and keep their cause in server observability.
+
+  - id: infer-procedure-types
+    question: How do I name one procedure's output and error types without duplicating its codec declarations?
+    routes:
+      - /start/quickstart
+      - /concepts/contract
+    expected:
+      - Use ProcedureOutput<typeof procedure> and ProcedureError<typeof procedure>.
+      - Use RouterInputs, RouterOutputs, and RouterErrors when the nested application shape is more useful.
+
+  - id: date-wire-parity
+    question: How do I send a Date and prove the client receives a Date rather than a string?
+    routes:
+      - /concepts/wire
+      - /guides/testing
+    expected:
+      - Declare the value with wire.date.
+      - Exercise a real wire boundary with createParityClient or the fetch handler and assert instanceof Date.
+
+  - id: freshness-versus-swr
+    question: Does result-rpc query staleTime make my Cloudflare backend stale-while-revalidate, and what happens during a failed background refresh?
+    routes:
+      - /concepts/react
+    expected:
+      - staleTime controls client-memory freshness and whether the browser starts a request.
+      - HTTP, CDN, or Worker caching is configured independently and controls whether a request reaches the origin.
+      - During refresh fetch can be fetching while state retains the terminal value; after failure previous holds the last success.

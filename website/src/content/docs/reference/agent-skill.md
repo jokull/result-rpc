@@ -4,7 +4,7 @@ description: "Teach your coding agent result-rpc — a progressively-discoverabl
 ---
 
 result-rpc ships an [agent skill](https://code.claude.com/docs/en/skills) so a
-coding agent (Claude Code and compatible tools) knows the library's rules —
+coding agent (Codex, Claude Code, and compatible tools) knows the library's rules —
 especially the [client-boundary](/concepts/client-boundary/) safety rule — and
 knows where to read the rest.
 
@@ -18,19 +18,30 @@ page, and the skill still points at it.
 
 Every page here is also served as raw Markdown — append `.md` to any URL:
 
+- Canonical skill: `https://result-rpc.com/skill.md`
 - Page Markdown: `https://result-rpc.com/concepts/pagination.md`
 - Index for LLMs: `https://result-rpc.com/llms.txt`
 - Full corpus: `https://result-rpc.com/llms-full.txt`
+- Agent surface manifest: `https://result-rpc.com/agent-readability.json`
+- Hosted docs MCP: `https://result-rpc.com/.well-known/mcp.json`
 
 So an agent with web access can read the whole documentation set directly,
 whether or not the skill is installed. The skill just gives it the map and the
 guardrails up front.
 
-## Installing the skill
+## Installing for Codex and compatible agents
 
 The skill ships inside the npm package at
 `node_modules/result-rpc/skills/result-rpc/SKILL.md`. Make it available to your
-agent by linking it into your project's skills directory:
+agent by linking it into the convention it reads. Codex and other Agents Skills
+compatible tools use `.agents/skills`:
+
+```bash
+mkdir -p .agents/skills
+ln -s ../../node_modules/result-rpc/skills/result-rpc .agents/skills/result-rpc
+```
+
+Claude Code uses `.claude/skills`:
 
 ```bash
 mkdir -p .claude/skills
@@ -38,8 +49,25 @@ ln -s ../../node_modules/result-rpc/skills/result-rpc .claude/skills/result-rpc
 ```
 
 A symlink keeps the skill current: when you upgrade `result-rpc`, the skill
-upgrades with it. Copy the directory instead if your tooling doesn't follow
-symlinks.
+upgrades with it. If your operating system or tool does not follow project
+symlinks, use the matching explicit copy form:
+
+```bash
+mkdir -p .agents/skills
+cp -R node_modules/result-rpc/skills/result-rpc .agents/skills/result-rpc
+
+# Or, for Claude Code:
+mkdir -p .claude/skills
+cp -R node_modules/result-rpc/skills/result-rpc .claude/skills/result-rpc
+```
+
+The copy is a snapshot. Remove and recreate it after upgrading the package.
+Verify either installation without depending on agent-specific UI:
+
+```bash
+test -f .agents/skills/result-rpc/SKILL.md || \
+  test -f .claude/skills/result-rpc/SKILL.md
+```
 
 Once linked, an agent working in your repo discovers the skill by its
 description and pulls in the client-boundary rule and the page map before it

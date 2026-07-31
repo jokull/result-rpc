@@ -135,6 +135,11 @@ With a stale window, a mutation that patches a visible row does so in place at
 exactly one request — the row updates, the scroll position holds, nothing
 refetches.
 
+`staleTime` is client-memory policy, not backend or CDN
+`stale-while-revalidate`. The [React freshness guide](/concepts/react/#freshness-fetch-state-and-backend-caching)
+defines the distinction and the relationship between terminal `state`,
+concurrent `fetch`, and failed-refresh `previous`.
+
 ## Prefetching
 
 `runtime.prefetchPaginated(client.feed, { q })` warms the first page — use it

@@ -94,6 +94,10 @@ it. Give prefetched queries a `staleTime` so the server data is trusted for a
 window and the first mount makes **zero** client requests — no loading flash
 and no immediate refetch.
 
+This is browser query freshness, not an HTTP or CDN cache directive. See
+[Freshness, fetch state, and backend caching](/concepts/react/#freshness-fetch-state-and-backend-caching)
+for the canonical distinction.
+
 ## Nested boundaries merge
 
 Unlike the provider's one-shot `hydrate` prop, boundaries are **nestable** — the

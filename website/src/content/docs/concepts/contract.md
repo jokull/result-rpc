@@ -4,7 +4,7 @@ description: "Procedures, middleware, and routers: the shared contract both side
 ---
 
 ```ts
-import { rpc, wire, type InputOf } from "result-rpc";
+import { rpc, wire, type InputOf, type ProcedureError, type ProcedureOutput } from "result-rpc";
 import { DocNotFound, Unauthorized } from "./errors";
 
 interface AppContext {
@@ -33,6 +33,9 @@ export const appContract = app.contract({
     byId: getDocContract,
   },
 });
+
+type DocOutput = ProcedureOutput<typeof getDocContract>;
+type GetDocFailure = ProcedureError<typeof getDocContract>;
 ```
 
 One honest difference from tRPC: tRPC ships the router's _type_ to the client
@@ -44,6 +47,13 @@ is what pays for `Date`/`Map`/`BigInt` over the wire and codecs on both sides.
 
 Browser clients are built from this contract. Implemented routers belong to
 `createFetchHandler` and `createServerClient`.
+
+`ProcedureOutput` and `ProcedureError` are the direct helpers when code names
+one procedure. For forms, loaders, test fixtures, or adapters spanning a whole
+application, `RouterInputs`, `RouterOutputs`, and `RouterErrors` preserve the
+router's nested shape so a path can be indexed without rebuilding a codec or
+union. All six helpers work on the shared contract; the nested helpers also
+work on an implemented router in server-only code.
 
 ## Implement the contract on the server
 

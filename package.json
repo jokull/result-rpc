@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Typed RPC for React: errors accumulate along the call path and discharge along the component tree",
   "keywords": [
+    "agent-skill",
     "query-cache",
     "react",
     "result",
@@ -10,6 +11,7 @@
     "tagged-errors",
     "trpc-alternative",
     "type-safe",
+    "typed-rpc",
     "typescript"
   ],
   "homepage": "https://result-rpc.com",
@@ -80,7 +82,7 @@
     "test:docs": "node scripts/docs-typecheck.mjs",
     "test:entity-perf": "RESULT_RPC_PERF=1 bun test tests/entity/attack-10-perf.test.ts",
     "test:types": "tsc -p tsconfig.type-tests.json --noEmit",
-    "docs:verify": "pnpm --dir website check && pnpm --dir website validate && pnpm --dir website build",
+    "docs:verify": "pnpm --dir website check && pnpm --dir website validate && pnpm --dir website build && node scripts/agent-docs-smoke.mjs",
     "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test:types && pnpm test:release && pnpm test:diagnostics && pnpm test && pnpm build && node scripts/api-report.mjs && pnpm test:docs && pnpm test:package",
     "verify:release": "pnpm verify && pnpm bench:types && pnpm test:entity-perf && pnpm docs:verify",
     "prepack": "pnpm run build",

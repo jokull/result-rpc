@@ -109,6 +109,36 @@ tracks failure counts, pauses offline work, and supports invalidation. It uses
 its failure channel internally and projects it back into the public Result
 state.
 
+## Freshness, fetch state, and backend caching
+
+`staleTime` is a client-memory freshness window. While cached data is fresh,
+mounting another observer reads it without starting a background request. Once
+it is stale, the successful value can remain rendered while `fetch` changes to
+`"fetching"`; `state` still describes the last terminal outcome, not whether a
+request is currently in flight.
+
+```tsx
+const availability = useResultQuery(client.availability, {}, { staleTime: 15 * 60_000 });
+
+if (availability.state === "success") {
+  availability.value; // current cached success
+  availability.fetch === "fetching"; // a background refresh is concurrent
+}
+```
+
+That `{}` is the procedure's empty input. When passing options to a zero-input
+query, the current form is `useResultQuery(procedure, {}, options)`.
+
+If a background refresh fails, the terminal state becomes `"failure"` and
+`previous` holds the last successful value. This makes stale-data-plus-error a
+single explicit state rather than a hidden second error channel.
+
+This cache lives in the result-rpc query runtime for one application session.
+It does not set `Cache-Control`, populate a CDN, cache inside a Cloudflare
+Worker, or implement HTTP `stale-while-revalidate`. Backend or edge caching
+decides whether the request reaches the origin; query `staleTime` decides
+whether the browser starts that request. Configure the two independently.
+
 `useResultQuery` is the unnarrowed hook: it always yields the operation's
 complete union. Application code normally reaches for a shell's hooks instead,
 so that each part of the tree only presents the failures it is actually
