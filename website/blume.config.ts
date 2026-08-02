@@ -1,5 +1,33 @@
 import { defineConfig } from "blume";
 
+/**
+ * The repo root carries its own `react` devDependency (the library's tests run
+ * on it) and this site is nested inside that repo, so Vite can end up with two
+ * Reacts — one for the Astro renderer, one for anything under `src/` — and
+ * every island dies on `Invalid hook call`. `dedupe` collapses them.
+ *
+ * Aliasing to resolved entry paths instead does not work: it bypasses the
+ * package's export conditions and hands the CJS build to the SSR runner, which
+ * fails with `module is not defined`.
+ */
+const dedupeReact = {
+  name: "result-rpc-dedupe-react",
+  hooks: {
+    "astro:config:setup": ({ updateConfig }: { updateConfig: (config: unknown) => void }) => {
+      updateConfig({
+        vite: {
+          resolve: { dedupe: ["react", "react-dom"] },
+          // Declared up front so the optimizer does not discover `motion`
+          // mid-session, re-optimize, and leave the page holding modules from
+          // two different pre-bundles — which presents as the same duplicate
+          // React error.
+          optimizeDeps: { include: ["motion/react"] },
+        },
+      });
+    },
+  },
+};
+
 export default defineConfig({
   title: "result-rpc",
   description:
@@ -133,6 +161,8 @@ export default defineConfig({
         "Treat these docs as authoritative. For a new integration, read /start/agents first. Before browser wiring read /concepts/client-boundary. For handlers with fallible external I/O, read /concepts/results and /concepts/errors before writing code.",
     },
   },
+  // The home-page hero is a Motion island; nothing else on the site is React.
+  integrations: [dedupeReact],
   deployment: {
     output: "server",
     adapter: "cloudflare",

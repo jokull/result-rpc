@@ -13,8 +13,12 @@
     "eval": "blume eval --agent codex"
   },
   "dependencies": {
+    "@astrojs/react": "^6.0.2",
     "astro": "^7.1.1",
-    "blume": "1.2.1"
+    "blume": "1.2.1",
+    "motion": "^12.43.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.6",
@@ -22,6 +26,8 @@
     "@astrojs/mdx": "7.0.3",
     "@cloudflare/vite-plugin": "1.48.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "takumi-js": "2.4.2",
     "typescript": "^5.9.3",
     "wrangler": "^4.115.0"
