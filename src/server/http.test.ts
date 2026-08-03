@@ -179,7 +179,7 @@ describe("fetch handler wire boundary", () => {
     // boundary rule for defects.
     expect(JSON.stringify(internalErrors)).toContain("callback threw");
     expect(JSON.stringify(internalErrors)).toContain(POISON);
-    expect(internalErrors[0]?.phase).toBe("handler");
+    expect((internalErrors[0] as { phase?: string })?.phase).toBe("handler");
   });
 
   test("a private-visibility error is sanitized to server/internal on the wire", async () => {

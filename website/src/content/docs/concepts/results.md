@@ -23,16 +23,16 @@ boundary.
 result-rpc tagged errors. Factories come from result-rpc; everything else is
 better-result's own surface.
 
-|                     |                                                        |
-| ------------------- | ------------------------------------------------------ |
-| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc`         |
-| Discriminate        | `result.status === "ok"` or `result.isOk()`            |
-| Transform           | `map`, `mapError`, `andThen`, `tryRecover`             |
-| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`            |
-| Observe             | `tap`, `tapError`, `tapBoth`                           |
-| Adopt throwing code | `Result.try` / `Result.tryPromise` (`{ try, catch }`)  |
-| Combine             | `Result.all` (tuple, first failure wins)               |
-| Compose             | `gen` (generator style, `yield*`)                      |
+|                     |                                                       |
+| ------------------- | ----------------------------------------------------- |
+| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc`        |
+| Discriminate        | `result.status === "ok"` or `result.isOk()`           |
+| Transform           | `map`, `mapError`, `andThen`, `tryRecover`            |
+| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`           |
+| Observe             | `tap`, `tapError`, `tapBoth`                          |
+| Adopt throwing code | `Result.try` / `Result.tryPromise` (`{ try, catch }`) |
+| Combine             | `Result.all` (tuple, first failure wins)              |
+| Compose             | `gen` (generator style, `yield*`)                     |
 
 Combinators beyond `ok`/`err`/`isOk`/`isErr` are imported from
 `better-result` (or re-exported by `result-rpc`): `Result.map`,

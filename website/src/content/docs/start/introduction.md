@@ -202,19 +202,19 @@ section, and it is the reason the rest of the machinery exists.
 
 ## What result-rpc owns
 
-| Concern            | result-rpc contract                                                                                  |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| Concern            | result-rpc contract                                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
 | Result composition | Plain Result values, `gen`/`yield*`, `Result.tryPromise`, union-preserving combinators, exhaustive matching |
-| Error definitions  | Namespaced tags, wire codecs, HTTP/retry/visibility policy                                           |
-| RPC                | Procedures, middleware, routers, server execution, protocol, clients                                 |
-| Transport failures | Tagged additions to each procedure's inferred error union                                            |
-| Query runtime      | Keys, caching, retries, invalidation, lifecycle, hydration                                           |
-| Failure ownership  | Shells that subtract claimed errors and guarantee context                                            |
-| React              | Query, mutation, subscription, suspense, and SSR bindings                                            |
-| Diagnostics        | Safe incident IDs publicly; full causes only in local observability                                  |
-| Observability      | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps                          |
-| Cache coherence    | Entity identities (patch by model+id), declared invalidation, membership via `.affects`              |
-| Forms              | Validator-as-wire-codec adoption, plus server-issue → field projection                               |
+| Error definitions  | Namespaced tags, wire codecs, HTTP/retry/visibility policy                                                  |
+| RPC                | Procedures, middleware, routers, server execution, protocol, clients                                        |
+| Transport failures | Tagged additions to each procedure's inferred error union                                                   |
+| Query runtime      | Keys, caching, retries, invalidation, lifecycle, hydration                                                  |
+| Failure ownership  | Shells that subtract claimed errors and guarantee context                                                   |
+| React              | Query, mutation, subscription, suspense, and SSR bindings                                                   |
+| Diagnostics        | Safe incident IDs publicly; full causes only in local observability                                         |
+| Observability      | Wire event stream, claim breadcrumbs, policy-aware server taps, Result taps                                 |
+| Cache coherence    | Entity identities (patch by model+id), declared invalidation, membership via `.affects`                     |
+| Forms              | Validator-as-wire-codec adoption, plus server-issue → field projection                                      |
 
 The query engine uses `@tanstack/query-core` privately. That is an engine
 choice, not part of the public API. Applications do not install or compose

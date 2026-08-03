@@ -149,10 +149,12 @@ Result branch. Use `Result.tryPromise` at that throwing boundary:
 ```ts
 import { Result as BetterResult } from "better-result";
 
-const response = yield* await BetterResult.tryPromise({
-  try: () => fetch(url),
-  catch: () => errors.GreetingNotFound({ name: input.name }),
-});
+const response =
+  yield *
+  (await BetterResult.tryPromise({
+    try: () => fetch(url),
+    catch: () => errors.GreetingNotFound({ name: input.name }),
+  }));
 ```
 
 Fold provider-specific detail into the public error the caller can act on;
