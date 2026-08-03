@@ -1,6 +1,7 @@
 ---
 import PageLayout from 'blume/components/layout/PageLayout.astro';
 import data from 'blume:data';
+import HeroSequence from '../components/hero/HeroSequence';
 
 const pageDescription = 'Typed RPC for React. Errors accumulate along the call path and discharge along the component tree.';
 
@@ -68,6 +69,14 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
           <figcaption>The full union remains on the operation. This component sees a narrower union because mounted shells own the other tags.</figcaption>
         </figure>
       </div>
+    </section>
+
+    <section class="sequence shell" aria-labelledby="sequence-title">
+      <div class="section-heading">
+        <p class="section-label">One mutation, end to end</p>
+        <h2 id="sequence-title">Eleven failures reach the component. It handles one.</h2>
+      </div>
+      <HeroSequence client:visible />
     </section>
 
     <section class="pillars shell" aria-labelledby="pillars-title">

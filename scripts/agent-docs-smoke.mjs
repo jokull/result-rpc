@@ -12,8 +12,21 @@ const requiredArtifacts = [
   "skill.md",
 ];
 
+/**
+ * `stat` rejects with ENOENT rather than returning something falsy, so a bare
+ * `(await stat(p)).isFile()` throws past every message below — the one case
+ * these checks exist to report is the one that never gets to explain itself.
+ */
+const isFile = async (path) => {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+};
+
 for (const relative of requiredArtifacts) {
-  if (!(await stat(resolve(docs, relative))).isFile()) {
+  if (!(await isFile(resolve(docs, relative)))) {
     throw new Error(`Missing built agent artifact: ${relative}`);
   }
 }
@@ -32,7 +45,7 @@ const routes = new Set(
   ]),
 );
 for (const route of routes) {
-  if (!(await stat(resolve(docs, route.slice(1)))).isFile()) {
+  if (!(await isFile(resolve(docs, route.slice(1))))) {
     throw new Error(`Agent instructions name a missing raw Markdown route: ${route}`);
   }
 }
