@@ -52,8 +52,9 @@ import type {
   WritesEntry,
 } from "../procedure-types.js";
 import { err, ok, type Result } from "../result.js";
+import { procedureResultCodec } from "../procedure-result-codec.js";
 import type { RpcConstraintError } from "../type-diagnostics.js";
-import { encodeProcedureInput, encodeUnknownWireValue, wire } from "../wire.js";
+import { encodeProcedureInput, wire } from "../wire.js";
 import type { EmptyObject, WireCodec, WireValue } from "../wire.js";
 
 export type { ErrorDefinitionMap, ErrorUnion, MergeDefinitionMaps } from "../error-map.js";
@@ -1573,34 +1574,28 @@ export async function executeProcedure(
 
   const result = await dispatch(0, contextWithHeaders(options.context, procedure, options));
   if (options.signal?.aborted) throw options.signal.reason;
-  if (result.status === "ok") {
-    try {
-      const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
-      if (!encoded.ok) return internalFailure("output", encoded.issues, options);
-      const decoded = procedure._def.output.decode(encoded.value);
-      if (!decoded.ok) return internalFailure("output", decoded.issues, options);
-      return ok(decoded.value);
-    } catch (cause) {
-      return internalFailure("output", cause, options);
-    }
-  }
-
-  if (ServerInternal.is(result.error)) {
+  // The per-procedure Result codec owns the output/error serialization and the
+  // declared-error registry validation. Codec failures are framework failures.
+  const codec = procedureResultCodec(procedure._def.output, procedure._def.definitions);
+  if (result.status === "error" && ServerInternal.is(result.error)) {
     return err(result.error);
   }
-  let normalizedError: AnyTaggedError;
   try {
-    const definition = Object.values(procedure._def.definitions).find(
-      (candidate) => candidate.tag === result.error._tag,
-    );
-    if (!definition || definition.policy.visibility !== "public" || !definition.is(result.error)) {
-      return internalFailure("error", result.error, options);
+    if (result.status === "ok") {
+      const serialized = await codec.serialize(result);
+      if (!serialized.isOk()) return internalFailure("output", serialized.error, options);
+      const decoded = await codec.deserialize(serialized.value);
+      if (!decoded.isOk()) return internalFailure("output", decoded.error, options);
+      return decoded;
     }
-    normalizedError = result.error;
+    // Err branch: the registry validation already ran inside serialize.err —
+    // return the handler's exact instance unchanged (zero-copy).
+    const serialized = await codec.serialize(result);
+    if (!serialized.isOk()) return internalFailure("error", serialized.error, options);
+    return result;
   } catch (cause) {
-    return internalFailure("error", cause, options);
+    return internalFailure("output", cause, options);
   }
-  return err(normalizedError);
 }
 
 export function executeSubscription<
@@ -1742,33 +1737,39 @@ export async function* executeSubscription(
       if (options.signal?.aborted) return;
       if (step.done) return;
       const result = normalizeRuntimeResult(step.value, "handler", options);
-      if (result.status === "ok") {
-        const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
-        if (!encoded.ok) {
-          yield internalFailure("output", encoded.issues, options);
-          return;
-        }
-        const decoded = procedure._def.output.decode(encoded.value);
-        if (!decoded.ok) {
-          yield internalFailure("output", decoded.issues, options);
-          return;
-        }
-        yield ok(decoded.value);
-        continue;
-      }
-      if (ServerInternal.is(result.error)) {
+      const codec = procedureResultCodec(procedure._def.output, procedure._def.definitions);
+      if (result.status === "error" && ServerInternal.is(result.error)) {
         yield err(result.error);
         return;
       }
-      const definition = Object.values(procedure._def.definitions).find(
-        (candidate) => candidate.tag === result.error._tag,
-      );
-      if (definition?.policy.visibility !== "public" || !definition.is(result.error)) {
-        yield internalFailure("error", result.error, options);
-      } else {
-        yield err(result.error);
+      try {
+        if (result.status === "ok") {
+          const serialized = await codec.serialize(result);
+          if (!serialized.isOk()) {
+            yield internalFailure("output", serialized.error, options);
+            return;
+          }
+          const decoded = await codec.deserialize(serialized.value);
+          if (!decoded.isOk()) {
+            yield internalFailure("output", decoded.error, options);
+            return;
+          }
+          yield decoded;
+          continue;
+        }
+        // Err branch: registry validation ran inside serialize.err; the exact
+        // instance crosses unchanged.
+        const serialized = await codec.serialize(result);
+        if (!serialized.isOk()) {
+          yield internalFailure("error", serialized.error, options);
+          return;
+        }
+        yield result;
+        return;
+      } catch (cause) {
+        yield internalFailure("handler", cause, options);
+        return;
       }
-      return;
     }
   } catch (cause) {
     yield internalFailure("handler", cause, options);
