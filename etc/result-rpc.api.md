@@ -5,8 +5,8 @@
 ```ts
 
 import { Err as Err_2 } from 'better-result';
-import { InferErr } from 'better-result';
-import { InferOk } from 'better-result';
+import { InferErr as InferErr_2 } from 'better-result';
+import { InferOk as InferOk_2 } from 'better-result';
 import { Ok as Ok_2 } from 'better-result';
 import { Result as Result_2 } from 'better-result';
 
@@ -19,7 +19,7 @@ export interface AffectsEntry {
 }
 
 // @public (undocumented)
-export const all: <const Results extends readonly (Err_2<unknown, unknown> | Ok_2<unknown, unknown>)[]>(results: Results) => Result_2<{ -readonly [Index in keyof Results]: InferOk<Results[Index]>; }, InferErr<Results[number]>>;
+export const all: <const Results extends readonly (Err_2<unknown, unknown> | Ok_2<unknown, unknown>)[]>(results: Results) => Result_2<{ -readonly [Index in keyof Results]: InferOk_2<Results[Index]>; }, InferErr_2<Results[number]>>;
 
 // @public (undocumented)
 export const andThen: {
@@ -744,13 +744,14 @@ export type ExtraDefinitionKeys<TExpected extends ErrorDefinitionMap, TActual ex
 // @public
 export const fieldIssues: (failure: ServerBadRequest) => Readonly<Record<string, readonly string[]>>;
 
+// @public
+export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => Generator<TYield, TReturn>): Result<TReturn, GenErr<TYield>>;
+
 // @public (undocumented)
-export const gen: {
-    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => Generator<Yield, R, unknown>): Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>;
-    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => Generator<Yield, R, unknown>, thisArg: This): Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>;
-    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => AsyncGenerator<Yield, R, unknown>): Promise<Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>>;
-    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => AsyncGenerator<Yield, R, unknown>, thisArg: This): Promise<Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>>;
-};
+export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => AsyncGenerator<TYield, TReturn>): Promise<Result<TReturn, GenErr<TYield>>>;
+
+// @public (undocumented)
+export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
 
 // @public (undocumented)
 export type HasDef = AnyProcedure | AnyProcedureContract;
@@ -793,6 +794,12 @@ export type ImplementedProcedureTypes<TContractTypes extends AnyProcedureTypes, 
 export type IncompatibleDefinitionKeys<TExpected extends ErrorDefinitionMap, TActual extends ErrorDefinitionMap> = {
     [TKey in keyof TExpected & keyof TActual]: TExpected[TKey] extends TActual[TKey] ? TActual[TKey] extends TExpected[TKey] ? never : TKey : TKey;
 }[keyof TExpected & keyof TActual];
+
+// @public
+export type InferErr<R> = InferErr_2<R>;
+
+// @public
+export type InferOk<R> = InferOk_2<R>;
 
 // @public (undocumented)
 export type InputOf<TCodec> = TCodec extends WireCodec<infer TInput, infer _TEncoded> ? TInput : never;
@@ -1888,6 +1895,12 @@ export const transportErrors: {
     readonly timeoutMs: number;
     } & {}, "public">;
 };
+
+// @public
+export const tryCatch: <T, E extends AnyTaggedError>(fn: () => T, onThrow: (cause: unknown) => E) => Result<T, E>;
+
+// @public
+export const tryPromise: <T, E extends AnyTaggedError>(fn: () => PromiseLike<T> | T, onThrow: (cause: unknown) => E) => Promise<Result<T, E>>;
 
 // @public (undocumented)
 export const tryRecover: {

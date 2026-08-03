@@ -29,22 +29,25 @@
     `Result<T, E extends AnyTaggedError>`. `Result<T, string>` fails statically
     and at the runtime boundary. Framework-internal paths still use
     `Result<unknown, AnyTaggedError>`.
-  - **`gen` follows better-result:** bodies return a Result.
-
-    ```diff
-    - const outcome = gen(function* () { const d = yield* find(id); return d; });
-    + const outcome = gen(function* () { const d = yield* find(id); return ok(d); });
-    ```
+  - **`gen` keeps result-rpc's value-return convention** (unchanged from 0.2):
+    the body returns the success value directly; `return yield* err(x)` fails a
+    block explicitly. It is implemented over better-result Results, so every
+    yielded Err and the returned Result are better-result instances.
+    better-result's own `Result.gen` (`return ok(x)`) remains available for
+    upstream users. `GenErr` is re-exported.
 
   - **`all` is tuple-only** (better-result's `Result.all`); the record form is
     gone — compose with `all([...])` + `map` instead.
+  - **`tryCatch` / `tryPromise` restored with the 0.2 `(fn, onThrow)`
+    signature** — a throwing boundary is adopted behind a declared tagged
+    error in one call, no `{ try, catch }` object literal. (`Result.try` /
+    `Result.tryPromise` from better-result remain available.)
   - **Renames / removals:**
     - `orElse` → `tryRecover`
     - `getOrElse` → `unwrapOr` (value fallback) or `match` (error-aware fallback)
-    - `tryCatch` / `tryPromise` → `Result.try` / `Result.tryPromise` with the
-      `{ try, catch }` form; the catch handler returns the error value
-    - type exports `AllValues`, `AllErrors`, `GenErr`, `ErrorHandlers` removed
-      (upstream types replace them)
+    - type exports `AllValues`, `AllErrors`, `ErrorHandlers` removed (upstream
+      types replace them); `InferErr` / `InferOk` are newly exported for
+      spelling a procedure's error channel / success value
   - **Breaking wire format (pre-1.0, no protocol version bump):** the response
     envelope is `{ status: "ok" | "error", ... }` (was `{ ok: boolean }`).
     result-rpc ships both sides of the wire and has no external clients, so
@@ -82,9 +85,9 @@
   1. Install `better-result@^3.0.0` alongside (npm ≥ 7 / pnpm install it as
      the peer automatically).
   2. Replace `.ok` with `status === "ok"` / `isOk()` / `isErr()`.
-  3. In `gen` bodies, wrap the final return in `ok(...)`.
-  4. Replace `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` or `match`,
-     `tryCatch(fn, onThrow)` → `Result.try({ try: fn, catch: ... })`.
+  3. `gen` is unchanged — bodies still return the value directly.
+  4. Replace `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` or `match`.
+     `tryCatch` / `tryPromise` keep their `(fn, onThrow)` signatures.
   5. Rebuild the client (the wire envelope shape changed; old clients and new
      servers are mutually `client/protocol-violation` / `server/bad-request`).
 

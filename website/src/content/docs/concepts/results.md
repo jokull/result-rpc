@@ -24,23 +24,24 @@ boundary.
 result-rpc tagged errors. Factories come from result-rpc; everything else is
 better-result's own surface.
 
-|                     |                                                       |
-| ------------------- | ----------------------------------------------------- |
-| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc`        |
-| Discriminate        | `result.status === "ok"` or `result.isOk()`           |
-| Transform           | `map`, `mapError`, `andThen`, `tryRecover`            |
-| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`           |
-| Observe             | `tap`, `tapError`, `tapBoth`                          |
-| Adopt throwing code | `Result.try` / `Result.tryPromise` (`{ try, catch }`) |
-| Combine             | `Result.all` (tuple, first failure wins)              |
-| Compose             | `gen` (generator style, `yield*`)                     |
+|                     |                                                |
+| ------------------- | ---------------------------------------------- |
+| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc` |
+| Discriminate        | `result.status === "ok"` or `result.isOk()`    |
+| Transform           | `map`, `mapError`, `andThen`, `tryRecover`     |
+| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`    |
+| Observe             | `tap`, `tapError`, `tapBoth`                   |
+| Adopt throwing code | `tryCatch` / `tryPromise` (`fn, onThrow`)      |
+| Combine             | `Result.all` (tuple, first failure wins)       |
+| Compose             | `gen` (generator style, `yield*`)              |
 
-Combinators beyond `ok`/`err`/`isOk`/`isErr` are imported from
-`better-result` (or re-exported by `result-rpc`): `Result.map`,
-`Result.gen`, `Result.tryPromise`, and so on. The older result-rpc names are
-gone in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` (value
-fallback) or `match`, and `tryCatch`/`tryPromise` → `Result.try`/
-`Result.tryPromise`.
+Combinators beyond `ok`/`err`/`isOk`/`isErr` are re-exported by result-rpc
+(they are better-result's): `map`, `mapError`, `andThen`, `match`,
+`matchError`, `tap*`, `all`, `gen`, `tryRecover`, `unwrap`, `unwrapOr`,
+`tryCatch`, `tryPromise`, and the `InferErr`/`InferOk` types. Two calling
+conventions are result-rpc's own (below); everything else is upstream's,
+unchanged. Renames in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr`
+(value fallback) or `match`.
 
 Results are better-result `Ok`/`Err` class instances with a
 `status: "ok" | "error"` discriminant. The 0.2 `.ok` boolean discriminant is
@@ -63,16 +64,17 @@ A `Promise<Result>` stays a plain promise you `await` — there is no
 
 `yield*` works directly on any Result: it unwraps the value or
 short-circuits the whole block on the first failure. The error union
-accumulates automatically from everything yielded. A gen body **returns a
-Result** (`return ok(value)`), matching better-result's `Result.gen`:
+accumulates automatically from everything yielded. A gen body **returns the
+success value directly** — there is exactly one spelling of success, and one
+of failure (`return yield* err(...)`):
 
 ```ts
-import { gen, ok } from "result-rpc";
+import { gen } from "result-rpc";
 
 const outcome = gen(function* () {
   const doc = yield* findDoc(id); // Result<Doc, DocNotFound>
   const body = yield* parseBody(doc); // Result<Body, ParseFailure>
-  return ok(render(doc, body));
+  return render(doc, body); // the value, not ok(value)
 });
 // Result<Rendered, DocNotFound | ParseFailure>
 ```
@@ -84,7 +86,7 @@ type becomes a `Promise<Result>`:
 const outcome = await gen(async function* () {
   const doc = yield* await fetchDoc(id);
   const body = yield* parseBody(doc);
-  return ok(body);
+  return body;
 });
 ```
 
@@ -100,7 +102,7 @@ instance before returning — via the per-procedure Result codec and the error
 registry:
 
 ```ts
-import { gen, ok } from "result-rpc";
+import { gen } from "result-rpc";
 import { client } from "./rpc-client";
 import { docErrors } from "./errors";
 
@@ -109,7 +111,7 @@ const outcome = await gen(async function* () {
   // unwraps success or propagates its reconstructed TaggedError.
   const doc = yield* await client.doc.byId({ id: "doc_missing" });
   const body = yield* parseBody(doc.body);
-  return ok({ doc, body });
+  return { doc, body };
 });
 
 if (outcome.isErr() && docErrors.notFound.is(outcome.error)) {
@@ -148,8 +150,7 @@ The service keeps its own precise error vocabulary:
 
 ```ts
 // server/services/rates.ts
-import { Result as BetterResult } from "better-result";
-import { defineErrors, err, gen, ok, wire } from "result-rpc";
+import { defineErrors, err, gen, tryPromise, wire } from "result-rpc";
 
 export const upstream = defineErrors("upstream", {
   unavailable: { data: wire.object({ status: wire.number }), httpStatus: 502, retry: "transient" },
@@ -158,27 +159,24 @@ export const upstream = defineErrors("upstream", {
 
 export const safeJsonFetch = (url: string) =>
   gen(async function* () {
-    const response = yield* await BetterResult.tryPromise({
-      try: () => fetch(url),
-      catch: () => upstream.unavailable({ status: 0 }),
-    });
+    const response = yield* await tryPromise(
+      () => fetch(url),
+      () => upstream.unavailable({ status: 0 }),
+    );
     if (!response.ok) {
-      return err(upstream.unavailable({ status: response.status }));
+      return yield* err(upstream.unavailable({ status: response.status }));
     }
-    return yield* await BetterResult.tryPromise({
-      try: () => response.json() as Promise<unknown>,
-      catch: (cause) => upstream.malformed({ reason: String(cause) }),
-    });
+    return yield* await tryPromise(
+      () => response.json() as Promise<unknown>,
+      (cause) => upstream.malformed({ reason: String(cause) }),
+    );
   });
 // Promise<Result<unknown, UpstreamUnavailable | UpstreamMalformed>>
 ```
 
-`Result.tryPromise` is the border checkpoint: its catch handler returns the
-tagged error directly, so the upstream's `TypeError`/`SyntaxError` never
-travels past the boundary as itself. `UnhandledException` — what a bare
-`Result.tryPromise(thunk)` produces — is a better-result tagged error that the
-procedure boundary rejects (it is not in the declared registry), so it is
-sanitized to `server/internal` if it ever reaches a handler.
+`tryPromise(fn, onThrow)` is the border checkpoint: its catch handler must
+produce a declared tagged error, so the upstream's `TypeError`/`SyntaxError`
+never travels past the boundary as itself.
 
 The procedure does **not** re-export that granularity. Two upstream tags
 would be noise in every component that renders a quote — the caller can't do
@@ -187,7 +185,7 @@ collapses them with `mapError`, and only the coarse tag enters the contract:
 
 ```ts
 // server/router.ts
-import { error, err, gen, mapError, ok, wire } from "result-rpc";
+import { error, err, gen, mapError, wire } from "result-rpc";
 import { safeJsonFetch } from "./services/rates";
 
 const RatesUnavailable = error({
@@ -210,7 +208,7 @@ const quote = server
       );
       const rate = (payload as { rate?: number }).rate;
       if (typeof rate !== "number") return yield* err(errors.RatesUnavailable({}));
-      return ok({ currency: input.currency, rate });
+      return { currency: input.currency, rate };
     }),
   );
 ```
@@ -239,7 +237,7 @@ function Quote({ currency }: { currency: string }) {
 }
 ```
 
-That is the full journey: throwing `fetch` → `Result.tryPromise` → granular
+That is the full journey: throwing `fetch` → `tryPromise` → granular
 service union → `mapError` collapse at the procedure → declared contract →
 flattened hook state. One algebra, and each boundary decides how much detail
 the next one deserves. When hook-state code needs to hand a settled outcome
@@ -262,7 +260,7 @@ const sessionMiddleware = session.middleware(server, ({ context, errors }) =>
   gen(async function* () {
     const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
-    return ok(viewer);
+    return viewer;
   }),
 );
 ```

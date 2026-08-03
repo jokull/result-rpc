@@ -13,11 +13,13 @@ export {
   tap,
   tapBoth,
   tapError,
+  tryCatch,
+  tryPromise,
   tryRecover,
   unwrap,
   unwrapOr,
 } from "./result.js";
-export type { Err, Ok, Result } from "./result.js";
+export type { Err, GenErr, InferErr, InferOk, Ok, Result } from "./result.js";
 export type { RpcConstraintError } from "./type-diagnostics.js";
 export type { MaybePromise } from "./types.js";
 export type {

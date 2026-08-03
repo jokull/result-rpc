@@ -159,12 +159,10 @@ const listUsers = server
       const memberIds = yield* mapError(await fetchMemberIds(context.fetchDirectory), () =>
         errors.unavailable(),
       );
-      return ok(
-        memberIds.flatMap((id) => {
-          const user = context.db.users.get(id);
-          return user ? [user] : [];
-        }),
-      );
+      return memberIds.flatMap((id) => {
+        const user = context.db.users.get(id);
+        return user ? [user] : [];
+      });
     }),
   );
 

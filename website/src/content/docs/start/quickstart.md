@@ -144,17 +144,17 @@ on the fetch handler to report the private cause.
 ## Adopt fallible external I/O
 
 An anticipated failed fetch, database call, or SDK call belongs in a declared
-Result branch. Use `Result.tryPromise` at that throwing boundary:
+Result branch. Use `tryPromise(fn, onThrow)` at that throwing boundary:
 
 ```ts
-import { Result as BetterResult } from "better-result";
+import { tryPromise } from "result-rpc";
 
 const response =
   yield *
-  (await BetterResult.tryPromise({
-    try: () => fetch(url),
-    catch: () => errors.GreetingNotFound({ name: input.name }),
-  }));
+  (await tryPromise(
+    () => fetch(url),
+    () => errors.GreetingNotFound({ name: input.name }),
+  ));
 ```
 
 Fold provider-specific detail into the public error the caller can act on;

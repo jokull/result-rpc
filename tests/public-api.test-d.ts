@@ -1,6 +1,9 @@
 import {
   type InputOf,
   type AnyWireCodec,
+  type Err,
+  type GenErr,
+  type InferErr,
   type AnyLayer,
   type AnyModel,
   type AnyProcedure,
@@ -1377,7 +1380,7 @@ declare const parseResult: Result<number, ReturnType<typeof Conflict2>>;
 const genOutcome = gen(function* () {
   const doc = yield* findResult;
   const size = yield* parseResult;
-  return ok(`${doc}:${size}`);
+  return `${doc}:${size}`;
 });
 export type _GenAccumulatesYieldedUnion = Assert<
   Equal<
@@ -1389,7 +1392,7 @@ export type _GenAccumulatesYieldedUnion = Assert<
 // async gen returns a Promise of the same accumulation.
 const genAsyncOutcome = gen(async function* () {
   const doc = yield* findResult;
-  return ok(doc.length);
+  return doc.length;
 });
 export type _GenAsyncIsPromise = Assert<
   Equal<typeof genAsyncOutcome, Promise<Result<number, ReturnType<typeof Missing>>>>
@@ -1444,6 +1447,15 @@ void BetterResult.tryPromise({
   try: async () => 1,
   catch: (cause: unknown) => new Error(String(cause)),
 });
+
+// InferErr/GenErr spell the error channel of a procedure or composition.
+export type _InferErrSpellsChannel = Assert<
+  Equal<InferErr<typeof genOutcome>, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
+export type _GenErrAccumulates = Assert<
+  Equal<GenErr<YieldResult>, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
+type YieldResult = Err<ReturnType<typeof Missing>> | Err<ReturnType<typeof Conflict2>>;
 
 // --- Regression: an implemented procedure keeps its contract's kind ---------
 // `ProcedureImplementer.handler()` once widened the kind to
