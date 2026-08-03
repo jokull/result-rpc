@@ -51,20 +51,20 @@ test("runs pagination, detail, and mutation through the production RPC wire", as
     list: { status: "all", search: "" },
     cursor: null,
   });
-  assert.equal(page.ok, true);
-  if (!page.ok) return;
+  assert.equal(page.isOk(), true);
+  if (!page.isOk()) return;
   assert.equal(page.value.items.length, 10);
   assert.equal(typeof page.value.nextCursor, "string");
 
   const ticket = page.value.items[0];
   assert.ok(ticket);
   const moved = await client.tickets.move({ id: ticket.id, status: "backlog" });
-  assert.equal(moved.ok, true);
-  if (moved.ok) assert.equal(moved.value.status, "backlog");
+  assert.equal(moved.isOk(), true);
+  if (moved.isOk()) assert.equal(moved.value.status, "backlog");
 
   const detail = await client.tickets.byId({ id: ticket.id });
-  assert.equal(detail.ok, true);
-  if (detail.ok) assert.equal(detail.value.status, "backlog");
+  assert.equal(detail.isOk(), true);
+  if (detail.isOk()) assert.equal(detail.value.status, "backlog");
 });
 
 test("keeps server-only implementation out of browser assets", async () => {
@@ -98,7 +98,7 @@ test("rejects production-Worker cache state from a different client contract", a
     status: "all",
     search: "",
   });
-  assert.equal(prefetched.ok, true);
+  assert.equal(prefetched.isOk(), true);
   const state = currentRuntime.dehydrate();
 
   const staleClient = createBrowserClient({
@@ -135,15 +135,15 @@ test("carries auth, write access, and conflict as distinct tagged failures", asy
     priority: "high",
   };
   const signedOut = await clientFor("signed-out").tickets.create(createInput);
-  assert.equal(signedOut.ok, false);
-  if (!signedOut.ok) {
+  assert.equal(signedOut.isOk(), false);
+  if (!signedOut.isOk()) {
     assert.equal(authErrors.loginRequired.is(signedOut.error), true);
     assert.equal(signedOut.error.data.action, "create");
   }
 
   const readOnly = await clientFor("read-only").tickets.create(createInput);
-  assert.equal(readOnly.ok, false);
-  if (!readOnly.ok) {
+  assert.equal(readOnly.isOk(), false);
+  if (!readOnly.isOk()) {
     assert.equal(accessErrors.writeRequired.is(readOnly.error), true);
     assert.equal(readOnly.error.data.action, "create");
   }
@@ -153,8 +153,8 @@ test("carries auth, write access, and conflict as distinct tagged failures", asy
     list: { status: "all", search: "" },
     cursor: null,
   });
-  assert.equal(page.ok, true);
-  if (!page.ok) return;
+  assert.equal(page.isOk(), true);
+  if (!page.isOk()) return;
   const ticket = page.value.items[0];
   assert.ok(ticket);
 
@@ -166,8 +166,8 @@ test("carries auth, write access, and conflict as distinct tagged failures", asy
     assignee: ticket.assignee,
     expectedUpdatedAt: new Date(0),
   });
-  assert.equal(conflict.ok, false);
-  if (!conflict.ok) {
+  assert.equal(conflict.isOk(), false);
+  if (!conflict.isOk()) {
     assert.equal(ticketErrors.conflict.is(conflict.error), true);
     assert.equal(conflict.error.data.ticketId, ticket.id);
     assert.equal(conflict.error.data.expectedUpdatedAt.getTime(), 0);

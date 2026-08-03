@@ -87,7 +87,7 @@ The pieces, in the order this document builds them:
 Routing, SSR frameworks, and bundling are explicitly not on the list — shells
 are providers and hooks, so they compose with whatever owns the tree.
 
-> **Status**: `0.2.0` is published with npm provenance. The project is pre-1.0,
+> **Status**: `0.3.0` is published with npm provenance. The project is pre-1.0,
 > so its API may still change between minor releases. Everything documented here
 > is implemented and tested, and the `examples/` directory is runnable.
 

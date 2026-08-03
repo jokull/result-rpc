@@ -94,6 +94,7 @@ Fetch the `.md` version (append `.md`) of the page you need:
 | Coming from tRPC                              | `/guides/migrating-from-trpc`                        |
 | Worked examples (01–11)                       | `/reference/examples`                                |
 | Known sharp edges                             | `/reference/sharp-edges`                             |
+| FAQ (boundary union, peer dep, identity)      | `/reference/faq`                                     |
 
 ## Non-negotiables when writing result-rpc code
 

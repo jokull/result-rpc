@@ -4,29 +4,50 @@
 
 ### Minor Changes
 
-- b8ddbf2: **Rearchitect on better-result 3.0.** result-rpc de-vendors its Result algebra
-  and depends on `better-result@^3.0.0` as a peer dependency (shared class
-  identity): `Ok`/`Err` class instances, upstream
+- b8ddbf2: **Rearchitect on better-result 3.0 (breaking).** result-rpc de-vendors its
+  Result algebra. `better-result@^3.0.0` is now a **peer dependency** — one
+  shared `Ok`/`Err` class across your app, because the boundary validates
+  handler returns with `instanceof` and zero-copy adoption requires the Result
+  you construct to be the class result-rpc checks. `Ok`/`Err` class instances,
   composition, `Result.codec`, generator behavior, and Panic semantics are all
   better-result's. result-rpc owns the RPC boundary rule — only declared,
   serializable, reifiable tagged errors may enter or leave a procedure.
 
-  Breaking changes:
+  **Breaking changes**
 
   - **Results are better-result instances with a `status` discriminant.** The
-    `.ok` boolean property and frozen plain objects are gone. Discriminate with
-    `result.status === "ok"` / `"error"` or the narrowing `isOk()` / `isErr()`.
+    `.ok` boolean property and frozen plain objects are gone.
+
+    ```diff
+    - if (result.ok) return result.value;
+    - if (!result.ok) return result.error.data.id;
+    + if (result.status === "ok") return result.value;
+    + if (result.isErr()) return result.error.data.id; // isOk()/isErr() narrow
+    ```
+
   - **The public Result type constrains the error channel:**
     `Result<T, E extends AnyTaggedError>`. `Result<T, string>` fails statically
-    and at the runtime boundary.
-  - **`gen` follows better-result:** bodies return a Result (`return ok(x)`).
-  - **`all` is tuple-only** (better-result's `Result.all`).
-  - **Renames / removals:** `orElse` → `tryRecover`; `getOrElse` →
-    `unwrapOr` (value fallback) or `match`; `tryCatch`/`tryPromise` →
-    `Result.try`/`Result.tryPromise` with the `{ try, catch }` form.
+    and at the runtime boundary. Framework-internal paths still use
+    `Result<unknown, AnyTaggedError>`.
+  - **`gen` follows better-result:** bodies return a Result.
+
+    ```diff
+    - const outcome = gen(function* () { const d = yield* find(id); return d; });
+    + const outcome = gen(function* () { const d = yield* find(id); return ok(d); });
+    ```
+
+  - **`all` is tuple-only** (better-result's `Result.all`); the record form is
+    gone — compose with `all([...])` + `map` instead.
+  - **Renames / removals:**
+    - `orElse` → `tryRecover`
+    - `getOrElse` → `unwrapOr` (value fallback) or `match` (error-aware fallback)
+    - `tryCatch` / `tryPromise` → `Result.try` / `Result.tryPromise` with the
+      `{ try, catch }` form; the catch handler returns the error value
+    - type exports `AllValues`, `AllErrors`, `GenErr`, `ErrorHandlers` removed
+      (upstream types replace them)
   - **Protocol v2:** the response envelope is
     `{ status: "ok" | "error", ... }` (was `{ ok: boolean }`); content types
-    move to `sv=2`.
+    move to `sv=2`; `PROTOCOL_VERSION` is 2.
   - **Per-procedure Result codec:** handler Results are validated and
     reconstructed through `Result.codec` + Standard Schema adapters around the
     output wire codec and the declared error registry. Counterfeit, foreign,
@@ -36,10 +57,37 @@
     `Panic` — sanitized to `server/internal` at the boundary; the cause reaches
     server-side observability, never the wire.
 
-  Adoption: a better-result Result whose error is already a result-rpc tagged
-  error flows into a procedure handler unchanged (zero-copy). A foreign error is
-  folded with `mapError` before the boundary. Migration notes in the docs'
-  [Result composition](/concepts/results/) page.
+  **Adopting upstream better-result results**
+
+  A better-result Result whose error is already a result-rpc tagged error flows
+  into a procedure handler unchanged (zero-copy) — declare the error in
+  `.errors({ ... })` and return it. A foreign error folds in one explicit step
+  before the boundary:
+
+  ```ts
+  const result = await repository.findUser(id);
+  return result.mapError((cause) =>
+    RepositoryUnavailable({ operation: "findUser", causeName: cause.name }),
+  );
+  ```
+
+  There is deliberately no `adoptResult` helper — the constrained `Result` type
+  plus `mapError` is the whole workflow.
+
+  **Migration checklist**
+
+  1. Install `better-result@^3.0.0` alongside (npm ≥ 7 / pnpm install it as
+     the peer automatically).
+  2. Replace `.ok` with `status === "ok"` / `isOk()` / `isErr()`.
+  3. In `gen` bodies, wrap the final return in `ok(...)`.
+  4. Replace `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` or `match`,
+     `tryCatch(fn, onThrow)` → `Result.try({ try: fn, catch: ... })`.
+  5. Rebuild the client (the protocol version changed; old clients and new
+     servers are mutually `client/protocol-violation` / `server/bad-request`).
+
+  Migration notes and worked examples: the docs'
+  [Result composition](/concepts/results/) page and
+  [FAQ](/reference/faq).
 
 - 9fefd38: Add `wire.enum(["open", "closed"])` for non-empty string literal unions. It
   infers the literal union without `as const` and preserves the contract identity
