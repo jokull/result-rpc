@@ -1,96 +1,96 @@
 {
   "contract": {
     "25": {
-      "types": 50976,
-      "instantiations": 154232
+      "types": 60399,
+      "instantiations": 177415
     },
     "50": {
-      "types": 59651,
-      "instantiations": 200932
+      "types": 69074,
+      "instantiations": 224240
     },
     "100": {
-      "types": 77001,
-      "instantiations": 294332
+      "types": 86424,
+      "instantiations": 317890
     },
-    "marginalInstantiationsPerUnit": 1868,
-    "terminalInstantiationsPerUnit": 1868,
+    "marginalInstantiationsPerUnit": 1873,
+    "terminalInstantiationsPerUnit": 1873,
     "terminalSlopeRatio": 1
   },
   "shell": {
     "25": {
-      "types": 61889,
-      "instantiations": 175869
+      "types": 78240,
+      "instantiations": 225627
     },
     "50": {
-      "types": 68014,
-      "instantiations": 214444
+      "types": 87015,
+      "instantiations": 286052
     },
     "100": {
-      "types": 80264,
-      "instantiations": 291594
+      "types": 104565,
+      "instantiations": 406902
     },
-    "marginalInstantiationsPerUnit": 1543,
-    "terminalInstantiationsPerUnit": 1543,
+    "marginalInstantiationsPerUnit": 2417,
+    "terminalInstantiationsPerUnit": 2417,
     "terminalSlopeRatio": 1
   },
   "layer": {
     "1": {
-      "types": 55843,
-      "instantiations": 136515
+      "types": 69427,
+      "instantiations": 164883
     },
     "3": {
-      "types": 56265,
-      "instantiations": 138991
+      "types": 70065,
+      "instantiations": 168619
     },
     "6": {
-      "types": 56871,
-      "instantiations": 144179
+      "types": 70995,
+      "instantiations": 175697
     },
     "10": {
-      "types": 57679,
-      "instantiations": 154235
+      "types": 72235,
+      "instantiations": 188273
     },
-    "marginalInstantiationsPerUnit": 1969,
-    "terminalInstantiationsPerUnit": 2514,
-    "terminalSlopeRatio": 1.277
+    "marginalInstantiationsPerUnit": 2599,
+    "terminalInstantiationsPerUnit": 3144,
+    "terminalSlopeRatio": 1.21
   },
   "client": {
     "25": {
-      "types": 45045,
-      "instantiations": 128484
+      "types": 54416,
+      "instantiations": 151182
     },
     "50": {
-      "types": 48120,
-      "instantiations": 150059
+      "types": 57516,
+      "instantiations": 172807
     },
     "100": {
-      "types": 54270,
-      "instantiations": 193209
+      "types": 63716,
+      "instantiations": 216057
     },
-    "marginalInstantiationsPerUnit": 863,
-    "terminalInstantiationsPerUnit": 863,
+    "marginalInstantiationsPerUnit": 865,
+    "terminalInstantiationsPerUnit": 865,
     "terminalSlopeRatio": 1
   },
   "routerDepth": {
     "1": {
-      "types": 33721,
-      "instantiations": 86241
+      "types": 41220,
+      "instantiations": 108239
     },
     "3": {
-      "types": 33735,
-      "instantiations": 86285
+      "types": 41234,
+      "instantiations": 108283
     },
     "6": {
-      "types": 33756,
-      "instantiations": 86351
+      "types": 41255,
+      "instantiations": 108349
     },
     "10": {
-      "types": 33784,
-      "instantiations": 86439
+      "types": 41283,
+      "instantiations": 108437
     },
     "15": {
-      "types": 33819,
-      "instantiations": 86549
+      "types": 41318,
+      "instantiations": 108547
     },
     "marginalInstantiationsPerUnit": 22,
     "terminalInstantiationsPerUnit": 22,
@@ -98,16 +98,16 @@
   },
   "modelSelection": {
     "25": {
-      "types": 34575,
-      "instantiations": 91386
+      "types": 42043,
+      "instantiations": 112570
     },
     "50": {
-      "types": 34600,
-      "instantiations": 92636
+      "types": 42068,
+      "instantiations": 113820
     },
     "100": {
-      "types": 34650,
-      "instantiations": 95136
+      "types": 42118,
+      "instantiations": 116320
     },
     "marginalInstantiationsPerUnit": 50,
     "terminalInstantiationsPerUnit": 50,
@@ -115,102 +115,102 @@
   },
   "middlewareChain": {
     "1": {
-      "types": 39553,
-      "instantiations": 98658
+      "types": 46443,
+      "instantiations": 119149
     },
     "3": {
-      "types": 39789,
-      "instantiations": 99496
+      "types": 46681,
+      "instantiations": 119989
     },
     "6": {
-      "types": 40056,
-      "instantiations": 100708
+      "types": 46951,
+      "instantiations": 121204
     },
     "10": {
-      "types": 40412,
-      "instantiations": 102324
+      "types": 47311,
+      "instantiations": 122824
     },
     "15": {
-      "types": 40857,
-      "instantiations": 104344
+      "types": 47761,
+      "instantiations": 124849
     },
-    "marginalInstantiationsPerUnit": 406,
-    "terminalInstantiationsPerUnit": 404,
+    "marginalInstantiationsPerUnit": 407,
+    "terminalInstantiationsPerUnit": 405,
     "terminalSlopeRatio": 0.995
   },
   "middlewareDiamond": {
     "1": {
-      "types": 39792,
-      "instantiations": 99521
+      "types": 46684,
+      "instantiations": 120014
     },
     "3": {
-      "types": 40363,
-      "instantiations": 102309
+      "types": 47261,
+      "instantiations": 122808
     },
     "6": {
-      "types": 41218,
-      "instantiations": 106821
+      "types": 48125,
+      "instantiations": 127329
     },
     "10": {
-      "types": 42358,
-      "instantiations": 113453
+      "types": 49277,
+      "instantiations": 133973
     },
     "15": {
-      "types": 43783,
-      "instantiations": 122733
+      "types": 50717,
+      "instantiations": 143268
     },
-    "marginalInstantiationsPerUnit": 1658,
-    "terminalInstantiationsPerUnit": 1856,
+    "marginalInstantiationsPerUnit": 1661,
+    "terminalInstantiationsPerUnit": 1859,
     "terminalSlopeRatio": 1.119
   },
   "middlewareDiamondContext": {
     "1": {
-      "types": 37892,
-      "instantiations": 93319
+      "types": 46272,
+      "instantiations": 116221
     },
     "3": {
-      "types": 38143,
-      "instantiations": 94747
+      "types": 46523,
+      "instantiations": 117655
     },
     "6": {
-      "types": 38518,
-      "instantiations": 97129
+      "types": 46898,
+      "instantiations": 120046
     },
     "10": {
-      "types": 39018,
-      "instantiations": 100753
+      "types": 47398,
+      "instantiations": 123682
     },
     "15": {
-      "types": 39643,
-      "instantiations": 106003
+      "types": 48023,
+      "instantiations": 128947
     },
-    "marginalInstantiationsPerUnit": 906,
-    "terminalInstantiationsPerUnit": 1050,
-    "terminalSlopeRatio": 1.159
+    "marginalInstantiationsPerUnit": 909,
+    "terminalInstantiationsPerUnit": 1053,
+    "terminalSlopeRatio": 1.158
   },
   "middlewareDiamondErrors": {
     "1": {
-      "types": 39777,
-      "instantiations": 99346
+      "types": 46671,
+      "instantiations": 119839
     },
     "3": {
-      "types": 40278,
-      "instantiations": 101618
+      "types": 47178,
+      "instantiations": 122117
     },
     "6": {
-      "types": 41028,
-      "instantiations": 105221
+      "types": 47937,
+      "instantiations": 125729
     },
     "10": {
-      "types": 42028,
-      "instantiations": 110389
+      "types": 48949,
+      "instantiations": 130909
     },
     "15": {
-      "types": 43278,
-      "instantiations": 117434
+      "types": 50214,
+      "instantiations": 137969
     },
-    "marginalInstantiationsPerUnit": 1292,
-    "terminalInstantiationsPerUnit": 1409,
-    "terminalSlopeRatio": 1.091
+    "marginalInstantiationsPerUnit": 1295,
+    "terminalInstantiationsPerUnit": 1412,
+    "terminalSlopeRatio": 1.09
   }
 }
