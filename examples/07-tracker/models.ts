@@ -36,7 +36,7 @@ export const Issue = defineModel("issue", {
     id: wire.string,
     projectId: wire.string,
     title: wire.string,
-    status: wire.union([wire.literal("open"), wire.literal("closed")]),
+    status: wire.enum(["open", "closed"]),
     assigneeId: wire.union([wire.string, wire.null]),
     closedAt: wire.union([wire.date, wire.null]),
   },

@@ -129,7 +129,7 @@ describe("caller-lifetime signals reach handlers", () => {
     const subscription = client.events({});
     const iterator = subscription[Symbol.asyncIterator]();
     const first = await iterator.next();
-    expect(!first.done && first.value.ok && first.value.value).toBe("first");
+    expect(!first.done && first.value.isOk() && first.value.value).toBe("first");
     // the client walks away mid-stream
     subscription.close();
     await sleep(60);

@@ -18,17 +18,17 @@ describe("protocol decoders", () => {
 
   test("rejects malformed values, errors, and touched metadata", () => {
     expect(
-      decodeResponseEnvelope({ v: PROTOCOL_VERSION, ok: true, value: new Error("private") }),
+      decodeResponseEnvelope({ v: PROTOCOL_VERSION, status: "ok", value: new Error("private") }),
     ).toBeUndefined();
     expect(
       decodeResponseEnvelope({
         v: PROTOCOL_VERSION,
-        ok: false,
+        status: "error",
         error: { _tag: "doc/missing", data: Symbol("not-wire") },
       }),
     ).toBeUndefined();
     expect(
-      decodeResponseEnvelope({ v: PROTOCOL_VERSION, ok: true, value: null, touched: 1 }),
+      decodeResponseEnvelope({ v: PROTOCOL_VERSION, status: "ok", value: null, touched: 1 }),
     ).toBeUndefined();
   });
 

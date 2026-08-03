@@ -137,7 +137,7 @@ export function AddTodo({ client }: { client: TodoClient }) {
 
   async function submit(title: string) {
     const result = await add.mutateAsync({ title });
-    if (result.ok) return;
+    if (result.isOk()) return;
     // domain-only union: TitleTaken | ListFull
     console.warn(catalog(result.error));
   }

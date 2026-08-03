@@ -38,7 +38,7 @@ export const TourContent = defineModel("tour-content", {
   key: ["id", "locale"],
   shape: {
     id: wire.string,
-    locale: wire.union([wire.literal("en"), wire.literal("ja")]),
+    locale: wire.enum(["en", "ja"]),
     title: wire.string,
     summary: wire.string,
   },
@@ -78,7 +78,7 @@ export const UserCard = User.pick("id", "name", "avatarUrl");
 /** Marketing copy — every column is public by construction. */
 export const TourContentView = TourContent.all("public marketing copy, no private columns");
 
-export const LocaleCodec = wire.union([wire.literal("en"), wire.literal("ja")]);
+export const LocaleCodec = wire.enum(["en", "ja"]);
 export type Locale = InputOf<typeof LocaleCodec>;
 
 // -- the orders tree: one-off composites around entity nodes ---------------------

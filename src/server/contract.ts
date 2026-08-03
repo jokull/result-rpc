@@ -1,3 +1,4 @@
+import { Err as ResultErr, Ok as ResultOk } from "better-result";
 import { isTaggedError, type AnyPublicErrorDefinition, type AnyTaggedError } from "../error.js";
 import type { RpcFactoryTypeCarrier, RpcFactoryTypes } from "../factory-types.js";
 import {
@@ -1444,19 +1445,19 @@ const internalFailure = (
 
 /**
  * Reifies an erased middleware/handler return before another middleware can
- * observe it. Malformed shapes and untagged error channels become defects at
- * the exact boundary that produced them.
+ * observe it. Malformed shapes, counterfeit Result objects, and untagged error
+ * channels become defects at the exact boundary that produced them. Only real
+ * better-result `Ok`/`Err` instances pass: a shape-compatible plain object is
+ * not a Result and is sanitized like any other malformed return.
  */
 const normalizeRuntimeResult = (
   candidate: unknown,
   phase: "middleware" | "handler",
   options: ExecutionOptions<unknown>,
 ): Result<unknown, AnyTaggedError> => {
-  if (candidate !== null && typeof candidate === "object" && "ok" in candidate) {
-    if (candidate.ok === true && "value" in candidate) return ok(candidate.value);
-    if (candidate.ok === false && "error" in candidate && isTaggedError(candidate.error)) {
-      return err(candidate.error);
-    }
+  if (candidate instanceof ResultOk) return ok(candidate.value);
+  if (candidate instanceof ResultErr && isTaggedError(candidate.error)) {
+    return err(candidate.error);
   }
   return internalFailure(phase, candidate, options);
 };
@@ -1572,7 +1573,7 @@ export async function executeProcedure(
 
   const result = await dispatch(0, contextWithHeaders(options.context, procedure, options));
   if (options.signal?.aborted) throw options.signal.reason;
-  if (result.ok) {
+  if (result.status === "ok") {
     try {
       const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
       if (!encoded.ok) return internalFailure("output", encoded.issues, options);
@@ -1679,7 +1680,7 @@ export async function* executeSubscription(
   };
 
   const prepared = await prepareContext(0, contextWithHeaders(options.context, procedure, options));
-  if (!prepared.ok) {
+  if (prepared.status === "error") {
     if (ServerInternal.is(prepared.error)) {
       yield err(prepared.error);
     } else {
@@ -1741,7 +1742,7 @@ export async function* executeSubscription(
       if (options.signal?.aborted) return;
       if (step.done) return;
       const result = normalizeRuntimeResult(step.value, "handler", options);
-      if (result.ok) {
+      if (result.status === "ok") {
         const encoded = encodeUnknownWireValue(procedure._def.output, result.value);
         if (!encoded.ok) {
           yield internalFailure("output", encoded.issues, options);

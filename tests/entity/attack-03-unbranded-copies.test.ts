@@ -72,7 +72,7 @@ describe("attack-03 unbranded copies", () => {
     // Mutation succeeds and returns the fresh User entity...
     const mutation = runtime.mutation(client.setAvatar);
     const result = await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
     await sleep(20);
 
     // ATTACK ASSERTION: the flagship promise — a returned entity patches

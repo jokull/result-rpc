@@ -841,7 +841,10 @@ export const useResultMutation = <
       },
       onCancel: (input, context, cache) => optionsRef.current.onCancel?.(input, context, cache),
       onSettled: (result, input, context, cache) => {
-        if (!result.ok && resolveClaimOwner(scopeRef.current, result.error).state !== "unclaimed") {
+        if (
+          !result.isOk() &&
+          resolveClaimOwner(scopeRef.current, result.error).state !== "unclaimed"
+        ) {
           return undefined;
         }
         return optionsRef.current.onSettled?.(result, input, context, cache);
@@ -875,7 +878,7 @@ export const useResultMutation = <
     // An awaiting caller's continuation must not run on an outcome an enclosing
     // shell owns. Cancellation semantics, but a distinguishable signal: "you
     // cancelled" and "a shell owns this outcome" are different events.
-    if (!result.ok) {
+    if (!result.isOk()) {
       const tag = result.error._tag;
       const owner = claimOwner(scopeRef.current, result.error);
       if (owner) throw claimed({ tag, owner: owner.name });
@@ -945,7 +948,8 @@ export const useResultSubscription = <
     () => (listener: () => void) =>
       observer.subscribe(() => {
         const next = observer.getCurrentState();
-        const nextFailure = next.result && !next.result.ok ? next.result.error : undefined;
+        const nextFailure =
+          next.result && next.result.status === "error" ? next.result.error : undefined;
         try {
           claimObserver.notify(nextFailure);
         } finally {
@@ -955,7 +959,7 @@ export const useResultSubscription = <
     [observer, claimObserver],
   );
   const state = useSyncExternalStore(subscribe, observer.getCurrentState, observer.getCurrentState);
-  const failure = state.result && !state.result.ok ? state.result.error : undefined;
+  const failure = state.result && state.result.status === "error" ? state.result.error : undefined;
   const claim = useAmbientClaim(claimObserver, failure);
   if (!claim) return state;
   return { ...state, connection: "paused" as const, result: undefined };

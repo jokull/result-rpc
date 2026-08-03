@@ -15,7 +15,7 @@ import { createFixtureClient } from "../testing/index.js";
 import { rpc } from "../server/contract.js";
 import { contractDigest } from "../contract-digest.js";
 import { serialize } from "../serializer.js";
-import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION } from "../protocol.js";
 import type { ClientTransport } from "./transport.js";
 import type { ErrorDefinitionMap } from "../server/contract.js";
 
@@ -45,7 +45,7 @@ const router = app.router({ ping });
 
 /** Answers every call with one hand-built envelope, as a hostile origin would. */
 const respondingWith = (tag: string, data: unknown, status: number): ClientTransport => {
-  const body = serialize({ v: 1, ok: false, error: { _tag: tag, data } });
+  const body = serialize({ v: PROTOCOL_VERSION, status: "error", error: { _tag: tag, data } });
   if (!body.ok) throw new Error("failed to encode the response envelope");
   return {
     request: async () => ({
@@ -70,8 +70,8 @@ describe("a private error arriving on the wire", () => {
       transport: respondingWith("vault/hidden", { leak: "SERVER_INTERNAL_LEAK" }, 200),
     });
     const outcome = await client.ping({});
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    expect(outcome.isOk()).toBe(false);
+    if (outcome.isOk()) return;
     expect(String(outcome.error._tag)).toBe("client/protocol-violation");
     // The payload must not reach application code in any form.
     expect(JSON.stringify(outcome.error.data)).not.toContain("SERVER_INTERNAL_LEAK");
@@ -84,8 +84,8 @@ describe("a private error arriving on the wire", () => {
       transport: respondingWith("vault/denied", { reason: "locked" }, 403),
     });
     const outcome = await client.ping({});
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
+    expect(outcome.isOk()).toBe(false);
+    if (outcome.isOk()) return;
     expect(String(outcome.error._tag)).toBe("vault/denied");
     expect(JSON.stringify(outcome.error.data)).toBe(JSON.stringify({ reason: "locked" }));
   });

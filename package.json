@@ -97,6 +97,7 @@
   },
   "dependencies": {
     "@tanstack/query-core": "^5.101.4",
+    "better-result": "^3.0.0",
     "devalue": "5.8.2"
   },
   "devDependencies": {

@@ -386,9 +386,9 @@ describe("React bindings", () => {
       result = await mutationState!.mutateAsync({ title: "conflict" });
       await settle();
     });
-    expect(result?.ok).toBe(false);
+    expect(result?.isOk()).toBe(false);
     expect(failures.map((failure) => failure._tag)).toEqual(["doc/title-conflict"]);
-    expect(settled.map((entry) => (entry.ok ? "ok" : entry.error._tag))).toEqual([
+    expect(settled.map((entry) => (entry.isOk() ? "ok" : entry.error._tag))).toEqual([
       "doc/title-conflict",
     ]);
     expect(controls).toEqual([]);
@@ -465,7 +465,7 @@ describe("React bindings", () => {
         attempts: renameAttempts.get(title),
         cancellations,
         failures: failures.map((failure) => failure._tag),
-        settled: settled.map((result) => (result.ok ? "ok" : result.error._tag)),
+        settled: settled.map((result) => (result.isOk() ? "ok" : result.error._tag)),
         state: mutationState?.state,
         outcome,
         rejection,
@@ -520,7 +520,7 @@ describe("React bindings", () => {
       ]);
       expect(result.settled).toEqual(result.failures);
       expect(result.state).toBe("failure");
-      expect(result.outcome?.ok).toBe(false);
+      expect(result.outcome?.isOk()).toBe(false);
       expect(result.rejection).toBeUndefined();
       expect(callbackCounts).toEqual([...expectedCallbackCounts]);
     }

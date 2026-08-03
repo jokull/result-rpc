@@ -424,7 +424,7 @@ describe("reactive query runtime", () => {
       (resolve) => {
         const unsubscribe = subscription.subscribe(() => {
           const state = subscription.getCurrentState();
-          if (state.connection === "closed" && !state.result?.ok) {
+          if (state.connection === "closed" && !state.result?.isOk()) {
             unsubscribe();
             resolve(state);
           }
@@ -461,7 +461,7 @@ describe("reactive query runtime", () => {
       const unsubscribe = subscription.subscribe(() => {
         const state = subscription.getCurrentState();
         seen.push(state.connection);
-        if (state.connection === "closed" && state.result?.ok) {
+        if (state.connection === "closed" && state.result?.isOk()) {
           unsubscribe();
           resolve(state);
         }
@@ -551,7 +551,7 @@ describe("declared invalidation", () => {
     // No onSettled anywhere: the contract's .affects() drives the refetch.
     const mutation = runtime.mutation(client.doc.bump);
     const result = await mutation.getCurrentState().mutateAsync({ id: "a", title: "renamed" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
 
     await waitFor(
       observer,
@@ -694,7 +694,7 @@ describe("entity identities", () => {
 
     const mutation = runtime.mutation(client.setAvatar);
     const result = await mutation.getCurrentState().mutateAsync({ avatarUrl: "v2.png" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     // the flagship: header AND every doc byline updated, one request total
@@ -771,7 +771,7 @@ describe("entity identities", () => {
 
     const mutation = runtime.mutation(client.remove);
     const result = await mutation.getCurrentState().mutateAsync({ id: "d1" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
     await waitFor(docs, (state) => state.state === "success" && state.value.length === 0);
 
     stop();
@@ -932,8 +932,8 @@ describe("offline anti-thrash", () => {
       globalThis.dispatchEvent(new Event("offline"));
       const mutation = runtime.mutation(client.value.rename);
       const result = await mutation.mutateAsync({ value: "available" });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error._tag).toBe("client/offline");
+      expect(result.isOk()).toBe(false);
+      if (!result.isOk()) expect(result.error._tag).toBe("client/offline");
       expect(attempts).toBe(1);
       mutation.destroy();
     } finally {
@@ -960,8 +960,8 @@ describe("mutation retry safety", () => {
     const result = await mutation.getCurrentState().mutateAsync({ value: "available" });
     // The server may have processed the first attempt — surfacing beats
     // double-firing the side effect. One attempt, honest failure.
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error._tag).toBe("client/network-failure");
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) expect(result.error._tag).toBe("client/network-failure");
     expect(attempts).toBe(1);
     mutation.destroy();
     runtime.clear();
@@ -1001,7 +1001,7 @@ describe("mutation retry safety", () => {
     const runtime = createQueryRuntime({ client });
     const mutation = runtime.mutation(client.save);
     const result = await mutation.getCurrentState().mutateAsync({ value: "saved" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(state.calls).toBe(2);
     mutation.destroy();
     runtime.clear();

@@ -1,3 +1,4 @@
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION, STREAM_CONTENT_TYPE } from "../protocol.js";
 import { describe, expect, test } from "bun:test";
 import { err, error, gen, isTaggedError, ok, serialize, wire } from "../index.js";
 import { ClientHttpFailure, ClientTimeout } from "../framework-errors.js";
@@ -234,8 +235,8 @@ describe("unary client and server", () => {
       batched.value.byId({ id: "missing" }),
     ]);
     for (const result of results) {
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error._tag).toBe("client/protocol-violation");
+      expect(result.isOk()).toBe(false);
+      if (!result.isOk()) expect(result.error._tag).toBe("client/protocol-violation");
     }
   });
 
@@ -294,7 +295,7 @@ describe("unary client and server", () => {
   test("round trips and reconstructs a declared tagged error", async () => {
     const result = await client.value.byId({ id: "missing" });
     expect(result).toEqual(err(NotFound({ id: "missing" })));
-    if (!result.ok) {
+    if (!result.isOk()) {
       expect(result.error).toBeInstanceOf(Error);
       expect(isTaggedError(result.error)).toBe(true);
       expect(NotFound.is(result.error)).toBe(true);
@@ -309,11 +310,11 @@ describe("unary client and server", () => {
   test("a Result and its TaggedError remain composable after crossing the wire", async () => {
     const outcome = await gen(async function* () {
       const value = yield* await client.value.byId({ id: "missing" });
-      return value.value;
+      return ok(value.value);
     });
 
     expect(outcome).toEqual(err(NotFound({ id: "missing" })));
-    if (!outcome.ok) {
+    if (!outcome.isOk()) {
       expect(NotFound.is(outcome.error)).toBe(true);
       const propagated = gen(function* () {
         return yield* outcome.error;
@@ -324,8 +325,8 @@ describe("unary client and server", () => {
 
   test("transparently round trips rich success and error values", async () => {
     const success = await client.value.rich({ fail: false });
-    expect(success.ok).toBe(true);
-    if (success.ok) {
+    expect(success.isOk()).toBe(true);
+    if (success.isOk()) {
       expect(success.value.at).toBeInstanceOf(Date);
       expect(success.value.sequence).toBe(9n);
       expect("missing" in success.value).toBe(true);
@@ -335,8 +336,8 @@ describe("unary client and server", () => {
     }
 
     const failure = await client.value.rich({ fail: true });
-    expect(failure.ok).toBe(false);
-    if (!failure.ok && failure.error._tag === "value/expired") {
+    expect(failure.isOk()).toBe(false);
+    if (!failure.isOk() && failure.error._tag === "value/expired") {
       expect(failure.error.data.at).toBeInstanceOf(Date);
       expect(failure.error.data.sequence).toBe(9n);
     }
@@ -365,9 +366,9 @@ describe("unary client and server", () => {
 
   test("sanitizes an unknown server exception", async () => {
     const result = await client.value.broken({});
-    expect(result.ok).toBe(false);
+    expect(result.isOk()).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secret");
-    if (!result.ok) expect(result.error._tag).toBe("server/internal");
+    if (!result.isOk()) expect(result.error._tag).toBe("server/internal");
   });
 
   test("maps an intermediary HTML 502 to an HTTP failure", async () => {
@@ -393,15 +394,23 @@ describe("unary client and server", () => {
   test("rejects unknown tags, malformed known errors, and protocol versions", async () => {
     const cases = [
       {
-        envelope: { v: 1, ok: false, error: { _tag: "hostile/unknown", data: {} } },
+        envelope: {
+          v: PROTOCOL_VERSION,
+          status: "error",
+          error: { _tag: "hostile/unknown", data: {} },
+        },
         tag: "client/protocol-violation",
       },
       {
-        envelope: { v: 1, ok: false, error: { _tag: "value/not-found", data: { id: 1 } } },
+        envelope: {
+          v: PROTOCOL_VERSION,
+          status: "error",
+          error: { _tag: "value/not-found", data: { id: 1 } },
+        },
         tag: "client/decode-failure",
       },
       {
-        envelope: { v: 2, ok: true, value: { id: "one", value: "first" } },
+        envelope: { v: 1, status: "ok", value: { id: "one", value: "first" } },
         tag: "client/protocol-violation",
       },
     ] as const;
@@ -415,8 +424,8 @@ describe("unary client and server", () => {
           request: async () => ({
             ok: true,
             response: {
-              status: testCase.envelope.ok === false ? 404 : 200,
-              contentType: "application/result-rpc+devalue; sv=1",
+              status: testCase.envelope.status === "error" ? 404 : 200,
+              contentType: PROTOCOL_CONTENT_TYPE,
               body: encoded.value,
               contract: "hostile-test",
             },
@@ -424,8 +433,8 @@ describe("unary client and server", () => {
         },
       });
       const result = await hostile.value.byId({ id: "one" });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error._tag).toBe(testCase.tag);
+      expect(result.isOk()).toBe(false);
+      if (!result.isOk()) expect(result.error._tag).toBe(testCase.tag);
     }
   });
 
@@ -503,13 +512,13 @@ describe("unary client and server", () => {
         fetch: (async () =>
           new Response("x".repeat(1_000), {
             status: 200,
-            headers: { "content-type": "application/result-rpc+devalue; sv=1" },
+            headers: { "content-type": PROTOCOL_CONTENT_TYPE },
           })) as unknown as typeof globalThis.fetch,
       }),
     });
     const result = await bounded.value.byId({ id: "one" });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error._tag).toBe("client/protocol-violation");
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) expect(result.error._tag).toBe("client/protocol-violation");
   });
 
   test("the proxy is inert under introspection: only router paths mint nodes", () => {
@@ -603,7 +612,7 @@ describe("observability events", () => {
     await iterator.return?.();
 
     expect(terminal.done).toBe(false);
-    expect(!terminal.done && terminal.value.ok).toBe(false);
+    expect(!terminal.done && terminal.value.isOk()).toBe(false);
     expect(events.map((event) => event.type)).toEqual(["call", "failure"]);
     const failure = events[1] as Extract<ClientEvent, { type: "failure" }>;
     expect(failure.kind).toBe("subscription");
@@ -676,8 +685,8 @@ describe("contract skew", () => {
 
   test("missing unary and batch contract stamps fail closed as version violations", async () => {
     const encoded = serialize({
-      v: 1,
-      ok: true,
+      v: PROTOCOL_VERSION,
+      status: "ok",
       value: { id: "one", value: "first" },
     });
     if (!encoded.ok) throw new Error("unary fixture did not serialize");
@@ -690,7 +699,7 @@ describe("contract skew", () => {
             ok: true,
             response: {
               status: 200,
-              contentType: "application/result-rpc+devalue; sv=1",
+              contentType: PROTOCOL_CONTENT_TYPE,
               body: encoded.value,
               contract: missingContract,
             },
@@ -698,8 +707,8 @@ describe("contract skew", () => {
         },
       });
       const unary = await unstamped.value.byId({ id: "one" });
-      expect(unary.ok).toBe(false);
-      if (!unary.ok) {
+      expect(unary.isOk()).toBe(false);
+      if (!unary.isOk()) {
         expect(unary.error._tag).toBe("client/protocol-violation");
         expect(unary.error.data).toEqual({ reason: "version" });
       }
@@ -723,8 +732,8 @@ describe("contract skew", () => {
       batched.value.byId({ id: "missing" }),
     ]);
     for (const result of batch) {
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
+      expect(result.isOk()).toBe(false);
+      if (!result.isOk()) {
         expect(result.error._tag).toBe("client/protocol-violation");
         expect(result.error.data).toEqual({ reason: "version" });
       }
@@ -741,8 +750,8 @@ describe("contract skew", () => {
     });
 
     const result = await client.byNumber({ id: "a" });
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     expect(result.error._tag).toBe("client/stale");
     expect(result.error.data).toEqual({ reclassifiedFrom: "server/bad-request" });
 
@@ -765,8 +774,8 @@ describe("contract skew", () => {
     const results = await Promise.all([client.byNumber({ id: "a" }), client.byNumber({ id: "b" })]);
     expect(results).toHaveLength(2);
     for (const result of results) {
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
+      expect(result.isOk()).toBe(false);
+      if (!result.isOk()) {
         expect(result.error._tag).toBe("client/stale");
         expect(result.error.data).toEqual({ reclassifiedFrom: "server/bad-request" });
       }
@@ -791,8 +800,8 @@ describe("contract skew", () => {
       contractVersion: "build-42",
     });
     const result = await client.byNumber({ id: "a" });
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     expect(result.error._tag).toBe("server/bad-request");
   });
 
@@ -829,8 +838,8 @@ describe("contract skew", () => {
     for await (const item of staleClient.events({})) received.push(item);
 
     expect(received).toHaveLength(1);
-    expect(received[0]?.ok).toBe(false);
-    if (received[0]?.ok === false) {
+    expect(received[0]?.isOk()).toBe(false);
+    if (received[0] && !received[0].isOk()) {
       expect(received[0].error._tag).toBe("client/stale");
       expect(received[0].error.data).toEqual({
         reclassifiedFrom: "client/protocol-violation",
@@ -859,7 +868,7 @@ describe("contract skew", () => {
           ok: true,
           response: {
             status: 200,
-            contentType: "application/result-rpc-stream+devalue; sv=1",
+            contentType: STREAM_CONTENT_TYPE,
             body,
             contract: "server-build",
           },
@@ -871,7 +880,9 @@ describe("contract skew", () => {
     for await (const item of custom.value.events({ fail: false })) received.push(item);
 
     expect(received).toHaveLength(1);
-    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe("client/stale");
+    expect(received[0] && !received[0].isOk() ? received[0].error._tag : undefined).toBe(
+      "client/stale",
+    );
     expect(cancellations).toBe(1);
   });
 
@@ -885,7 +896,7 @@ describe("contract skew", () => {
           ok: true,
           response: {
             status: 200,
-            contentType: "application/result-rpc-stream+devalue; sv=1",
+            contentType: STREAM_CONTENT_TYPE,
             body: new ReadableStream<Uint8Array>({
               cancel() {
                 cancellations += 1;
@@ -901,7 +912,7 @@ describe("contract skew", () => {
     for await (const item of custom.value.events({ fail: false })) received.push(item);
 
     expect(received).toHaveLength(1);
-    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe(
+    expect(received[0] && !received[0].isOk() ? received[0].error._tag : undefined).toBe(
       "client/protocol-violation",
     );
     expect(cancellations).toBe(1);
@@ -909,12 +920,12 @@ describe("contract skew", () => {
 
   test("breaking out of a custom stream cancels its reader exactly once", async () => {
     const encoded = serialize({
-      v: 1,
+      v: PROTOCOL_VERSION,
       seq: 0,
       done: false,
       response: {
-        v: 1,
-        ok: true,
+        v: PROTOCOL_VERSION,
+        status: "ok",
         value: { at: new Date("2026-01-01T00:00:00.000Z"), sequence: 1n },
       },
     });
@@ -929,7 +940,7 @@ describe("contract skew", () => {
           ok: true,
           response: {
             status: 200,
-            contentType: "application/result-rpc-stream+devalue; sv=1",
+            contentType: STREAM_CONTENT_TYPE,
             body: new ReadableStream<Uint8Array>({
               start(controller) {
                 controller.enqueue(new TextEncoder().encode(`${encoded.value}\n`));
@@ -945,7 +956,7 @@ describe("contract skew", () => {
     });
 
     for await (const item of custom.value.events({ fail: false })) {
-      expect(item.ok).toBe(true);
+      expect(item.isOk()).toBe(true);
       break;
     }
 
@@ -963,7 +974,7 @@ describe("contract skew", () => {
           ok: true,
           response: {
             status: 200,
-            contentType: "application/result-rpc-stream+devalue; sv=1",
+            contentType: STREAM_CONTENT_TYPE,
             body: new ReadableStream<Uint8Array>({
               start(controller) {
                 controller.enqueue(new TextEncoder().encode("not-a-frame\n"));
@@ -982,7 +993,7 @@ describe("contract skew", () => {
     for await (const item of custom.value.events({ fail: false })) received.push(item);
 
     expect(received).toHaveLength(1);
-    expect(received[0]?.ok === false ? received[0].error._tag : undefined).toBe(
+    expect(received[0] && !received[0].isOk() ? received[0].error._tag : undefined).toBe(
       "client/protocol-violation",
     );
     expect(cancellations).toBe(1);
@@ -999,7 +1010,7 @@ describe("contract skew", () => {
           ok: true,
           response: {
             status: 200,
-            contentType: "application/result-rpc-stream+devalue; sv=1",
+            contentType: STREAM_CONTENT_TYPE,
             body: new ReadableStream<Uint8Array>({
               cancel() {
                 cancellations += 1;
@@ -1028,7 +1039,7 @@ describe("content-type gate (CSRF surface)", () => {
     // is no simpler content-type the handler accepts. Every request must carry
     // the protocol content-type — a non-CORS-simple type that forces a
     // preflight, which is the uniform CSRF defense.
-    const envelope = serialize({ v: 1, path: "value.byId", input: { id: "one" } });
+    const envelope = serialize({ v: PROTOCOL_VERSION, path: "value.byId", input: { id: "one" } });
     if (!envelope.ok) throw new Error("unreachable");
     for (const contentType of ["multipart/form-data", "text/plain", "application/json"]) {
       const response = await handler(

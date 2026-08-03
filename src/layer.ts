@@ -537,7 +537,7 @@ export const defineLayer = <
       .errors(options.errors)
       .use(async ({ context, next }) => {
         const resolved = await resolve({ context, errors: options.errors });
-        if (!resolved.ok) return resolved;
+        if (!resolved.isOk()) return resolved;
         return next({
           context: layerValue(options.key, resolved.value),
         });
@@ -653,7 +653,7 @@ export const defineLayer = <
               value: context[options.key],
               errors: refineOptions.errors,
             });
-            if (!resolved.ok) {
+            if (!resolved.isOk()) {
               return err(resolved.error);
             }
             return next({

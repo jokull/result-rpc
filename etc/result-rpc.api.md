@@ -1919,6 +1919,7 @@ export interface WireNamespace {
     readonly boolean: WireCodec<boolean, boolean>;
     // (undocumented)
     readonly date: WireCodec<Date, Date>;
+    readonly enum: <const TValues extends readonly [string, ...string[]]>(values: TValues) => WireCodec<TValues[number], TValues[number]>;
     // (undocumented)
     readonly finiteNumber: WireCodec<number, number>;
     // (undocumented)

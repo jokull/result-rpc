@@ -384,6 +384,29 @@ const literal = <const TValue extends WireScalar>(expected: TValue): WireCodec<T
     Object.is(value, expected) ? success(expected) : failure(`Expected ${String(expected)}`),
 });
 
+type NonEmptyStringTuple = readonly [string, ...string[]];
+
+const isEnumValue = <const TValues extends NonEmptyStringTuple>(
+  values: TValues,
+  value: unknown,
+): value is TValues[number] =>
+  typeof value === "string" && values.some((candidate) => candidate === value);
+
+/** A string literal union with the same contract identity as its expanded form. */
+const enumCodec = <const TValues extends NonEmptyStringTuple>(
+  values: TValues,
+): WireCodec<TValues[number], TValues[number]> => ({
+  kind: "union",
+  schema: schemaOf(
+    "union",
+    values.map((value) => literal(value).schema),
+  ),
+  encode: (input) =>
+    isEnumValue(values, input) ? success(input) : failure(`Expected one of: ${values.join(", ")}`),
+  decode: (value) =>
+    isEnumValue(values, value) ? success(value) : failure(`Expected one of: ${values.join(", ")}`),
+});
+
 const array = <TInput, TEncoded extends WireValue>(
   item: WireCodec<TInput, TEncoded>,
 ): WireCodec<readonly TInput[], readonly TEncoded[]> => ({
@@ -612,6 +635,14 @@ export interface WireNamespace {
   readonly literal: <const TValue extends WireScalar>(
     expected: TValue,
   ) => WireCodec<TValue, TValue>;
+  /**
+   * A non-empty union of string literals. This is exactly the union produced
+   * by `wire.union(values.map(wire.literal))`: same accepted values, encoded
+   * shape, and contract digest.
+   */
+  readonly enum: <const TValues extends readonly [string, ...string[]]>(
+    values: TValues,
+  ) => WireCodec<TValues[number], TValues[number]>;
   readonly array: <TInput, TEncoded extends WireValue>(
     item: WireCodec<TInput, TEncoded>,
   ) => WireCodec<readonly TInput[], readonly TEncoded[]>;
@@ -666,6 +697,7 @@ export const wire: WireNamespace = {
     union([codec, nullCodec]) as WireCodec<TInput | null, TEncoded | null>,
   integer,
   literal,
+  enum: enumCodec,
   array,
   union,
   optional,

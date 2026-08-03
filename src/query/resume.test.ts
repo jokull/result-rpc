@@ -81,7 +81,7 @@ const collect = async (resumable: boolean) => {
   let counted = 0;
   const stop = live.subscribe(() => {
     const state = live.getCurrentState() as SubscriptionState<{ id: string; body: string }, never>;
-    if (state.eventCount > counted && state.result?.ok) {
+    if (state.eventCount > counted && state.result?.isOk()) {
       counted = state.eventCount;
       bodies.push(state.result.value.id);
     }

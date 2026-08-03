@@ -384,7 +384,7 @@ describe("direct server caller", () => {
     });
     const runtime = createQueryRuntime({ client: caller });
     const prefetched = await runtime.prefetch(caller.getUser, { id: "u_1" });
-    expect(prefetched.ok).toBe(true);
+    expect(prefetched.isOk()).toBe(true);
     const state = runtime.dehydrate();
     runtime.clear();
 
@@ -425,7 +425,7 @@ describe("direct server caller", () => {
       procedure: caller.viewer,
     });
     const prefetched = await prefetchLayer(serverRuntime, ServerViewerShell, caller);
-    expect(prefetched.ok).toBe(true);
+    expect(prefetched.isOk()).toBe(true);
     const state = serverRuntime.dehydrate();
     serverRuntime.clear();
 

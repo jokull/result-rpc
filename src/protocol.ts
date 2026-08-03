@@ -1,9 +1,9 @@
 import type { EncodedTaggedError } from "./error.js";
 import { isWireValue, type WireValue } from "./wire.js";
 
-export const PROTOCOL_VERSION = 1;
-export const PROTOCOL_CONTENT_TYPE = "application/result-rpc+devalue; sv=1";
-export const STREAM_CONTENT_TYPE = "application/result-rpc-stream+devalue; sv=1";
+export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_CONTENT_TYPE = "application/result-rpc+devalue; sv=2";
+export const STREAM_CONTENT_TYPE = "application/result-rpc-stream+devalue; sv=2";
 /** Response header carrying the server's contract digest, for skew detection. */
 export const CONTRACT_HEADER = "x-result-rpc-contract";
 
@@ -14,7 +14,7 @@ const matchesContentType = (value: string | null, mediaType: string): boolean =>
     .split(";")
     .map((part) => part.trim());
   const serializerVersions = parameters.filter((parameter) => parameter.startsWith("sv="));
-  return type === mediaType && serializerVersions.length === 1 && serializerVersions[0] === "sv=1";
+  return type === mediaType && serializerVersions.length === 1 && serializerVersions[0] === "sv=2";
 };
 
 export const isProtocolContentType = (value: string | null): boolean =>
@@ -47,7 +47,7 @@ export interface BatchRequestEnvelope {
 
 export interface SuccessEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
-  readonly ok: true;
+  readonly status: "ok";
   readonly value: WireValue;
   /** Entity keys (`model:id`) the handler declared touching — identities only, never values. */
   readonly touched?: readonly string[];
@@ -55,7 +55,7 @@ export interface SuccessEnvelope {
 
 export interface FailureEnvelope {
   readonly v: typeof PROTOCOL_VERSION;
-  readonly ok: false;
+  readonly status: "error";
   readonly error: EncodedTaggedError;
   /** Entity keys (`model:id`) the handler declared touching — identities only, never values. */
   readonly touched?: readonly string[];
@@ -118,21 +118,26 @@ export const decodeBatchRequestEnvelope = (value: unknown): BatchRequestEnvelope
 };
 
 export const decodeResponseEnvelope = (value: unknown): ResponseEnvelope | undefined => {
-  if (!isRecord(value) || value.v !== PROTOCOL_VERSION || typeof value.ok !== "boolean") {
+  if (
+    !isRecord(value) ||
+    value.v !== PROTOCOL_VERSION ||
+    typeof value.status !== "string" ||
+    (value.status !== "ok" && value.status !== "error")
+  ) {
     return undefined;
   }
   const touched = touchedOf(value);
   if (touched === false) return undefined;
-  if (value.ok === true && "value" in value && isWireValue(value.value)) {
+  if (value.status === "ok" && "value" in value && isWireValue(value.value)) {
     return {
       v: PROTOCOL_VERSION,
-      ok: true,
+      status: "ok",
       value: value.value,
       ...(touched === undefined ? {} : { touched }),
     };
   }
   if (
-    value.ok === false &&
+    value.status === "error" &&
     isRecord(value.error) &&
     typeof value.error._tag === "string" &&
     "data" in value.error &&
@@ -140,7 +145,7 @@ export const decodeResponseEnvelope = (value: unknown): ResponseEnvelope | undef
   ) {
     return {
       v: PROTOCOL_VERSION,
-      ok: false,
+      status: "error",
       error: { _tag: value.error._tag, data: value.error.data },
       ...(touched === undefined ? {} : { touched }),
     };

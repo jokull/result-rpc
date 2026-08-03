@@ -32,7 +32,7 @@ describe("parity client", () => {
     const client = createParityClient(router, { context: { found: true } });
     const result = await client.parity.value({ at });
     expect(result).toEqual(ok({ at, sequence: 7n }));
-    if (result.ok) expect(result.value.at).not.toBe(at);
+    if (result.isOk()) expect(result.value.at).not.toBe(at);
   });
 
   test("reconstructs declared errors rather than sharing object identity", async () => {
@@ -40,7 +40,7 @@ describe("parity client", () => {
     const client = createParityClient(router, { context: { found: false } });
     const result = await client.parity.value({ at });
     expect(result).toEqual(err(Missing({ at })));
-    if (!result.ok && result.error._tag === "parity/missing") {
+    if (!result.isOk() && result.error._tag === "parity/missing") {
       expect(result.error).toBeInstanceOf(Error);
       expect(Missing.is(result.error)).toBe(true);
       expect(result.error.data.at).not.toBe(at);
@@ -125,8 +125,8 @@ describe("server client", () => {
       context: { userId: "u_1" },
     });
     const result = await caller.whoami({});
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(true);
+    if (!result.isOk()) throw new Error("unreachable");
     expect(result.value.userId).toBe("u_1");
     // The output codec still ran, so rich values arrive as real instances.
     expect(result.value.at).toBeInstanceOf(Date);
@@ -137,8 +137,8 @@ describe("server client", () => {
       context: { userId: null },
     });
     const result = await caller.whoami({});
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     expect(result.error._tag).toBe("parity/missing");
   });
 
@@ -147,8 +147,8 @@ describe("server client", () => {
       context: { userId: "u_1" },
     });
     const result = await caller.leaks({});
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     expect(result.error._tag).toBe("server/internal");
     expect(JSON.stringify(result)).not.toContain("DIRECT_SECRET_do_not_ship");
   });
@@ -158,8 +158,8 @@ describe("server client", () => {
       context: { userId: "u_1" },
     });
     const result = await caller.badOutput({});
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     expect(result.error._tag).toBe("server/internal");
   });
 
@@ -184,8 +184,8 @@ describe("server client", () => {
     const results = [];
     for await (const result of client.brokenStream("input")) results.push(result);
     expect(results).toHaveLength(1);
-    expect(results[0]?.ok).toBe(false);
-    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+    expect(results[0]?.isOk()).toBe(false);
+    if (results[0] && !results[0].isOk()) expect(results[0].error._tag).toBe("server/internal");
     expect(internalErrors).toHaveLength(1);
   });
 
@@ -194,8 +194,8 @@ describe("server client", () => {
     const results = [];
     for await (const result of client.malformedStream("input")) results.push(result);
     expect(results).toHaveLength(1);
-    expect(results[0]?.ok).toBe(false);
-    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+    expect(results[0]?.isOk()).toBe(false);
+    if (results[0] && !results[0].isOk()) expect(results[0].error._tag).toBe("server/internal");
   });
 
   test("contains malformed subscription items before consumers observe them", async () => {
@@ -203,8 +203,8 @@ describe("server client", () => {
     const results = [];
     for await (const result of client.malformedStreamItem("input")) results.push(result);
     expect(results).toHaveLength(1);
-    expect(results[0]?.ok).toBe(false);
-    if (results[0]?.ok === false) expect(results[0].error._tag).toBe("server/internal");
+    expect(results[0]?.isOk()).toBe(false);
+    if (results[0] && !results[0].isOk()) expect(results[0].error._tag).toBe("server/internal");
   });
 
   test("exposes only declared and server-boundary errors in its registry", () => {

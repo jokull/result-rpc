@@ -170,7 +170,7 @@ const decodeEnvelope = (
   status: number,
 ): Result<unknown, AnyTaggedError> => {
   try {
-    if (envelope.ok) {
+    if (envelope.status === "ok") {
       if (status < 200 || status >= 300) {
         return err(ClientProtocolViolation({ reason: "envelope" }));
       }
@@ -204,7 +204,7 @@ const decodeEnvelope = (
     }
     return err(decoded.value);
   } catch {
-    return err(ClientDecodeFailure({ target: envelope.ok ? "success" : "error" }));
+    return err(ClientDecodeFailure({ target: envelope.status === "ok" ? "success" : "error" }));
   }
 };
 
@@ -243,7 +243,7 @@ const createSkewMonitor = (
         return err(ClientProtocolViolation({ reason: "version" }));
       }
       if (!mismatch(serverContract)) return result;
-      if (!result.ok && STALE_RECLASSIFIABLE_TAGS.has(result.error._tag)) {
+      if (!result.isOk() && STALE_RECLASSIFIABLE_TAGS.has(result.error._tag)) {
         return err(ClientStale({ reclassifiedFrom: result.error._tag }));
       }
       return result;
@@ -403,7 +403,7 @@ const callProcedure = async (
   onEvent?.({ type: "call", kind, path });
   for (let attempt = 0; ; attempt += 1) {
     const result = await callProcedureOnce(procedure, path, input, transport, skew, options);
-    if (result.ok) {
+    if (result.status === "ok") {
       onEvent?.({ type: "success", kind, path, durationMs: Date.now() - startedAt });
       return result;
     }
@@ -471,7 +471,7 @@ const subscribeProcedure = (
       }
     };
     const handshake = skew.reconcileStream(response.contract);
-    if (!handshake.ok) {
+    if (!handshake.isOk()) {
       await cancelBody();
       yield handshake;
       return;
@@ -526,7 +526,7 @@ const subscribeProcedure = (
           if (frame.done) return;
           const result = decodeEnvelope(procedure, frame.response, 200);
           yield result;
-          if (!result.ok) return;
+          if (!result.isOk()) return;
         }
         if (chunk.done) {
           yield err(ClientProtocolViolation({ reason: "envelope" }));
@@ -554,7 +554,7 @@ const subscribeProcedure = (
         // Emit terminal failure before handing the frame to the consumer.
         // A query runtime pauses/claims by returning from the async iterator;
         // code after `yield` would never run in that ownership path.
-        if (!result.ok) {
+        if (!result.isOk()) {
           failureObserved = true;
           onEvent?.({
             type: "failure",
@@ -566,7 +566,7 @@ const subscribeProcedure = (
         }
         yield result;
       }
-      if (last === undefined || last.ok) {
+      if (last === undefined || last.status === "ok") {
         onEvent?.({
           type: "success",
           kind: "subscription",

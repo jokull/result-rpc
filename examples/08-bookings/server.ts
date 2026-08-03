@@ -233,7 +233,7 @@ const addReview = server
     // composition currency; each is collapsed to a declared domain tag here
     // or rethrown as a defect, and none ever appears in `.errors()`.
     const inserted = await tryDb(context.db.insert(reviews).values(review));
-    if (!inserted.ok) {
+    if (!inserted.isOk()) {
       return matchError(inserted.error, {
         "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId: input.hotelId })),
         // The hotel id is the only client-supplied reference (the author comes

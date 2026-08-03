@@ -3,10 +3,6 @@ export {
   andThen,
   err,
   gen,
-  getOrElse,
-  tap,
-  tapBoth,
-  tapError,
   isErr,
   isOk,
   map,
@@ -14,11 +10,14 @@ export {
   match,
   matchError,
   ok,
-  orElse,
-  tryCatch,
-  tryPromise,
+  tap,
+  tapBoth,
+  tapError,
+  tryRecover,
+  unwrap,
+  unwrapOr,
 } from "./result.js";
-export type { AllErrors, AllValues, Err, ErrorHandlers, GenErr, Ok, Result } from "./result.js";
+export type { Err, Ok, Result } from "./result.js";
 export type { RpcConstraintError } from "./type-diagnostics.js";
 export type { MaybePromise } from "./types.js";
 export type {

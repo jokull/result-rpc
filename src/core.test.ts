@@ -79,6 +79,18 @@ describe("wire codecs", () => {
     expect(wire.finiteNumber.decode(Number.POSITIVE_INFINITY).ok).toBe(false);
   });
 
+  test("string enums preserve their literal union and expanded contract identity", () => {
+    const codec = wire.enum(["draft", "published"]);
+    const expanded = wire.union([wire.literal("draft"), wire.literal("published")]);
+
+    expect(codec.encode("draft")).toEqual({ ok: true, value: "draft" });
+    expect(codec.decode("published")).toEqual({ ok: true, value: "published" });
+    expect(codec.decode("archived").ok).toBe(false);
+    expect(codec.decode(1).ok).toBe(false);
+    expect(codec.kind).toBe(expanded.kind);
+    expect(codec.schema).toBe(expanded.schema);
+  });
+
   test("supports optional object fields and prototype-safe records", () => {
     const codec = wire.object({
       name: wire.string,
@@ -358,8 +370,8 @@ describe("Result", () => {
       | ReturnType<typeof ok<number>>
       | ReturnType<typeof err<ReturnType<typeof Offline>>>;
     const result = andThen(first, () => err(NotFound({ id: "missing" })));
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) {
       const text = matchError(result.error, {
         "test/offline": () => "offline",
         "test/not-found": (failure) => failure.data.id,
@@ -427,10 +439,10 @@ describe("wire.nullable", () => {
   // change the contract digest and desync deployed clients.
   test("round-trips the value and null", () => {
     const codec = wire.nullable(wire.string);
-    expect(codec.decode("ada")).toEqual(ok("ada"));
-    expect(codec.decode(null)).toEqual(ok(null));
-    expect(codec.encode("ada")).toEqual(ok("ada"));
-    expect(codec.encode(null)).toEqual(ok(null));
+    expect(codec.decode("ada")).toEqual({ ok: true, value: "ada" });
+    expect(codec.decode(null)).toEqual({ ok: true, value: null });
+    expect(codec.encode("ada")).toEqual({ ok: true, value: "ada" });
+    expect(codec.encode(null)).toEqual({ ok: true, value: null });
   });
 
   test("rejects undefined — nullable is present-and-null, not absent", () => {

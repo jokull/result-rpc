@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { deserialize, err, error, ok, serialize, wire } from "../index.js";
 import { createFetchHandler } from "./index.js";
 import { executeProcedure, rpc, type ErrorDefinitionMap } from "./contract.js";
-import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION } from "../protocol.js";
 
 interface TestContext {
   readonly authenticated: boolean;
@@ -142,8 +142,8 @@ describe("procedure execution", () => {
         onInternalError: (event) => incidents.push(event),
       },
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) {
       expect(result.error._tag).toBe("server/internal");
       expect(JSON.stringify(result)).not.toContain("password");
     }
@@ -163,8 +163,8 @@ describe("procedure execution", () => {
         context: { authenticated: true, values: new Map() },
       },
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error._tag).toBe("server/internal");
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) expect(result.error._tag).toBe("server/internal");
   });
 
   test("rejects shape-compatible objects that are not declared error instances", async () => {
@@ -191,8 +191,8 @@ describe("procedure execution", () => {
         context: { authenticated: true, values: new Map() },
       },
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error._tag).toBe("server/internal");
+    expect(result.isOk()).toBe(false);
+    if (!result.isOk()) expect(result.error._tag).toBe("server/internal");
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 
@@ -211,9 +211,9 @@ describe("procedure execution", () => {
         context: { authenticated: true, values: new Map() },
       },
     );
-    expect(result.ok).toBe(false);
+    expect(result.isOk()).toBe(false);
     expect(JSON.stringify(result)).not.toContain("database detail");
-    if (!result.ok) expect(result.error._tag).toBe("server/internal");
+    if (!result.isOk()) expect(result.error._tag).toBe("server/internal");
   });
 
   test("sanitizes custom codec exceptions", async () => {
@@ -238,7 +238,7 @@ describe("procedure execution", () => {
         context: { authenticated: true, values: new Map() },
       },
     );
-    expect(result.ok).toBe(false);
+    expect(result.isOk()).toBe(false);
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 
@@ -273,7 +273,7 @@ describe("bad input", () => {
       createContext: () => ({}),
       onInternalError: (event) => incidents.push(event),
     });
-    const envelope = serialize({ v: 1, path: "echo", input: { id: 42 } });
+    const envelope = serialize({ v: PROTOCOL_VERSION, path: "echo", input: { id: 42 } });
     if (!envelope.ok) throw new Error("unreachable");
     const response = await handler(
       new Request("https://example.test/rpc", {
@@ -347,7 +347,7 @@ describe("procedure bases", () => {
           ...(event.policy?.severity === undefined ? {} : { severity: event.policy.severity }),
         }),
     });
-    const envelope = serialize({ v: 1, path: "find", input: { id: "x" } });
+    const envelope = serialize({ v: PROTOCOL_VERSION, path: "find", input: { id: "x" } });
     if (!envelope.ok) throw new Error("unreachable");
     const response = await handler(
       new Request("https://example.test/rpc", {

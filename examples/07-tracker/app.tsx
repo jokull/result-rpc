@@ -252,7 +252,7 @@ export function ActivityFeed({ issueId }: { issueId: string }) {
       </section>
     );
   }
-  if (!feed.result.ok) {
+  if (!feed.result.isOk()) {
     return (
       <section>
         <p role="alert">
@@ -330,7 +330,7 @@ export function NewIssueForm({ projectId }: { projectId: string }) {
     setFieldErrors({});
     try {
       const result = await create.mutateAsync(validated.value);
-      if (result.ok) setTitle("");
+      if (result.isOk()) setTitle("");
     } catch {
       // claimed/cancelled are control flow: the owning shell already reacted
     }
