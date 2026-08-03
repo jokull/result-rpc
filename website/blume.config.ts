@@ -1,4 +1,5 @@
 import { defineConfig } from "blume";
+import type { AstroIntegration } from "astro";
 
 /**
  * The repo root carries its own `react` devDependency (the library's tests run
@@ -10,10 +11,10 @@ import { defineConfig } from "blume";
  * package's export conditions and hands the CJS build to the SSR runner, which
  * fails with `module is not defined`.
  */
-const dedupeReact = {
+const dedupeReact: AstroIntegration = {
   name: "result-rpc-dedupe-react",
   hooks: {
-    "astro:config:setup": ({ updateConfig }: { updateConfig: (config: unknown) => void }) => {
+    "astro:config:setup": ({ updateConfig }) => {
       updateConfig({
         vite: {
           resolve: { dedupe: ["react", "react-dom"] },
