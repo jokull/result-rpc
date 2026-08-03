@@ -49,11 +49,11 @@ describe("result runtime", () => {
     if (failure.isErr()) expect(NotFound.is(failure.error)).toBe(true);
   });
 
-  test("gen unwraps yielded successes and returns the value", () => {
+  test("gen unwraps yielded successes and returns ok", () => {
     const outcome = gen(function* () {
       const doc = yield* find("one");
       const size = yield* parse(doc);
-      return `${doc}/${size}`;
+      return ok(`${doc}/${size}`);
     });
     expect(outcome).toEqual(ok("doc:one/7"));
   });
@@ -75,7 +75,7 @@ describe("result runtime", () => {
   test("yield* err() fails a gen body explicitly", () => {
     const outcome = gen(function* () {
       if (true as boolean) return yield* err(ParseFailure({ reason: "manual" }));
-      return 1;
+      return ok(1);
     });
     expect(outcome).toEqual(err(ParseFailure({ reason: "manual" })));
   });
@@ -93,46 +93,46 @@ describe("result runtime", () => {
     const outcome = await gen(async function* () {
       const doc = yield* await fetchDoc("one");
       const size = yield* parse(doc);
-      return size * 2;
+      return ok(size * 2);
     });
     expect(outcome).toEqual(ok(14));
     const failure = await gen(async function* () {
       const doc = yield* await fetchDoc("missing");
-      return doc;
+      return ok(doc);
     });
     expect(failure).toEqual(err(NotFound({ id: "missing" })));
   });
 
-  test("tryCatch adopts a throwing function behind a tagged error", () => {
-    const good = tryCatch(
-      () => JSON.parse('{"a":1}') as { a: number },
-      (cause) => ParseFailure({ reason: String(cause) }),
-    );
+  test("tryCatch passthrough adopts a throwing function behind a tagged error", () => {
+    const good = tryCatch({
+      try: () => JSON.parse('{"a":1}') as { a: number },
+      catch: (cause) => ParseFailure({ reason: String(cause) }),
+    });
     expect(good).toEqual(ok({ a: 1 }));
-    const bad = tryCatch(
-      () => JSON.parse("nope") as never,
-      () => ParseFailure({ reason: "invalid json" }),
-    );
+    const bad = tryCatch({
+      try: () => JSON.parse("nope") as never,
+      catch: () => ParseFailure({ reason: "invalid json" }),
+    });
     expect(bad).toEqual(err(ParseFailure({ reason: "invalid json" })));
   });
 
   test("tryPromise catches rejections and sync throws", async () => {
-    const rejected = await tryPromise(
-      () => Promise.reject(new Error("boom")),
-      () => ParseFailure({ reason: "rejected" }),
-    );
+    const rejected = await tryPromise({
+      try: () => Promise.reject(new Error("boom")),
+      catch: () => ParseFailure({ reason: "rejected" }),
+    });
     expect(rejected).toEqual(err(ParseFailure({ reason: "rejected" })));
-    const thrown = await tryPromise(
-      () => {
+    const thrown = await tryPromise({
+      try: () => {
         throw new Error("early");
       },
-      () => ParseFailure({ reason: "threw" }),
-    );
+      catch: () => ParseFailure({ reason: "threw" }),
+    });
     expect(thrown).toEqual(err(ParseFailure({ reason: "threw" })));
-    const good = await tryPromise(
-      async () => 3,
-      () => ParseFailure({ reason: "" }),
-    );
+    const good = await tryPromise({
+      try: async () => 3,
+      catch: () => ParseFailure({ reason: "" }),
+    });
     expect(good).toEqual(ok(3));
   });
 

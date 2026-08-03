@@ -9,6 +9,9 @@ import { InferErr as InferErr_2 } from 'better-result';
 import { InferOk as InferOk_2 } from 'better-result';
 import { Ok as Ok_2 } from 'better-result';
 import { Result as Result_2 } from 'better-result';
+import { TryContext } from 'better-result';
+import { TryPromiseContext } from 'better-result';
+import { UnhandledException } from 'better-result';
 
 // @public (undocumented)
 export interface AffectsEntry {
@@ -678,11 +681,13 @@ export const frameworkError: <const Tag extends string, Input, Data extends Wire
     readonly data: WireCodec<Input, Data>;
 }) => ErrorDefinition<Tag, Input, Data, "public">;
 
-// @public
-export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => Generator<TYield, TReturn>): Result<TReturn, GenErr<TYield>>;
-
 // @public (undocumented)
-export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => AsyncGenerator<TYield, TReturn>): Promise<Result<TReturn, GenErr<TYield>>>;
+export const gen: {
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => Generator<Yield, R, unknown>): Result_2<InferOk_2<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr_2<R>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => Generator<Yield, R, unknown>, thisArg: This): Result_2<InferOk_2<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr_2<R>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => AsyncGenerator<Yield, R, unknown>): Promise<Result_2<InferOk_2<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr_2<R>>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => AsyncGenerator<Yield, R, unknown>, thisArg: This): Promise<Result_2<InferOk_2<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr_2<R>>>;
+};
 
 // @public (undocumented)
 export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
@@ -1335,11 +1340,61 @@ export interface TransportStreamResponse {
     readonly status: number;
 }
 
-// @public
-export const tryCatch: <T, E extends AnyTaggedError>(fn: () => T, onThrow: (cause: unknown) => E) => Result<T, E>;
+// @public (undocumented)
+export const tryCatch: {
+    <A$1, E$1>(options: {
+        try: (context: TryContext) => Awaited<A$1>;
+        catch: (cause: unknown) => Awaited<E$1>;
+    }, config?: {
+        retry?: {
+            times: number;
+        };
+    }): Result_2<A$1, E$1>;
+    <A$1>(thunk: (context: TryContext) => Awaited<A$1>, config?: {
+        retry?: {
+            times: number;
+        };
+    }): Result_2<A$1, UnhandledException>;
+};
 
-// @public
-export const tryPromise: <T, E extends AnyTaggedError>(fn: () => PromiseLike<T> | T, onThrow: (cause: unknown) => E) => Promise<Result<T, E>>;
+// @public (undocumented)
+export const tryPromise: {
+    <A$1, E$1>(options: {
+        try: (context: TryPromiseContext) => Promise<A$1>;
+        catch: (cause: unknown) => E$1 | Promise<E$1>;
+    }, config?: {
+        signal?: AbortSignal;
+        retry?: {
+            times: number;
+            delayMs: number;
+            backoff: "linear" | "constant" | "exponential";
+            shouldRetry?: (error: E$1, context: TryPromiseContext) => boolean;
+            jitter?: boolean | number;
+        } | {
+            times: number;
+            delayMs: (error: E$1, context: TryPromiseContext) => number;
+            backoff?: never;
+            jitter?: never;
+            shouldRetry?: (error: E$1, context: TryPromiseContext) => boolean;
+        };
+    }): Promise<Result_2<A$1, E$1>>;
+    <A$1>(thunk: (context: TryPromiseContext) => Promise<A$1>, config?: {
+        signal?: AbortSignal;
+        retry?: {
+            times: number;
+            delayMs: number;
+            backoff: "linear" | "constant" | "exponential";
+            shouldRetry?: (error: UnhandledException, context: TryPromiseContext) => boolean;
+            jitter?: boolean | number;
+        } | {
+            times: number;
+            delayMs: (error: UnhandledException, context: TryPromiseContext) => number;
+            backoff?: never;
+            jitter?: never;
+            shouldRetry?: (error: UnhandledException, context: TryPromiseContext) => boolean;
+        };
+    }): Promise<Result_2<A$1, UnhandledException>>;
+};
 
 // @public (undocumented)
 export const tryRecover: {

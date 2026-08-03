@@ -1380,7 +1380,7 @@ declare const parseResult: Result<number, ReturnType<typeof Conflict2>>;
 const genOutcome = gen(function* () {
   const doc = yield* findResult;
   const size = yield* parseResult;
-  return `${doc}:${size}`;
+  return ok(`${doc}:${size}`);
 });
 export type _GenAccumulatesYieldedUnion = Assert<
   Equal<
@@ -1392,7 +1392,7 @@ export type _GenAccumulatesYieldedUnion = Assert<
 // async gen returns a Promise of the same accumulation.
 const genAsyncOutcome = gen(async function* () {
   const doc = yield* findResult;
-  return doc.length;
+  return ok(doc.length);
 });
 export type _GenAsyncIsPromise = Assert<
   Equal<typeof genAsyncOutcome, Promise<Result<number, ReturnType<typeof Missing>>>>

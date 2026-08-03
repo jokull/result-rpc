@@ -29,19 +29,18 @@
     `Result<T, E extends AnyTaggedError>`. `Result<T, string>` fails statically
     and at the runtime boundary. Framework-internal paths still use
     `Result<unknown, AnyTaggedError>`.
-  - **`gen` keeps result-rpc's value-return convention** (unchanged from 0.2):
-    the body returns the success value directly; `return yield* err(x)` fails a
-    block explicitly. It is implemented over better-result Results, so every
-    yielded Err and the returned Result are better-result instances.
-    better-result's own `Result.gen` (`return ok(x)`) remains available for
-    upstream users. `GenErr` is re-exported.
-
+  - **`gen` follows better-result:** bodies return a Result (`return ok(x)`);
+    `return yield* err(x)` fails a block explicitly. `GenErr` is re-exported.
+    (A value-return `gen` was trialed after one smoke test and reverted: it
+    re-vendored the generator loop, split the calling convention from
+    upstream, and made `return ok(x)` silently double-wrap — the wrong-line
+    diagnostic it fixed was transition friction, not steady-state DX.)
   - **`all` is tuple-only** (better-result's `Result.all`); the record form is
     gone — compose with `all([...])` + `map` instead.
-  - **`tryCatch` / `tryPromise` restored with the 0.2 `(fn, onThrow)`
-    signature** — a throwing boundary is adopted behind a declared tagged
-    error in one call, no `{ try, catch }` object literal. (`Result.try` /
-    `Result.tryPromise` from better-result remain available.)
+  - **`tryCatch` / `tryPromise` are passthroughs of `Result.try` /
+    `Result.tryPromise`** (the `{ try, catch }` options form) — importable
+    from result-rpc, so the throwing boundary needs no second import from
+    better-result.
   - **Renames / removals:**
     - `orElse` → `tryRecover`
     - `getOrElse` → `unwrapOr` (value fallback) or `match` (error-aware fallback)
@@ -85,9 +84,10 @@
   1. Install `better-result@^3.0.0` alongside (npm ≥ 7 / pnpm install it as
      the peer automatically).
   2. Replace `.ok` with `status === "ok"` / `isOk()` / `isErr()`.
-  3. `gen` is unchanged — bodies still return the value directly.
+  3. In `gen` bodies, return `ok(...)` (or `return yield* err(...)` to fail).
   4. Replace `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` or `match`.
-     `tryCatch` / `tryPromise` keep their `(fn, onThrow)` signatures.
+     `tryCatch` / `tryPromise` are passthroughs — same `{ try, catch }` call
+     shape as better-result's `Result.try` / `Result.tryPromise`.
   5. Rebuild the client (the wire envelope shape changed; old clients and new
      servers are mutually `client/protocol-violation` / `server/bad-request`).
 

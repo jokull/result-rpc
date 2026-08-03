@@ -38,10 +38,12 @@ better-result's own surface.
 Combinators beyond `ok`/`err`/`isOk`/`isErr` are re-exported by result-rpc
 (they are better-result's): `map`, `mapError`, `andThen`, `match`,
 `matchError`, `tap*`, `all`, `gen`, `tryRecover`, `unwrap`, `unwrapOr`,
-`tryCatch`, `tryPromise`, and the `InferErr`/`InferOk` types. Two calling
-conventions are result-rpc's own (below); everything else is upstream's,
-unchanged. Renames in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr`
-(value fallback) or `match`.
+`tryCatch`, `tryPromise`, and the `InferErr`/`InferOk` types. Calling
+conventions are better-result's, unchanged — `gen` bodies return a Result,
+`tryCatch`/`tryPromise` are passthroughs of `Result.try`/`Result.tryPromise`
+(the `{ try, catch }` form) so the throwing boundary needs no second import.
+Renames in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` (value
+fallback) or `match`.
 
 Results are better-result `Ok`/`Err` class instances with a
 `status: "ok" | "error"` discriminant. The 0.2 `.ok` boolean discriminant is
@@ -64,17 +66,16 @@ A `Promise<Result>` stays a plain promise you `await` — there is no
 
 `yield*` works directly on any Result: it unwraps the value or
 short-circuits the whole block on the first failure. The error union
-accumulates automatically from everything yielded. A gen body **returns the
-success value directly** — there is exactly one spelling of success, and one
-of failure (`return yield* err(...)`):
+accumulates automatically from everything yielded. A gen body **returns a
+Result** (`return ok(value)`), matching better-result's `Result.gen`:
 
 ```ts
-import { gen } from "result-rpc";
+import { gen, ok } from "result-rpc";
 
 const outcome = gen(function* () {
   const doc = yield* findDoc(id); // Result<Doc, DocNotFound>
   const body = yield* parseBody(doc); // Result<Body, ParseFailure>
-  return render(doc, body); // the value, not ok(value)
+  return ok(render(doc, body));
 });
 // Result<Rendered, DocNotFound | ParseFailure>
 ```
@@ -86,7 +87,7 @@ type becomes a `Promise<Result>`:
 const outcome = await gen(async function* () {
   const doc = yield* await fetchDoc(id);
   const body = yield* parseBody(doc);
-  return body;
+  return ok(body);
 });
 ```
 
@@ -111,7 +112,7 @@ const outcome = await gen(async function* () {
   // unwraps success or propagates its reconstructed TaggedError.
   const doc = yield* await client.doc.byId({ id: "doc_missing" });
   const body = yield* parseBody(doc.body);
-  return { doc, body };
+  return ok({ doc, body });
 });
 
 if (outcome.isErr() && docErrors.notFound.is(outcome.error)) {
@@ -150,7 +151,7 @@ The service keeps its own precise error vocabulary:
 
 ```ts
 // server/services/rates.ts
-import { defineErrors, err, gen, tryPromise, wire } from "result-rpc";
+import { defineErrors, err, gen, ok, tryPromise, wire } from "result-rpc";
 
 export const upstream = defineErrors("upstream", {
   unavailable: { data: wire.object({ status: wire.number }), httpStatus: 502, retry: "transient" },
@@ -159,24 +160,25 @@ export const upstream = defineErrors("upstream", {
 
 export const safeJsonFetch = (url: string) =>
   gen(async function* () {
-    const response = yield* await tryPromise(
-      () => fetch(url),
-      () => upstream.unavailable({ status: 0 }),
-    );
+    const response = yield* await tryPromise({
+      try: () => fetch(url),
+      catch: () => upstream.unavailable({ status: 0 }),
+    });
     if (!response.ok) {
-      return yield* err(upstream.unavailable({ status: response.status }));
+      return err(upstream.unavailable({ status: response.status }));
     }
-    return yield* await tryPromise(
-      () => response.json() as Promise<unknown>,
-      (cause) => upstream.malformed({ reason: String(cause) }),
-    );
+    return yield* await tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (cause) => upstream.malformed({ reason: String(cause) }),
+    });
   });
 // Promise<Result<unknown, UpstreamUnavailable | UpstreamMalformed>>
 ```
 
-`tryPromise(fn, onThrow)` is the border checkpoint: its catch handler must
-produce a declared tagged error, so the upstream's `TypeError`/`SyntaxError`
-never travels past the boundary as itself.
+`tryPromise` (a passthrough of better-result's `Result.tryPromise`) is the
+border checkpoint: its catch handler produces the declared tagged error, so
+the upstream's `TypeError`/`SyntaxError` never travels past the boundary as
+itself.
 
 The procedure does **not** re-export that granularity. Two upstream tags
 would be noise in every component that renders a quote — the caller can't do
@@ -208,7 +210,7 @@ const quote = server
       );
       const rate = (payload as { rate?: number }).rate;
       if (typeof rate !== "number") return yield* err(errors.RatesUnavailable({}));
-      return { currency: input.currency, rate };
+      return ok({ currency: input.currency, rate });
     }),
   );
 ```
@@ -260,7 +262,7 @@ const sessionMiddleware = session.middleware(server, ({ context, errors }) =>
   gen(async function* () {
     const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
-    return viewer;
+    return ok(viewer);
   }),
 );
 ```
