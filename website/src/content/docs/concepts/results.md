@@ -4,7 +4,8 @@ description: "better-result 3.0 is the Result runtime — result-rpc adds one ru
 ---
 
 The Result algebra is [better-result](https://github.com/dmmulroy/better-result) 3.0,
-brought in as a dependency — not reimplemented. result-rpc adds one rule to
+brought in as a peer dependency (one shared `Ok`/`Err` class across your app —
+see the FAQ) — not reimplemented. result-rpc adds one rule to
 the general-purpose library: the error channel only admits reified result-rpc
 `TaggedError` instances whose `data` is wire-safe, because every error here is
 presumed to eventually cross a wire, land in a procedure's declared union, and

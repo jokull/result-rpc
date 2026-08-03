@@ -260,10 +260,49 @@ definition identity and tag:
 - framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
   namespaces.
 
+Each definition owns a private `TaggedError` subclass. Router composition compares
+definition identity and tag:
+
+- reusing the same definition is allowed;
+- two different definitions with the same tag are a startup error;
+- tags must be namespaced strings such as `doc/not-found`;
+- framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
+  namespaces.
+
 The `.is` method checks for an instance of that exact definition. `.decode` is the
 trust boundary: it validates an encoded tag and data codec, then constructs the
 matching instance. A shape-compatible object is neither accepted by `err()` at
 compile time nor accepted from a handler at runtime.
+
+### Why the boundary union is closed (`DeclaredProcedureErrors`)
+
+A procedure handler must return `Result<Output, DeclaredProcedureErrors>` — the
+exact union of the definitions declared on that procedure (plus the framework
+`server/internal` and `server/bad-request`). It deliberately does **not** accept
+`Result<Output, AnyTaggedError>`, for three reasons:
+
+1. **The compile-time contract is the feature.** The closed union is what makes
+   `switch (query.error._tag)` exhaustive, what shells subtract, and what
+   `.errors()` gates. A handler that could return any tagged error would compile
+   an undeclared tag, and the boundary would then sanitize it to
+   `server/internal` — the type says one error, the wire says another. That
+   type/runtime divergence is worse than a compile error.
+2. **Sanitization is a backstop, not a policy.** The runtime registry check
+   exists because `any`, assertions, and malformed handler returns bypass
+   typing; it is defense-in-depth for the type layer, not a replacement for it.
+   Loosening the type would make the runtime the _only_ gate and silently
+   discard the library's headline diagnostic.
+3. **The accumulation machinery derives from declared sets.** Middleware,
+   layer, and shell unions accumulate only what is declared; an open error
+   channel would leak undeclared tags into derived unions at the type level.
+
+This is a boundary decision, not a runtime decision: framework-internal
+execution paths (`normalizeRuntimeResult`, `executeProcedure`'s erased
+overload) use `Result<unknown, AnyTaggedError>` freely. Only the public
+procedure contract is closed. Upstream adoption needs no loosening: a
+better-result Result whose error is a result-rpc tagged error is declared in
+`.errors({ ... })` and returned zero-copy; a foreign error is folded with
+`mapError` before the boundary.
 
 ### Registry
 

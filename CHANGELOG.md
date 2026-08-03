@@ -5,7 +5,8 @@
 ### Minor Changes
 
 - b8ddbf2: **Rearchitect on better-result 3.0.** result-rpc de-vendors its Result algebra
-  and depends on `better-result@^3.0.0`: `Ok`/`Err` class instances, upstream
+  and depends on `better-result@^3.0.0` as a peer dependency (shared class
+  identity): `Ok`/`Err` class instances, upstream
   composition, `Result.codec`, generator behavior, and Panic semantics are all
   better-result's. result-rpc owns the RPC boundary rule — only declared,
   serializable, reifiable tagged errors may enter or leave a procedure.
