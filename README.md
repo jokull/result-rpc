@@ -126,7 +126,7 @@ behind them ship with the package: [ARCHITECTURE.md](ARCHITECTURE.md) and
 
 ## Status
 
-`0.2.0` is published with npm provenance. The project is pre-1.0, so its API
+`0.3.0` is published with npm provenance. The project is pre-1.0, so its API
 may still change between minor releases. [CHANGELOG.md](CHANGELOG.md) records
 what changed; [RELEASING.md](RELEASING.md) documents the release and
 verification process.
