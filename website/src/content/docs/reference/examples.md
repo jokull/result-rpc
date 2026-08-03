@@ -101,7 +101,7 @@ What it exercises: session layer, entity patching with a `touch` cascade,
 declared invalidation, optimistic create with client-minted ids (the form
 validates the human with `validateStandard` before the wire is involved),
 the offline arc — mounted offline → **zero** wire calls → exactly one on
-reconnect — `gen`/`tryPromise` composition collapsed at the procedure
+reconnect — `gen`/`Result.tryPromise` composition collapsed at the procedure
 boundary, a subscription feed, and the stale-deploy form flow: a
 deliberately old-shaped client whose bad request crosses the wire and
 comes back as field-projected `server/bad-request` at exactly one call.

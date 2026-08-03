@@ -4,6 +4,12 @@
 
 ```ts
 
+import { Err as Err_2 } from 'better-result';
+import { InferErr } from 'better-result';
+import { InferOk } from 'better-result';
+import { Ok as Ok_2 } from 'better-result';
+import { Result as Result_2 } from 'better-result';
+
 // @public (undocumented)
 export interface AffectsEntry {
     // (undocumented)
@@ -12,22 +18,14 @@ export interface AffectsEntry {
     readonly target: QueryAffectsTarget;
 }
 
-// @public
-export function all<const TResults extends readonly Result<unknown, AnyTaggedError>[]>(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;
+// @public (undocumented)
+export const all: <const Results extends readonly (Err_2<unknown, unknown> | Ok_2<unknown, unknown>)[]>(results: Results) => Result_2<{ -readonly [Index in keyof Results]: InferOk<Results[Index]>; }, InferErr<Results[number]>>;
 
 // @public (undocumented)
-export function all<const TResults extends Readonly<Record<string, Result<unknown, AnyTaggedError>>>>(results: TResults): Result<AllValues<TResults>, AllErrors<TResults>>;
-
-// @public (undocumented)
-export type AllErrors<TShape> = (TShape extends readonly unknown[] ? TShape[number] : TShape[keyof TShape]) extends infer TMember ? TMember extends Err<infer E> ? E : never : never;
-
-// @public (undocumented)
-export type AllValues<TShape> = {
-    readonly [K in keyof TShape]: TShape[K] extends Result<infer T, AnyTaggedError> ? T : never;
+export const andThen: {
+    <A$1, B, E$1, E2>(result: Result_2<A$1, E$1>, fn: (a: A$1) => Result_2<B, E2>): Result_2<B, E$1 | E2>;
+    <A$1, B, E2>(fn: (a: A$1) => Result_2<B, E2>): <E$1>(result: Result_2<A$1, E$1>) => Result_2<B, E$1 | E2>;
 };
-
-// @public (undocumented)
-export const andThen: <A, B, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(result: Result<A, E1>, fn: (value: A) => Result<B, E2>) => Result<B, E1 | E2>;
 
 // @public
 export interface AnyErrorDefinition {
@@ -519,16 +517,10 @@ export type ErasedMiddlewareHandler = (args: {
 }) => MaybePromise<Result<unknown, AnyTaggedError>>;
 
 // @public (undocumented)
-export interface Err<E extends AnyTaggedError> {
-    [Symbol.iterator](): Iterator<Err<E>, never>;
-    // (undocumented)
-    readonly error: E;
-    // (undocumented)
-    readonly ok: false;
-}
+export type Err<E extends AnyTaggedError> = Err_2<never, E>;
 
 // @public (undocumented)
-export const err: <E extends AnyTaggedError>(error: E) => Err<E>;
+export const err: <E extends AnyTaggedError>(error: E) => Result<never, E>;
 
 // @public (undocumented)
 export function error<const Tag extends string, Input, Data extends WireValue>(options: ErrorDefinitionOptions<Tag, Input, Data, "private"> & {
@@ -597,13 +589,6 @@ export interface ErrorDefinitionOptionsBase<Tag extends string, Input, Data exte
     // (undocumented)
     readonly tag: Tag;
 }
-
-// @public (undocumented)
-export type ErrorHandlers<E extends AnyTaggedError, R> = {
-    readonly [Tag in E["_tag"]]: (error: E & {
-        readonly _tag: Tag;
-    }) => R;
-};
 
 // @public (undocumented)
 export type ErrorInputOf<TDefinition> = TDefinition extends ErrorDefinition<string, infer Input, infer _Data, infer _Visibility> ? Input : never;
@@ -724,17 +709,13 @@ export const frameworkError: <const Tag extends string, Input, Data extends Wire
     readonly data: WireCodec<Input, Data>;
 }) => ErrorDefinition<Tag, Input, Data, "public">;
 
-// @public
-export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => Generator<TYield, TReturn>): Result<TReturn, GenErr<TYield>>;
-
 // @public (undocumented)
-export function gen<TYield extends Err<AnyTaggedError>, TReturn>(body: () => AsyncGenerator<TYield, TReturn>): Promise<Result<TReturn, GenErr<TYield>>>;
-
-// @public (undocumented)
-export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
-
-// @public
-export const getOrElse: <T, T2, E extends AnyTaggedError>(result: Result<T, E>, fallback: (error: E) => T2) => T | T2;
+export const gen: {
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => Generator<Yield, R, unknown>): Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => Generator<Yield, R, unknown>, thisArg: This): Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>>(body: () => AsyncGenerator<Yield, R, unknown>): Promise<Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>>;
+    <Yield extends Err_2<never, unknown>, R extends Err_2<unknown, unknown> | Ok_2<unknown, unknown>, This>(body: (this: This) => AsyncGenerator<Yield, R, unknown>, thisArg: This): Promise<Result_2<InferOk<R>, (Yield extends Err_2<never, infer E> ? E : never) | InferErr<R>>>;
+};
 
 // @public (undocumented)
 export type HasDef = AnyProcedure | AnyProcedureContract;
@@ -810,7 +791,7 @@ export interface InternalErrorEvent {
 export const isErr: <T, E extends AnyTaggedError>(result: Result<T, E>) => result is Err<E>;
 
 // @public (undocumented)
-export const isOk: <T, E extends AnyTaggedError>(result: Result<T, E>) => result is Ok<T>;
+export const isOk: <T, E extends AnyTaggedError>(result: Result<T, E>) => result is Ok<T, E>;
 
 // @public
 export const isTaggedError: (value: unknown) => value is AnyTaggedError;
@@ -822,10 +803,16 @@ export type KebabCase<S extends string, Acc extends string = ""> = S extends `${
 export type KeyField<TKey> = TKey extends readonly (infer TField extends string)[] ? TField : TKey;
 
 // @public (undocumented)
-export const map: <A, B, E extends AnyTaggedError>(result: Result<A, E>, fn: (value: A) => B) => Result<B, E>;
+export const map: {
+    <A$1, B, E$1>(result: Result_2<A$1, E$1>, fn: (a: A$1) => B): Result_2<B, E$1>;
+    <A$1, B>(fn: (a: A$1) => B): <E$1>(result: Result_2<A$1, E$1>) => Result_2<B, E$1>;
+};
 
 // @public (undocumented)
-export const mapError: <A, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(result: Result<A, E1>, fn: (error: E1) => E2) => Result<A, E2>;
+export const mapError: {
+    <A$1, E$1, E2>(result: Result_2<A$1, E$1>, fn: (e: E$1) => E2): Result_2<A$1, E2>;
+    <E$1, E2>(fn: (e: E$1) => E2): <A$1>(result: Result_2<A$1, E$1>) => Result_2<A$1, E2>;
+};
 
 // @public (undocumented)
 export type MapRecord<TRecord, TProject> = {
@@ -833,15 +820,44 @@ export type MapRecord<TRecord, TProject> = {
 };
 
 // @public (undocumented)
-export const match: <T, E extends AnyTaggedError, R1, R2>(result: Result<T, E>, handlers: Readonly<{
-    ok: (value: T) => R1;
-    error: (error: E) => R2;
-}>) => R1 | R2;
+export const match: {
+    <A$1, E$1, T$1>(handlers: {
+        ok: (a: A$1) => T$1;
+        err: (e: E$1) => T$1;
+    }): (result: Result_2<A$1, E$1>) => T$1;
+    <A$1, E$1, T$1>(result: Result_2<A$1, E$1>, handlers: {
+        ok: (a: A$1) => T$1;
+        err: (e: E$1) => T$1;
+    }): T$1;
+};
 
 // @public (undocumented)
-export const matchError: <const Tag extends string, E extends AnyTaggedError & {
-    readonly _tag: Tag;
-}, R>(error: E, handlers: ErrorHandlers<E, R>) => R;
+export const matchError: {
+    <H extends {
+        [x: string]: (err: Error & {
+            readonly _tag: string;
+        }) => unknown;
+    }>(handlers: H): <E$1 extends (Error & {
+        readonly _tag: string;
+    }) & {
+        _tag: keyof H;
+    }>(err: E$1) => { [K in keyof H]: H[K] extends (err: never) => infer R ? R : never; }[keyof H];
+    <E$1 extends Error & {
+        readonly _tag: string;
+    }, R>(handlers: { [K in E$1["_tag"]]: (err: Extract<E$1, {
+            _tag: K;
+        }>) => R; }): (err: E$1) => R;
+    <E$1 extends Error & {
+        readonly _tag: string;
+    }, H extends { [K in E$1["_tag"]]: (err: Extract<E$1, {
+            _tag: K;
+        }>) => unknown; }>(err: E$1, handlers: H): { [K in keyof H]: H[K] extends (err: never) => infer R ? R : never; }[keyof H];
+    <E$1 extends Error & {
+        readonly _tag: string;
+    }, R>(err: E$1, handlers: { [K in E$1["_tag"]]: (err: Extract<E$1, {
+            _tag: K;
+        }>) => R; }): R;
+};
 
 // @public
 export type MaterializeDefinitionSources<TSources extends ErrorDefinitionMap> = [TSources] extends [
@@ -1037,17 +1053,11 @@ export const normalizeClientCallInput: (args: readonly unknown[]) => unknown;
 // @public
 export type NullabilityCaveat = HasStrictNullChecks extends true ? "" : " (strictNullChecks is off, so nullability was not compared)";
 
-// @public
-export interface Ok<T> {
-    [Symbol.iterator](): Iterator<never, T>;
-    // (undocumented)
-    readonly ok: true;
-    // (undocumented)
-    readonly value: T;
-}
+// @public (undocumented)
+export type Ok<T, E extends AnyTaggedError = never> = Ok_2<T, E>;
 
 // @public (undocumented)
-export const ok: <T>(value: T) => Ok<T>;
+export const ok: <T>(value: T) => Result<T, never>;
 
 // @public (undocumented)
 export type OptionalShapeKeys<TShape extends CodecShape> = {
@@ -1055,9 +1065,6 @@ export type OptionalShapeKeys<TShape extends CodecShape> = {
         readonly optional: true;
     } ? TKey : never;
 }[keyof TShape];
-
-// @public
-export const orElse: <T, T2, E1 extends AnyTaggedError, E2 extends AnyTaggedError>(result: Result<T, E1>, fn: (error: E1) => Result<T2, E2>) => Result<T | T2, E2>;
 
 // @public (undocumented)
 export interface Page<TItem, TCursor> {
@@ -1417,7 +1424,7 @@ export type QueryAffectsTarget = {
 export type RequiredShapeKeys<TShape extends CodecShape> = Exclude<keyof TShape, OptionalShapeKeys<TShape>>;
 
 // @public (undocumented)
-export type Result<T, E extends AnyTaggedError> = Ok<T> | Err<E>;
+export type Result<T, E extends AnyTaggedError> = Result_2<T, E>;
 
 // @public
 export interface ResultSubscription<T, E extends AnyTaggedError> extends AsyncIterable<Result<T, E>> {
@@ -1693,23 +1700,36 @@ export abstract class TaggedError<Tag extends string = string, Data extends Wire
     readonly visibility: Visibility;
 }
 
-// @public
-export const tap: <T, E extends AnyTaggedError>(result: Result<T, E>, fn: (value: T) => void) => Result<T, E>;
+// @public (undocumented)
+export const tap: {
+    <A$1, E$1>(result: Result_2<A$1, E$1>, fn: (a: A$1) => void): Result_2<A$1, E$1>;
+    <A$1>(fn: (a: A$1) => void): <E$1>(result: Result_2<A$1, E$1>) => Result_2<A$1, E$1>;
+};
 
 // @public (undocumented)
-export const tapBoth: <T, E extends AnyTaggedError>(result: Result<T, E>, handlers: Readonly<{
-    ok: (value: T) => void;
-    error: (error: E) => void;
-}>) => Result<T, E>;
+export const tapBoth: {
+    <A$1, E$1>(handlers: {
+        ok: (a: A$1) => void;
+        err: (e: E$1) => void;
+    }): (result: Result_2<A$1, E$1>) => Result_2<A$1, E$1>;
+    <A$1, E$1>(result: Result_2<A$1, E$1>, handlers: {
+        ok: (a: A$1) => void;
+        err: (e: E$1) => void;
+    }): Result_2<A$1, E$1>;
+};
 
 // @public (undocumented)
-export const tapError: <T, E extends AnyTaggedError>(result: Result<T, E>, fn: (error: E) => void) => Result<T, E>;
+export const tapError: {
+    <A$1, E$1>(result: Result_2<A$1, E$1>, fn: (e: E$1) => void): Result_2<A$1, E$1>;
+    <E$1>(fn: (e: E$1) => void): <A$1>(result: Result_2<A$1, E$1>) => Result_2<A$1, E$1>;
+};
 
-// @public
-export const tryCatch: <T, E extends AnyTaggedError>(fn: () => T, onThrow: (cause: unknown) => E) => Result<T, E>;
-
-// @public
-export const tryPromise: <T, E extends AnyTaggedError>(fn: () => PromiseLike<T>, onThrow: (cause: unknown) => E) => Promise<Result<T, E>>;
+// @public (undocumented)
+export const tryRecover: {
+    <A$1, E$1, E2, B = A$1>(result: Result_2<A$1, E$1>, fn: (e: E$1) => Result_2<B, E2>): Result_2<A$1 | B, E2>;
+    <E$1, E2>(fn: (e: E$1) => Result_2<never, E2>): <A$1>(result: Result_2<A$1, E$1>) => Result_2<A$1, E2>;
+    <E$1, B, E2>(fn: (e: E$1) => Result_2<B, E2>): <A$1>(result: Result_2<A$1, E$1>) => Result_2<A$1 | B, E2>;
+};
 
 // @public
 export interface UnaryProcedureCapability<TWritesHeaders extends boolean = false> {
@@ -1724,6 +1744,15 @@ export type UndeclaredMiddlewareErrors<TDeclared extends ErrorDefinitionMap, TCo
 
 // @public (undocumented)
 export type UnionToIntersection<TUnion> = (TUnion extends unknown ? (value: TUnion) => void : never) extends (value: infer TIntersection) => void ? TIntersection : never;
+
+// @public (undocumented)
+export const unwrap: <A$1, E$1>(result: Result_2<A$1, E$1>, message?: string) => A$1;
+
+// @public (undocumented)
+export const unwrapOr: {
+    <A$1, E$1, B>(result: Result_2<A$1, E$1>, fallback: B): A$1 | B;
+    <B>(fallback: B): <A$1, E$1>(result: Result_2<A$1, E$1>) => A$1 | B;
+};
 
 // @public
 export const widenDefinitionError: <TNarrow extends ErrorDefinitionMap, TWide extends TNarrow>(error: ErrorUnion<TNarrow>) => ErrorUnion<TWide>;

@@ -231,6 +231,7 @@ try {
         type: "module",
         dependencies: {
           "@types/react": "19.2.17",
+          "better-result": "^3.0.0",
           react: "19.2.8",
           "result-rpc": `file:${tarball}`,
         },
@@ -737,7 +738,7 @@ export default async function Page({
   const hydrationState = (await searchParams).skew === "1"
     ? { ...state, contract: "packed-stale-contract" }
     : state;
-  return <ResultRpcHydrationBoundary state={hydrationState}><p>{result.ok ? result.value : result.error._tag}</p><ClientView /></ResultRpcHydrationBoundary>;
+  return <ResultRpcHydrationBoundary state={hydrationState}><p>{result.isOk() ? result.value : result.error._tag}</p><ClientView /></ResultRpcHydrationBoundary>;
 }
 `,
   );

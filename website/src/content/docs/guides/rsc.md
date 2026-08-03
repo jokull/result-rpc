@@ -241,7 +241,7 @@ Unwrap at the server/client component boundary:
 ```tsx
 const result = await serverClient.users.get({ id });
 
-if (!result.ok) return <MissingUser id={id} />;
+if (result.status === "error") return <MissingUser id={id} />;
 return <UserDetail initialUser={result.value} />;
 ```
 

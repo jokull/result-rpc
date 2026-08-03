@@ -25,7 +25,7 @@ function RenameDoc({ id }: { id: string }) {
   async function submit(title: string) {
     const result = await rename.mutateAsync({ id, title });
 
-    if (!result.ok && result.error._tag === "doc/title-conflict") {
+    if (result.status === "error" && result.error._tag === "doc/title-conflict") {
       focusTitleField();
     }
   }

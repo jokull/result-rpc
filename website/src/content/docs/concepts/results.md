@@ -1,47 +1,77 @@
 ---
 title: "Result composition"
-description: "better-result and neverthrow are built in — with tagged errors required, because every error here is presumed to eventually cross a wire."
+description: "better-result 3.0 is the Result runtime — result-rpc adds one rule: the error channel only admits declared, serializable, reifiable tagged errors."
 ---
 
-If you use neverthrow or better-result today, this page is the migration
-note: the algebra you know is built in, and you can delete the dependency.
-One rule is stricter — the error channel only admits reified result-rpc
-`TaggedError` instances whose `data` is wire-safe. That restriction is the point. The standalone libraries
-let any value ride the error channel because they never have to move it;
-here every error is presumed to eventually cross a wire, land in a
-procedure's declared union, and be matched exhaustively in a component. The
-declared definition supplies both the nominal runtime type and the plain wire
-shape, so a merely shape-compatible object is rejected by `err()`.
+The Result algebra is [better-result](https://github.com/dmmulroy/better-result) 3.0,
+brought in as a dependency — not reimplemented. result-rpc adds one rule to
+the general-purpose library: the error channel only admits reified result-rpc
+`TaggedError` instances whose `data` is wire-safe, because every error here is
+presumed to eventually cross a wire, land in a procedure's declared union, and
+be matched exhaustively in a component. The declared definition supplies both
+the nominal runtime type and the plain wire shape, so a merely shape-compatible
+object is rejected at the procedure boundary.
+
+If you already use better-result, adoption is the point: a
+`Result<T, YourRpcError>` whose error is a result-rpc tagged error flows into a
+procedure handler as-is. A foreign error is folded with `mapError` before the
+boundary.
 
 ## The surface
 
-|                     |                                             |
-| ------------------- | ------------------------------------------- |
-| Construct           | `ok`, `err`, `isOk`, `isErr`                |
-| Transform           | `map`, `andThen`, `mapError`, `orElse`      |
-| Unwrap              | `match`, `matchError`, `getOrElse`          |
-| Observe             | `tap`, `tapError`, `tapBoth`                |
-| Adopt throwing code | `tryCatch`, `tryPromise`                    |
-| Combine             | `all` (tuple or record, first failure wins) |
-| Compose             | `gen` (generator style, `yield*`)           |
+`Result<T, E>` is a better-result Result whose error type is constrained to
+result-rpc tagged errors. Factories come from result-rpc; everything else is
+better-result's own surface.
 
-All Result operations are standalone and tree-shakeable. A
-`Promise<Result>` stays a plain promise you `await` — there is no
+|                     |                                                        |
+| ------------------- | ------------------------------------------------------ |
+| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc`         |
+| Discriminate        | `result.status === "ok"` or `result.isOk()`            |
+| Transform           | `map`, `mapError`, `andThen`, `tryRecover`             |
+| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`            |
+| Observe             | `tap`, `tapError`, `tapBoth`                           |
+| Adopt throwing code | `Result.try` / `Result.tryPromise` (`{ try, catch }`)  |
+| Combine             | `Result.all` (tuple, first failure wins)               |
+| Compose             | `gen` (generator style, `yield*`)                      |
+
+Combinators beyond `ok`/`err`/`isOk`/`isErr` are imported from
+`better-result` (or re-exported by `result-rpc`): `Result.map`,
+`Result.gen`, `Result.tryPromise`, and so on. The older result-rpc names are
+gone in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` (value
+fallback) or `match`, and `tryCatch`/`tryPromise` → `Result.try`/
+`Result.tryPromise`.
+
+Results are better-result `Ok`/`Err` class instances with a
+`status: "ok" | "error"` discriminant. The 0.2 `.ok` boolean discriminant is
+gone:
+
+```ts
+if (result.status === "ok") {
+  result.value; // narrowed
+} else {
+  result.error; // narrowed
+}
+// or the method form, which narrows the same way:
+if (result.isOk()) result.value;
+```
+
+A `Promise<Result>` stays a plain promise you `await` — there is no
 `ResultAsync` to learn.
 
 ## Generator composition
 
 `yield*` works directly on any Result: it unwraps the value or
 short-circuits the whole block on the first failure. The error union
-accumulates automatically from everything yielded — no annotations:
+accumulates automatically from everything yielded. A gen body **returns a
+Result** (`return ok(value)`), matching better-result's `Result.gen`:
 
 ```ts
-import { gen } from "result-rpc";
+import { gen, ok } from "result-rpc";
 
 const outcome = gen(function* () {
   const doc = yield* findDoc(id); // Result<Doc, DocNotFound>
   const body = yield* parseBody(doc); // Result<Body, ParseFailure>
-  return render(doc, body);
+  return ok(render(doc, body));
 });
 // Result<Rendered, DocNotFound | ParseFailure>
 ```
@@ -52,7 +82,8 @@ type becomes a `Promise<Result>`:
 ```ts
 const outcome = await gen(async function* () {
   const doc = yield* await fetchDoc(id);
-  return yield* parseBody(doc);
+  const body = yield* parseBody(doc);
+  return ok(body);
 });
 ```
 
@@ -63,12 +94,12 @@ blocks run even when an `Err` short-circuits — cleanup composes normally.
 
 ## The wire keeps the API, not the object identity
 
-This is where result-rpc goes beyond Better Result's shallow serialization.
-The client reconstructs the Result behavior and the exact declared
-`TaggedError` type before returning:
+The client reconstructs the Result and the exact declared `TaggedError`
+instance before returning — via the per-procedure Result codec and the error
+registry:
 
 ```ts
-import { gen } from "result-rpc";
+import { gen, ok } from "result-rpc";
 import { client } from "./rpc-client";
 import { docErrors } from "./errors";
 
@@ -77,10 +108,10 @@ const outcome = await gen(async function* () {
   // unwraps success or propagates its reconstructed TaggedError.
   const doc = yield* await client.doc.byId({ id: "doc_missing" });
   const body = yield* parseBody(doc.body);
-  return { doc, body };
+  return ok({ doc, body });
 });
 
-if (!outcome.ok && docErrors.notFound.is(outcome.error)) {
+if (outcome.isErr() && docErrors.notFound.is(outcome.error)) {
   outcome.error instanceof Error; // true
   outcome.error.data.docId; // "doc_missing"
 
@@ -102,7 +133,7 @@ Unwrap before crossing one of those boundaries:
 
 ```tsx
 const result = await client.doc.byId({ id });
-if (!result.ok) return <NotFound docId={result.error.data.docId} />;
+if (result.isErr()) return <NotFound docId={result.error.data.docId} />;
 return <DocView doc={result.value} />; // pass T, not Result<T, E>
 ```
 
@@ -116,7 +147,8 @@ The service keeps its own precise error vocabulary:
 
 ```ts
 // server/services/rates.ts
-import { defineErrors, err, gen, tryPromise, wire } from "result-rpc";
+import { Result as BetterResult } from "better-result";
+import { defineErrors, err, gen, ok, wire } from "result-rpc";
 
 export const upstream = defineErrors("upstream", {
   unavailable: { data: wire.object({ status: wire.number }), httpStatus: 502, retry: "transient" },
@@ -125,24 +157,27 @@ export const upstream = defineErrors("upstream", {
 
 export const safeJsonFetch = (url: string) =>
   gen(async function* () {
-    const response = yield* await tryPromise(
-      () => fetch(url),
-      () => upstream.unavailable({ status: 0 }),
-    );
+    const response = yield* await BetterResult.tryPromise({
+      try: () => fetch(url),
+      catch: () => upstream.unavailable({ status: 0 }),
+    });
     if (!response.ok) {
-      return yield* err(upstream.unavailable({ status: response.status }));
+      return err(upstream.unavailable({ status: response.status }));
     }
-    return yield* await tryPromise(
-      () => response.json() as Promise<unknown>,
-      (cause) => upstream.malformed({ reason: String(cause) }),
-    );
+    return yield* await BetterResult.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (cause) => upstream.malformed({ reason: String(cause) }),
+    });
   });
 // Promise<Result<unknown, UpstreamUnavailable | UpstreamMalformed>>
 ```
 
-`tryPromise` is the border checkpoint: its catch handler must produce a
-tagged error, so the upstream's `TypeError`/`SyntaxError` never travels past
-the boundary as itself.
+`Result.tryPromise` is the border checkpoint: its catch handler returns the
+tagged error directly, so the upstream's `TypeError`/`SyntaxError` never
+travels past the boundary as itself. `UnhandledException` — what a bare
+`Result.tryPromise(thunk)` produces — is a better-result tagged error that the
+procedure boundary rejects (it is not in the declared registry), so it is
+sanitized to `server/internal` if it ever reaches a handler.
 
 The procedure does **not** re-export that granularity. Two upstream tags
 would be noise in every component that renders a quote — the caller can't do
@@ -151,7 +186,7 @@ collapses them with `mapError`, and only the coarse tag enters the contract:
 
 ```ts
 // server/router.ts
-import { error, gen, err, mapError, ok, wire } from "result-rpc";
+import { error, err, gen, mapError, ok, wire } from "result-rpc";
 import { safeJsonFetch } from "./services/rates";
 
 const RatesUnavailable = error({
@@ -174,7 +209,7 @@ const quote = server
       );
       const rate = (payload as { rate?: number }).rate;
       if (typeof rate !== "number") return yield* err(errors.RatesUnavailable({}));
-      return { currency: input.currency, rate };
+      return ok({ currency: input.currency, rate });
     }),
   );
 ```
@@ -203,11 +238,11 @@ function Quote({ currency }: { currency: string }) {
 }
 ```
 
-That is the full journey: throwing `fetch` → `tryPromise` → granular service
-union → `mapError` collapse at the procedure → declared contract → flattened
-hook state. One algebra, and each boundary decides how much detail the next
-one deserves. When hook-state code needs to hand a settled outcome to
-Result-typed code, `toResult(quote)` re-wraps it.
+That is the full journey: throwing `fetch` → `Result.tryPromise` → granular
+service union → `mapError` collapse at the procedure → declared contract →
+flattened hook state. One algebra, and each boundary decides how much detail
+the next one deserves. When hook-state code needs to hand a settled outcome
+to Result-typed code, `toResult(quote)` re-wraps it.
 
 ## Composition between layers
 
@@ -226,7 +261,7 @@ const sessionMiddleware = session.middleware(server, ({ context, errors }) =>
   gen(async function* () {
     const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
-    return viewer;
+    return ok(viewer);
   }),
 );
 ```
@@ -236,20 +271,34 @@ the failure paths travel the layer's union to the client, where the layer's
 shell claims them. Composition on the server, subtraction on the client —
 the same union both times.
 
+## The boundary guarantee
+
+Every failure entering or leaving a result-rpc procedure is an instance of a
+declared, serializable, reifiable tagged error. The per-procedure Result codec
+enforces this at runtime — static typing is not the boundary:
+
+- A foreign or counterfeit error is rejected, even through `any`.
+- A private error never crosses any client boundary; it is sanitized to
+  `server/internal`.
+- A better-result `Panic` (a Result callback threw) becomes a sanitized
+  framework failure; its cause reaches server-side observability, never the
+  wire.
+- `Result<T, string>` or any other non-tagged local error fails procedure
+  typing and runtime validation.
+
 ## Credit and deliberate omissions
 
-This surface ports the core DX of
-[better-result](https://github.com/dmmulroy/better-result) and
-[neverthrow](https://github.com/supermacro/neverthrow), and happily credits
-both. Three things are deliberately not ported:
+This surface **is** better-result 3.0, used directly. result-rpc deliberately
+does not add on top of it:
 
-- **Serialization helpers.** Wire safety is handled by this library's own
-  concern — error `data` goes through declared codecs, rich values through
-  the versioned serializer. A Result-level `toJSON` would be a second,
-  weaker wire story.
+- **A second serialization story.** The per-procedure Result codec (built on
+  `Result.codec` with Standard Schema adapters) is the Result-level
+  serialization; the outer protocol frame, contract digest, batch framing,
+  and touched entities stay result-rpc-owned.
 - **`ResultAsync` / chained async wrappers.** `await` plus `gen` covers the
   composition; a wrapper class would add a second calling convention to
   every API that touches a promise.
-- **`getOrThrow`.** Re-throwing is the pattern the rest of the library
-  exists to retire. Where you genuinely want to crash on `Err` (scripts,
-  tests), `if (!result.ok) throw result.error` is one honest line.
+- **`getOrThrow` / `unwrapOr` on failure.** Re-throwing is the pattern the
+  rest of the library exists to retire. Where you genuinely want to crash on
+  `Err` (scripts, tests), `if (result.isErr()) throw result.error` is one
+  honest line.

@@ -1442,7 +1442,7 @@ export type _TryPromiseTagged = Assert<
 // the procedure boundary instead.
 void BetterResult.tryPromise({
   try: async () => 1,
-  catch: (cause) => new Error(String(cause)),
+  catch: (cause: unknown) => new Error(String(cause)),
 });
 
 // --- Regression: an implemented procedure keeps its contract's kind ---------

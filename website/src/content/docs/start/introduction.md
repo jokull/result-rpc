@@ -204,7 +204,7 @@ section, and it is the reason the rest of the machinery exists.
 
 | Concern            | result-rpc contract                                                                                  |
 | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| Result composition | Plain Result values, `gen`/`yield*`, `tryPromise`, union-preserving combinators, exhaustive matching |
+| Result composition | Plain Result values, `gen`/`yield*`, `Result.tryPromise`, union-preserving combinators, exhaustive matching |
 | Error definitions  | Namespaced tags, wire codecs, HTTP/retry/visibility policy                                           |
 | RPC                | Procedures, middleware, routers, server execution, protocol, clients                                 |
 | Transport failures | Tagged additions to each procedure's inferred error union                                            |

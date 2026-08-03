@@ -36,7 +36,7 @@ Test the property you care about through a real wire-parity client:
 
 ```ts
 const result = await parityClient.doc.byId({ id: "doc_123" });
-if (result.ok) {
+if (result.status === "ok") {
   result.value.savedAt instanceof Date; // true after encode + HTTP + decode
 }
 ```

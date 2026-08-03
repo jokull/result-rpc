@@ -14,6 +14,10 @@ result-rpc is an RPC layer for React — one library covering:
 - owning failures at the right tree position through shells — error
   boundaries generalized to values.
 
+> **0.3 update:** the Result runtime is now better-result 3.0 as a dependency
+> (protocol v2, `{ status }` envelope, per-procedure Result codec). This
+> document tracks the current architecture.
+
 It replaces the public roles of better-result, tRPC, and React Query, and
 deliberately nothing more: routing, SSR, and bundling belong to whatever owns
 the tree. React bindings are first-class and intended — the shell model is a
@@ -696,7 +700,7 @@ The internal query function is equivalent to:
 ```ts
 async function execute(): Promise<T> {
   const result = await client.procedure(input);
-  if (!result.ok) throw result.error;
+  if (result.isErr()) throw result.error;
   return result.value;
 }
 ```
@@ -1218,7 +1222,8 @@ bypass the same codecs used by unary remote calls.
 
 ## Deliberate non-goals for the first release
 
-- compatibility wrappers around better-result or tRPC types;
+- compatibility wrappers around better-result or tRPC types (0.3 uses
+  better-result directly — the wrappers question is moot);
 - exposing TanStack Query option or observer types;
 - unversioned or one-sided pluggable serializers;
 - automatic transmission of `Error`, stack, or cause;

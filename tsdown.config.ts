@@ -35,7 +35,7 @@ export default defineConfig({
   },
   deps: {
     neverBundle: true,
-    onlyImport: ["@tanstack/query-core", "devalue", "react"],
+    onlyImport: ["@tanstack/query-core", "better-result", "devalue", "react"],
   },
   publint: {
     strict: true,
