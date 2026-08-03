@@ -42,6 +42,20 @@ const leakyPrivate = r
   .errors({ PrivateFailure } as unknown as ErrorDefinitionMap)
   .query(() => err(PrivateFailure({ detail: POISON })) as never);
 
+const panicBoom = r
+  .procedure()
+  .input(wire.object({}))
+  .output(wire.object({ ok: wire.boolean }))
+  // A Result callback that throws becomes a better-result Panic — a defect,
+  // not a recoverable error channel. It must surface as server/internal with
+  // the Panic's cause in observability, never as a declared domain error.
+  .query(() => {
+    ok(true).map(() => {
+      throw new Error(`callback threw: ${POISON}`);
+    });
+    return ok({ ok: true });
+  });
+
 const fine = r
   .procedure()
   .input(wire.object({ name: wire.string }))
@@ -99,6 +113,7 @@ const explodingStream = r.implement(explodingStreamContract).stream(async functi
 
 const router = r.router({
   boom,
+  panicBoom,
   leakyPrivate,
   fine,
   noHttpStatus,
@@ -143,6 +158,28 @@ describe("fetch handler wire boundary", () => {
     expect(text).toContain("server/internal");
     expect(text).toContain("inc_");
     expect(response.status).toBe(500);
+  });
+
+  test("a Result callback Panic becomes a sanitized framework failure, never a domain error", async () => {
+    const internalErrors: unknown[] = [];
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onInternalError: (details) => internalErrors.push(details),
+    });
+    const response = await handler(post("panicBoom", {}));
+    const text = await response.text();
+    expect(text).not.toContain(POISON);
+    expect(text).toContain("server/internal");
+    expect(text).toContain("inc_");
+    expect(response.status).toBe(500);
+    // The Panic's cause reaches server-side observability in full (including
+    // the diagnostic secret — incident detail), while the wire stays clean.
+    // That split — rich cause inward, sanitized failure outward — is the
+    // boundary rule for defects.
+    expect(JSON.stringify(internalErrors)).toContain("callback threw");
+    expect(JSON.stringify(internalErrors)).toContain(POISON);
+    expect(internalErrors[0]?.phase).toBe("handler");
   });
 
   test("a private-visibility error is sanitized to server/internal on the wire", async () => {
