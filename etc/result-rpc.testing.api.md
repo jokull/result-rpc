@@ -1645,7 +1645,7 @@ export interface ProcedureTypes<TRootContext, TContext, TInput, TOutput, TDefini
 export type ProcedureTypesOf<TProcedure> = TProcedure extends ProcedureTypeCarrier<infer TTypes> ? TTypes : never;
 
 // @public (undocumented)
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 1;
 
 // @public
 export type QueryAffectsTarget = {

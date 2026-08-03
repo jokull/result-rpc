@@ -45,9 +45,12 @@
       `{ try, catch }` form; the catch handler returns the error value
     - type exports `AllValues`, `AllErrors`, `GenErr`, `ErrorHandlers` removed
       (upstream types replace them)
-  - **Protocol v2:** the response envelope is
-    `{ status: "ok" | "error", ... }` (was `{ ok: boolean }`); content types
-    move to `sv=2`; `PROTOCOL_VERSION` is 2.
+  - **Breaking wire format (pre-1.0, no protocol version bump):** the response
+    envelope is `{ status: "ok" | "error", ... }` (was `{ ok: boolean }`).
+    result-rpc ships both sides of the wire and has no external clients, so
+    before 1.0 a breaking protocol change is just a breaking change —
+    `PROTOCOL_VERSION` stays 1 and content types stay `sv=1`. Client and server
+    update together.
   - **Per-procedure Result codec:** handler Results are validated and
     reconstructed through `Result.codec` + Standard Schema adapters around the
     output wire codec and the declared error registry. Counterfeit, foreign,
@@ -82,7 +85,7 @@
   3. In `gen` bodies, wrap the final return in `ok(...)`.
   4. Replace `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` or `match`,
      `tryCatch(fn, onThrow)` → `Result.try({ try: fn, catch: ... })`.
-  5. Rebuild the client (the protocol version changed; old clients and new
+  5. Rebuild the client (the wire envelope shape changed; old clients and new
      servers are mutually `client/protocol-violation` / `server/bad-request`).
 
   Migration notes and worked examples: the docs'

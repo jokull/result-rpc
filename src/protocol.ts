@@ -1,9 +1,9 @@
 import type { EncodedTaggedError } from "./error.js";
 import { isWireValue, type WireValue } from "./wire.js";
 
-export const PROTOCOL_VERSION = 2;
-export const PROTOCOL_CONTENT_TYPE = "application/result-rpc+devalue; sv=2";
-export const STREAM_CONTENT_TYPE = "application/result-rpc-stream+devalue; sv=2";
+export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_CONTENT_TYPE = "application/result-rpc+devalue; sv=1";
+export const STREAM_CONTENT_TYPE = "application/result-rpc-stream+devalue; sv=1";
 /** Response header carrying the server's contract digest, for skew detection. */
 export const CONTRACT_HEADER = "x-result-rpc-contract";
 
@@ -14,7 +14,7 @@ const matchesContentType = (value: string | null, mediaType: string): boolean =>
     .split(";")
     .map((part) => part.trim());
   const serializerVersions = parameters.filter((parameter) => parameter.startsWith("sv="));
-  return type === mediaType && serializerVersions.length === 1 && serializerVersions[0] === "sv=2";
+  return type === mediaType && serializerVersions.length === 1 && serializerVersions[0] === "sv=1";
 };
 
 export const isProtocolContentType = (value: string | null): boolean =>

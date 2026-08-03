@@ -15,7 +15,9 @@ result-rpc is an RPC layer for React — one library covering:
   boundaries generalized to values.
 
 > **0.3 update:** the Result runtime is now better-result 3.0 as a dependency
-> (protocol v2, `{ status }` envelope, per-procedure Result codec). This
+> (breaking wire change with the `{ status }` envelope — no protocol version
+> bump pre-1.0, since result-rpc ships both sides of the wire; per-procedure
+> Result codec). This
 > document tracks the current architecture.
 
 It replaces the public roles of better-result, tRPC, and React Query, and

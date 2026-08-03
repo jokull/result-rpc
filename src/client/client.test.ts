@@ -410,7 +410,7 @@ describe("unary client and server", () => {
         tag: "client/decode-failure",
       },
       {
-        envelope: { v: 1, status: "ok", value: { id: "one", value: "first" } },
+        envelope: { v: 2, status: "ok", value: { id: "one", value: "first" } },
         tag: "client/protocol-violation",
       },
     ] as const;
