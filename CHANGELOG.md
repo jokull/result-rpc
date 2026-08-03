@@ -31,10 +31,6 @@
     `Result<unknown, AnyTaggedError>`.
   - **`gen` follows better-result:** bodies return a Result (`return ok(x)`);
     `return yield* err(x)` fails a block explicitly. `GenErr` is re-exported.
-    (A value-return `gen` was trialed after one smoke test and reverted: it
-    re-vendored the generator loop, split the calling convention from
-    upstream, and made `return ok(x)` silently double-wrap — the wrong-line
-    diagnostic it fixed was transition friction, not steady-state DX.)
   - **`all` is tuple-only** (better-result's `Result.all`); the record form is
     gone — compose with `all([...])` + `map` instead.
   - **`tryCatch` / `tryPromise` are passthroughs of `Result.try` /
