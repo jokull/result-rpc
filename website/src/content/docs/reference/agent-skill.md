@@ -81,6 +81,9 @@ wrong:
 - **Build the browser client from a `contract()`, never the router** — the
   [client boundary](/concepts/client-boundary/) rule, because a value import of
   server code ships handlers and secrets to the browser.
+- **The Result runtime is [better-result](https://github.com/dmmulroy/better-result) 3.0**
+  — a peer dependency, not vendored; the skill's foundation section orients the
+  agent to the dialect (`gen` returns `ok(x)`) and the zero-copy adoption rule.
 - Errors are declared, closed, and returned — not thrown.
 - The contract is the error registry; shells index by tag and claim exact definitions.
 - Mutations declare their blast radius in the contract.

@@ -19,6 +19,14 @@ either.
 npm install result-rpc
 ```
 
+Installing result-rpc brings in its peer dependency
+[`better-result@^3.0.0`](https://github.com/dmmulroy/better-result) — npm 7+ and
+pnpm install peers automatically. The `Result` you compose is better-result's
+class; result-rpc re-exports the surface (`ok`, `err`, `gen`, `tryPromise`,
+`InferErr`/`InferOk`/`GenErr`), and the shared class identity is what the
+boundary's `instanceof` checks rely on. See [Results](/concepts/results/) for
+the division of labor and the [FAQ](/reference/faq/) for the identity rule.
+
 This quickstart requires Node.js 20.19.5 or newer, TypeScript 5.4 or newer, and
 React 18.3 or newer. See [Installation](/start/installation/) for other package
 managers and the package's runtime entry points.

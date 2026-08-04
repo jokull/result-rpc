@@ -18,6 +18,15 @@ Requirements:
 - TypeScript 5.4 or newer
 - React 18.3 or newer when using `result-rpc/react`
 
+`result-rpc` brings [`better-result@^3.0.0`](https://github.com/dmmulroy/better-result)
+as a peer dependency — npm 7+ and pnpm install it automatically, so there is no
+extra install step for apps that don't use better-result directly. The `Result`
+you compose is better-result's class; result-rpc re-exports the surface (`ok`,
+`err`, `gen`, `tryCatch`, `tryPromise`, `InferErr`/`InferOk`/`GenErr`), and the
+shared class identity is what the boundary's `instanceof` checks rely on. See
+[Results](/concepts/results/) for the division of labor and the
+[FAQ](/reference/faq/) for the identity rule.
+
 The published declaration surface is tested with TypeScript 5.4, 5.9, and 7.0.
 The package is ESM-only.
 

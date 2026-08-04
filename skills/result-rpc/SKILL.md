@@ -21,6 +21,26 @@ appending `.md` to its URL, and the whole set is indexed at
 any task below, **fetch the linked `.md` page** rather than guessing — the docs
 carry the current API, and this file only routes you there.
 
+## The foundation: better-result 3.0
+
+`Result<T, E>` is [better-result](https://github.com/dmmulroy/better-result) 3.0's
+class, brought in as a `peerDependencies` entry — one shared `Ok`/`Err` class
+across the app, which is what the boundary's `instanceof` checks rely on.
+result-rpc re-exports the surface you need (`ok`, `err`, `gen`, `tryCatch`,
+`tryPromise`, `InferErr`/`InferOk`/`GenErr`), so code imports from `result-rpc`.
+
+- **Dialect:** `gen` bodies `return ok(x)` — better-result's convention, unchanged.
+- **Division of labor:** better-result owns the Result algebra (`Result.codec`,
+  `retry`, `matchError`, Panic); result-rpc owns the boundary, transport, cache,
+  and shells.
+- **Adoption:** a better-result `Result` whose error is already a declared
+  result-rpc tagged error flows into a handler unchanged (zero-copy); a foreign
+  error folds with `mapError` before the boundary.
+
+The boundary rule is unchanged: only declared, serializable, reifiable tagged
+errors may enter or leave a procedure. See `/reference/faq.md` (class identity)
+and `/concepts/results.md` (dialect) for the full reasoning.
+
 ## Before writing code
 
 Choose the relevant path before editing:
