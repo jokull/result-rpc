@@ -31,8 +31,8 @@ better-result's own surface.
 | Transform           | `map`, `mapError`, `andThen`, `tryRecover`     |
 | Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`    |
 | Observe             | `tap`, `tapError`, `tapBoth`                   |
-| Adopt throwing code | `tryCatch` / `tryPromise` (`fn, onThrow`)      |
-| Combine             | `Result.all` (tuple, first failure wins)       |
+| Adopt throwing code | `tryCatch` / `tryPromise` (`{ try, catch }`)   |
+| Combine             | `all` (tuple, first failure wins)              |
 | Compose             | `gen` (generator style, `yield*`)              |
 
 Combinators beyond `ok`/`err`/`isOk`/`isErr` are re-exported by result-rpc
@@ -99,8 +99,10 @@ blocks run even when an `Err` short-circuits — cleanup composes normally.
 ## The wire keeps the API, not the object identity
 
 The client reconstructs the Result and the exact declared `TaggedError`
-instance before returning — via the per-procedure Result codec and the error
-registry:
+instance before returning — through the procedure's error registry and output
+codec. The registry's `definition.decode` is the shared reification primitive
+(the same one the per-procedure Result codec uses on the server); HTTP and
+framework policy live in the client's own envelope path:
 
 ```ts
 import { gen } from "result-rpc";
@@ -187,7 +189,7 @@ collapses them with `mapError`, and only the coarse tag enters the contract:
 
 ```ts
 // server/router.ts
-import { error, err, gen, mapError, wire } from "result-rpc";
+import { error, err, gen, mapError, ok, wire } from "result-rpc";
 import { safeJsonFetch } from "./services/rates";
 
 const RatesUnavailable = error({

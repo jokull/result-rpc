@@ -1456,9 +1456,13 @@ const normalizeRuntimeResult = (
   phase: "middleware" | "handler",
   options: ExecutionOptions<unknown>,
 ): Result<unknown, AnyTaggedError> => {
-  if (candidate instanceof ResultOk) return ok(candidate.value);
+  // Only real better-result instances pass; the accepted Result is returned
+  // as-is so the handler's exact Ok/Err instance survives unchanged
+  // (zero-copy — `returned === candidate`). A shape-compatible plain object
+  // is not a Result and is sanitized like any other malformed return.
+  if (candidate instanceof ResultOk) return candidate;
   if (candidate instanceof ResultErr && isTaggedError(candidate.error)) {
-    return err(candidate.error);
+    return candidate;
   }
   return internalFailure(phase, candidate, options);
 };
@@ -1731,13 +1735,16 @@ export async function* executeSubscription(
     if (options.signal.aborted) closeInner();
     else options.signal.addEventListener("abort", closeInner, { once: true });
   }
+  // The per-procedure Result codec is built once per execution, not per
+  // emitted item — its registry Map and Standard Schema adapters do not
+  // depend on the item.
+  const codec = procedureResultCodec(procedure._def.output, procedure._def.definitions);
   try {
     while (true) {
       const step = await inner.next();
       if (options.signal?.aborted) return;
       if (step.done) return;
       const result = normalizeRuntimeResult(step.value, "handler", options);
-      const codec = procedureResultCodec(procedure._def.output, procedure._def.definitions);
       if (result.status === "error" && ServerInternal.is(result.error)) {
         yield err(result.error);
         return;

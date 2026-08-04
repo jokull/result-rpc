@@ -3,8 +3,9 @@
 > **0.3 update:** this research document predates the 0.3 release. The Result
 > algebra is no longer vendored — result-rpc depends on better-result 3.0 and
 > constrains its error channel to declared tagged errors at the RPC boundary.
-> The ownership boundary, wire protocol (v2, `{ status }` envelope), and the
-> per-procedure Result codec are described in ARCHITECTURE.md.
+> The ownership boundary, wire protocol (v1, `{ status }` envelope — no
+> version bump pre-1.0), and the per-procedure Result codec are described in
+> ARCHITECTURE.md.
 
 Working premise: one library owns the Result algebra, procedure implementation,
 wire protocol, generated client, reactive query cache, and UI query API. Recoverable
