@@ -75,7 +75,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
     <section class="sequence shell" aria-labelledby="sequence-title">
       <div class="section-heading">
         <p class="section-label">One mutation, end to end</p>
-        <h2 id="sequence-title">Eleven failures reach the component. It handles one.</h2>
+        <h2 id="sequence-title">Every failure your mutation can produce has an owner above it — except the errors you actually <em>want</em> to worry about.</h2>
       </div>
       <HeroSequence client:visible />
     </section>
@@ -177,68 +177,6 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
 &#125;)</code></pre>
         </figure>
       </article>
-    </section>
-
-    <section class="batteries shell" aria-labelledby="batteries-title">
-      <div class="section-heading">
-        <p class="section-label">Framework defaults</p>
-        <h2 id="batteries-title">Infrastructure failures have default owners.</h2>
-        <p class="section-lede">The library defines standard server and client failures and provides React owners for them. Applications add only the layers whose guarantees and reactions depend on product policy.</p>
-      </div>
-
-      <div class="ledger">
-        <div class="ledger-col">
-          <h3><span class="sign plus">+</span> The call path accumulates</h3>
-          <ul>
-            <li>
-              <p class="ledger-src">application procedures and middleware</p>
-              <p class="ledger-tags"><code>doc/not-found</code> <code>auth/write-access-required</code></p>
-            </li>
-            <li>
-              <p class="ledger-src">the server boundary</p>
-              <p class="ledger-tags"><code>server/bad-request</code> <code>server/internal</code></p>
-            </li>
-            <li>
-              <p class="ledger-src">the client boundary</p>
-              <p class="ledger-tags"><code>client/offline</code> <code>client/network-failure</code> <code>client/timeout</code> <code>client/http-failure</code> <code>client/protocol-violation</code> <code>client/decode-failure</code> <code>client/stale</code></p>
-            </li>
-          </ul>
-        </div>
-
-        <div class="ledger-col">
-          <h3><span class="sign minus">−</span> The component tree discharges</h3>
-          <ul>
-            <li>
-              <p class="ledger-src"><strong>TransportShell</strong> <span class="badge included">included</span></p>
-              <p class="ledger-tags"><code>client/offline</code> <code>client/network-failure</code> <code>client/timeout</code></p>
-              <p class="ledger-note">Pauses what's beneath it, resumes on reconnect.</p>
-            </li>
-            <li>
-              <p class="ledger-src"><strong>DefectShell</strong> <span class="badge included">included</span></p>
-              <p class="ledger-tags"><code>client/http-failure</code> <code>client/protocol-violation</code> <code>client/decode-failure</code> <code>server/bad-request</code> <code>server/internal</code></p>
-              <p class="ledger-note">Nothing a component can render a branch for — escalates to the error boundary.</p>
-            </li>
-            <li>
-              <p class="ledger-src"><strong>StaleShell</strong> <span class="badge included">included</span></p>
-              <p class="ledger-tags"><code>client/stale</code></p>
-              <p class="ledger-note">A deploy left this tab behind. The reload is the fix.</p>
-            </li>
-            <li>
-              <p class="ledger-src"><strong>WriteAccessShell</strong> <span class="badge yours">application</span></p>
-              <p class="ledger-tags"><code>auth/write-access-required</code></p>
-              <p class="ledger-note">Opens the login dialog and provides writer context to its subtree.</p>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="ledger-result">
-        <p class="ledger-result-label">What reaches your component</p>
-        <p class="ledger-result-tag"><code>doc/not-found</code></p>
-        <p class="ledger-result-note">Framework failures are handled by stock shells. Write access is handled by one application shell. The component is left with the domain failure it can render.</p>
-      </div>
-
-      <p class="batteries-more">Other application shells can own <code>billing/plan-required</code> for an upgrade dialog, <code>workspace/not-found</code> for a route segment, or <code>api/rate-limited</code> for a retry countdown. Shells form an explicit chain, so application claims extend the built-in owners without replacing them. <a href="/concepts/shells/">How shells work →</a></p>
     </section>
 
     <section class="faq shell" aria-labelledby="faq-title">
@@ -404,36 +342,6 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
   .pillar-code .c { color: #a8c5d9; }
   .pillar-code .k { color: #e7d28a; }
   .pillar-code .s { color: #cdb96a; }
-  /* --- Batteries: the add/subtract ledger --------------------------------- */
-  .batteries { padding-block: 20px 96px; }
-  .section-lede { max-width: 66ch; margin: 18px 0 0; color: #3f4846; font-size: 16.5px; line-height: 1.66; }
-  .ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
-  .ledger-col { padding: 26px; border: 1px solid rgba(17,17,17,.16); border-radius: 9px; background: rgba(255,253,247,.6); }
-  .ledger-col:last-child { background: #e4edf4; }
-  .ledger-col h3 { display: flex; align-items: center; gap: 11px; margin: 0 0 20px; font: 600 17px/1.2 var(--blume-font-display); letter-spacing: -.02em; }
-  .sign { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font: 700 15px/1 var(--blume-font-mono); }
-  .sign.plus { color: #fffdf7; background: #2e5090; }
-  .sign.minus { color: #111111; background: #e7d28a; }
-  .ledger-col ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 17px; }
-  .ledger-col li { padding-bottom: 17px; border-bottom: 1px dashed rgba(17,17,17,.16); }
-  .ledger-col li:last-child { padding-bottom: 0; border-bottom: 0; }
-  .ledger-src { margin: 0 0 8px; color: #111111; font-size: 14px; line-height: 1.45; }
-  .ledger-src strong { font-weight: 700; }
-  .ledger-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
-  .ledger-tags code, .ledger-src code { padding: .16em .42em; border-radius: 4px; background: rgba(46,80,144,.11); color: #213e76; font: 500 11.5px/1.35 var(--blume-font-mono); }
-  .ledger-note { margin: 9px 0 0; color: #4a5351; font-size: 13px; line-height: 1.55; }
-  .badge { padding: .18em .5em; border-radius: 4px; font: 600 10px/1 var(--blume-font-mono); letter-spacing: .06em; text-transform: uppercase; }
-  .badge.included { color: #1f5133; background: #cfe6d6; }
-  .badge.yours { color: #fffdf7; background: #2e5090; }
-  .ledger-result { margin-top: 22px; padding: 26px 30px; border: 2px solid #2e5090; border-radius: 9px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 18px; }
-  .ledger-result-label { margin: 0; color: #2e5090; font: 600 11px/1.3 var(--blume-font-mono); letter-spacing: .12em; text-transform: uppercase; }
-  .ledger-result-tag { margin: 0; }
-  .ledger-result-tag code { padding: .2em .5em; border-radius: 5px; background: #2e5090; color: #fffdf7; font: 600 15px/1.3 var(--blume-font-mono); }
-  .ledger-result-note { flex: 1 1 380px; margin: 0; color: #3f4846; font-size: 14.5px; line-height: 1.6; }
-  .batteries-more { max-width: 78ch; margin: 26px 0 0; color: #4a5351; font-size: 14.5px; line-height: 1.68; }
-  .batteries-more code { padding: .08em .35em; border-radius: 4px; background: rgba(46,80,144,.1); color: #213e76; font: 500 .88em/1 var(--blume-font-mono); }
-  .batteries-more a { color: #2e5090; font-weight: 600; text-decoration: none; white-space: nowrap; }
-
   /* --- FAQ ---------------------------------------------------------------- */
   .faq { padding-block: 20px 104px; }
   .faq-list { display: grid; gap: 0; border-top: 1px solid rgba(17,17,17,.16); }
@@ -472,7 +380,6 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
     .pillar:nth-child(even) .pillar-copy,
     .pillar:nth-child(even) .pillar-code { order: 0; }
     .pillar:nth-child(even) .pillar-code { box-shadow: -11px 14px 0 #e7d28a; }
-    .ledger { grid-template-columns: 1fr; }
   }
   @media (max-width: 680px) {
     .shell { width: min(100% - 30px, 1200px); }
