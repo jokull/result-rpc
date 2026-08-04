@@ -9,6 +9,14 @@ change: every way an operation can fail is a typed, wire-safe value in that
 operation's own closed union, and responsibility for each failure is assigned
 to exactly one place in the component tree.
 
+Results are [better-result](https://github.com/dmmulroy/better-result) 3.0's
+errors-as-values runtime — `Ok`/`Err` class instances, upstream composition,
+`Result.codec`, generator behavior, Panic semantics. result-rpc adds the RPC
+boundary: only declared, serializable, reifiable tagged errors may enter or
+leave a procedure. A better-result Result whose error is already a result-rpc
+tagged error flows into a handler unchanged; a foreign error folds with
+`mapError` before the boundary.
+
 **Expected failures are part of the contract. Unexpected exceptions are not.**
 Procedures return anticipated failures as tagged values in their declared
 `Result`. Unexpected server exceptions are reported through `onInternalError`

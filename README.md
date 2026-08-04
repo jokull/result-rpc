@@ -24,9 +24,11 @@
 > `node_modules/result-rpc/skills/result-rpc/SKILL.md`.
 
 result-rpc is an RPC layer for React with one closed, wire-safe failure union
-per operation. Procedures return expected failures as tagged values; unexpected
-exceptions remain defects and cross the server boundary only as a sanitized
-`server/internal` failure.
+per operation. Results are [better-result](https://github.com/dmmulroy/better-result) 3.0's
+errors-as-values runtime — result-rpc adds the RPC boundary: only declared,
+serializable tagged errors cross the wire. Procedures return expected failures
+as tagged values; unexpected exceptions remain defects and cross the server
+boundary only as a sanitized `server/internal` failure.
 
 The client adds the failures that originate along its part of the call path:
 offline, network, timeout, protocol, decode, and stale-client failures. React

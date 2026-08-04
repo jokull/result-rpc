@@ -48,6 +48,7 @@ const pageDescription = 'Typed RPC for React. Errors accumulate along the call p
         <div class="kicker"><span></span> Typed RPC and failure ownership for React</div>
         <h1>Errors are values.<br /><em>Values have owners.</em></h1>
         <p class="lede">Errors accumulate along the call path and discharge along the component tree. Every operation has one closed, wire-safe failure union; React shells claim failures owned above a component, leaving that component with only the cases it must handle.</p>
+        <p class="built-on">Built on <a href="https://github.com/dmmulroy/better-result">better-result</a> — the errors-as-values Result runtime — with one rule added: only declared, serializable tagged errors cross the wire.</p>
         <div class="actions">
           <a class="button primary" href="/start/quickstart/">Read the quickstart <span>→</span></a>
           <a class="button secondary" href="/start/introduction/">Read the introduction</a>
@@ -365,6 +366,8 @@ archive: server.procedure().mutation((&#123; touch &#125;) =&gt; &#123;
   h1 { margin: 25px 0; color: #111111; font: 700 clamp(55px, 5.6vw, 82px)/.96 var(--blume-font-display); letter-spacing: -.058em; }
   h1 em { color: #2e5090; font-style: normal; font-weight: 500; }
   .lede { max-width: 610px; margin: 0; color: #3f4846; font-size: 18px; line-height: 1.68; }
+  .built-on { margin-top: 18px; font-size: 15px; line-height: 1.6; color: #486494; }
+  .built-on a { color: #2e5090; text-decoration: underline; text-underline-offset: 3px; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 34px; }
   .button { min-height: 50px; display: inline-flex; justify-content: center; align-items: center; gap: 16px; padding: 0 21px; border: 1px solid rgba(17,17,17,.24); border-radius: 5px; text-decoration: none; font-size: 14px; font-weight: 600; }
   .button.primary { color: #fffdf7; background: #2e5090; border-color: #2e5090; }
