@@ -84,7 +84,7 @@ const addSpot = server.implement(addSpotContract).handler(async ({ input, errors
   // Attempting the insert IS the uniqueness check — `tryDb` turns the
   // constraint outcome into a Result instead of a thrown driver error.
   const inserted = await tryDb(context.db.insert(spots).values(row).returning());
-  if (!inserted.ok) {
+  if (inserted.status === "error") {
     return matchError(inserted.error, {
       "db/unique-violation": () => err(errors.nameTaken({ name: input.name })),
       "db/foreign-key-violation": (e) => {

@@ -90,7 +90,7 @@ constructs a fresh instance from the same definition on the client:
 ```ts
 const result = await client.doc.byId({ id: "missing" });
 
-if (!result.ok && DocNotFound.is(result.error)) {
+if (result.status === "error" && DocNotFound.is(result.error)) {
   result.error instanceof Error; // true, after the wire
   result.error.data.docId; // string
 }

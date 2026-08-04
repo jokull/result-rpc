@@ -11,7 +11,7 @@ while preparing a query—and classifies common SQLite and PostgreSQL failures:
 import { tryDb } from "result-rpc/db";
 
 const inserted = await tryDb(db.insert(reviews).values(row).returning());
-if (!inserted.ok) {
+if (inserted.status === "error") {
   return matchError(inserted.error, {
     "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId })),
     "db/foreign-key-violation": () => err(errors.hotelNotFound({ hotelId })),

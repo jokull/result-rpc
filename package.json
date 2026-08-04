@@ -1,6 +1,6 @@
 {
   "name": "result-rpc",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Typed RPC for React: errors accumulate along the call path and discharge along the component tree",
   "keywords": [
     "agent-skill",
@@ -109,6 +109,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
+    "better-result": "^3.0.0",
     "drizzle-orm": "1.0.0-rc.4",
     "next": "16.2.12",
     "oxfmt": "0.61.0",
@@ -125,6 +126,7 @@
     "vite": "8.1.5"
   },
   "peerDependencies": {
+    "better-result": "^3.0.0",
     "react": ">=18.3"
   },
   "engines": {

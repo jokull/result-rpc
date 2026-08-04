@@ -57,7 +57,7 @@ keys:
 
 ```tsx
 const result = await rename.mutateAsync(toInput(form.values));
-if (!result.ok && result.error._tag === "server/bad-request") {
+if (result.status === "error" && result.error._tag === "server/bad-request") {
   setFieldErrors(fieldIssues(result.error));
   // { "title": ["Expected a string"], "author.email": ["Expected an email"] }
 }

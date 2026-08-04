@@ -14,6 +14,12 @@ result-rpc is an RPC layer for React — one library covering:
 - owning failures at the right tree position through shells — error
   boundaries generalized to values.
 
+> **0.3 update:** the Result runtime is now better-result 3.0 as a dependency
+> (breaking wire change with the `{ status }` envelope — no protocol version
+> bump pre-1.0, since result-rpc ships both sides of the wire; per-procedure
+> Result codec). This
+> document tracks the current architecture.
+
 It replaces the public roles of better-result, tRPC, and React Query, and
 deliberately nothing more: routing, SSR, and bundling belong to whatever owns
 the tree. React bindings are first-class and intended — the shell model is a
@@ -256,10 +262,49 @@ definition identity and tag:
 - framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
   namespaces.
 
+Each definition owns a private `TaggedError` subclass. Router composition compares
+definition identity and tag:
+
+- reusing the same definition is allowed;
+- two different definitions with the same tag are a startup error;
+- tags must be namespaced strings such as `doc/not-found`;
+- framework tags reserve the `client/`, `server/`, `protocol/`, and `control/`
+  namespaces.
+
 The `.is` method checks for an instance of that exact definition. `.decode` is the
 trust boundary: it validates an encoded tag and data codec, then constructs the
 matching instance. A shape-compatible object is neither accepted by `err()` at
 compile time nor accepted from a handler at runtime.
+
+### Why the boundary union is closed (`DeclaredProcedureErrors`)
+
+A procedure handler must return `Result<Output, DeclaredProcedureErrors>` — the
+exact union of the definitions declared on that procedure (plus the framework
+`server/internal` and `server/bad-request`). It deliberately does **not** accept
+`Result<Output, AnyTaggedError>`, for three reasons:
+
+1. **The compile-time contract is the feature.** The closed union is what makes
+   `switch (query.error._tag)` exhaustive, what shells subtract, and what
+   `.errors()` gates. A handler that could return any tagged error would compile
+   an undeclared tag, and the boundary would then sanitize it to
+   `server/internal` — the type says one error, the wire says another. That
+   type/runtime divergence is worse than a compile error.
+2. **Sanitization is a backstop, not a policy.** The runtime registry check
+   exists because `any`, assertions, and malformed handler returns bypass
+   typing; it is defense-in-depth for the type layer, not a replacement for it.
+   Loosening the type would make the runtime the _only_ gate and silently
+   discard the library's headline diagnostic.
+3. **The accumulation machinery derives from declared sets.** Middleware,
+   layer, and shell unions accumulate only what is declared; an open error
+   channel would leak undeclared tags into derived unions at the type level.
+
+This is a boundary decision, not a runtime decision: framework-internal
+execution paths (`normalizeRuntimeResult`, `executeProcedure`'s erased
+overload) use `Result<unknown, AnyTaggedError>` freely. Only the public
+procedure contract is closed. Upstream adoption needs no loosening: a
+better-result Result whose error is a result-rpc tagged error is declared in
+`.errors({ ... })` and returned zero-copy; a foreign error is folded with
+`mapError` before the boundary.
 
 ### Registry
 
@@ -696,7 +741,7 @@ The internal query function is equivalent to:
 ```ts
 async function execute(): Promise<T> {
   const result = await client.procedure(input);
-  if (!result.ok) throw result.error;
+  if (result.isErr()) throw result.error;
   return result.value;
 }
 ```
@@ -1218,7 +1263,8 @@ bypass the same codecs used by unary remote calls.
 
 ## Deliberate non-goals for the first release
 
-- compatibility wrappers around better-result or tRPC types;
+- compatibility wrappers around better-result or tRPC types (0.3 uses
+  better-result directly — the wrappers question is moot);
 - exposing TanStack Query option or observer types;
 - unversioned or one-sided pluggable serializers;
 - automatic transmission of `Error`, stack, or cause;

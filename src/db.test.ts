@@ -22,11 +22,11 @@ describe("tryDb", () => {
   test("constraint outcomes become tagged values a handler can branch on", async () => {
     const db = await makeDb();
     const first = await tryDb(db.insert(things).values({ id: "a", label: "x" }));
-    expect(first.ok).toBe(true);
+    expect(first.isOk()).toBe(true);
 
     const dupe = await tryDb(db.insert(things).values({ id: "b", label: "x" }));
-    expect(dupe.ok).toBe(false);
-    if (!dupe.ok) {
+    expect(dupe.isOk()).toBe(false);
+    if (!dupe.isOk()) {
       expect(dupe.error._tag).toBe("db/unique-violation");
       expect(dupe.error.data).toEqual({ constraint: "things.label" });
     }
@@ -34,12 +34,12 @@ describe("tryDb", () => {
     const orphan = await tryDb(
       db.insert(things).values({ id: "c", label: "y", parent: "missing" }),
     );
-    expect(orphan.ok).toBe(false);
-    if (!orphan.ok) expect(orphan.error._tag).toBe("db/foreign-key-violation");
+    expect(orphan.isOk()).toBe(false);
+    if (!orphan.isOk()) expect(orphan.error._tag).toBe("db/foreign-key-violation");
 
     const broken = await tryDb(() => db.run("SELECT * FROM nonexistent"));
-    expect(broken.ok).toBe(false);
-    if (!broken.ok) expect(broken.error._tag).toBe("db/query-failure");
+    expect(broken.isOk()).toBe(false);
+    if (!broken.isOk()) expect(broken.error._tag).toBe("db/query-failure");
   });
 
   test("classifies a node:sqlite constraint through DrizzleQueryError.cause", async () => {
@@ -54,8 +54,8 @@ describe("tryDb", () => {
     );
     const duplicate = await tryDb(Promise.reject(drizzleError));
 
-    expect(duplicate.ok).toBe(false);
-    if (!duplicate.ok) {
+    expect(duplicate.isOk()).toBe(false);
+    if (!duplicate.isOk()) {
       expect(duplicate.error._tag).toBe("db/unique-violation");
       expect(duplicate.error.data).toEqual({ constraint: "things.label" });
       expect(duplicate.error.cause).toBe(drizzleError);
@@ -76,8 +76,8 @@ describe("tryDb", () => {
     };
     const duplicate = await tryDb(Promise.reject(effectError));
 
-    expect(duplicate.ok).toBe(false);
-    if (!duplicate.ok) {
+    expect(duplicate.isOk()).toBe(false);
+    if (!duplicate.isOk()) {
       expect(duplicate.error._tag).toBe("db/unique-violation");
       expect(duplicate.error.data).toEqual({ constraint: "things.label" });
       expect(duplicate.error.cause).toBe(effectError);
@@ -101,7 +101,7 @@ describe("constraint extraction", () => {
     const outcome = await tryDb(
       Promise.reject(Object.assign(new Error(message), { code: "SQLITE_CONSTRAINT_UNIQUE" })),
     );
-    if (outcome.ok) throw new Error("expected a database failure");
+    if (outcome.isOk()) throw new Error("expected a database failure");
     return (outcome.error.data as { readonly constraint?: string }).constraint;
   };
 

@@ -1,6 +1,9 @@
 import {
   type InputOf,
   type AnyWireCodec,
+  type Err,
+  type GenErr,
+  type InferErr,
   type AnyLayer,
   type AnyModel,
   type AnyProcedure,
@@ -203,6 +206,15 @@ const erasedStringCodec: AnyWireCodec = wire.string;
 // @ts-expect-error An erased codec registry cannot feed arbitrary input into a specific encoder.
 erasedStringCodec.encode("value");
 export type _ErasedCodecDoesNotLeakInput = Assert<Equal<InputOf<AnyWireCodec>, never>>;
+const lifecycleCodec = wire.enum(["draft", "published"]);
+export type _EnumInfersStringLiteralUnion = Assert<
+  Equal<InputOf<typeof lifecycleCodec>, "draft" | "published">
+>;
+lifecycleCodec.encode("draft");
+// @ts-expect-error Enum codecs reject strings outside their declared literal union.
+lifecycleCodec.encode("archived");
+// @ts-expect-error An enum must contain at least one string literal.
+wire.enum([]);
 const structuralSchema: string = wire.object({ id: wire.string }).schema;
 void structuralSchema;
 wire.serializable((value): value is string => typeof value === "string", {
@@ -899,7 +911,7 @@ const shellMutation = AuthShell.useMutation(client.example.mutation, {
     void residualFailure;
   },
   onSettled: (result) => {
-    if (!result.ok) {
+    if (!result.isOk()) {
       const residualFailure: ReturnType<typeof Missing> = result.error;
       void residualFailure;
     }
@@ -915,7 +927,7 @@ export type _ShellMutationStateSubtractsClaimedTags = Assert<
 >;
 type ShellMutationResultError = Extract<
   Awaited<ReturnType<typeof shellMutation.mutateAsync>>,
-  { readonly ok: false }
+  { readonly status: "error" }
 >["error"];
 export type _ShellMutationPromiseSubtractsClaimedTags = Assert<
   Equal<ShellMutationResultError, ReturnType<typeof Missing>>
@@ -1354,8 +1366,9 @@ errorCatalog(nsErrors, { "billing/card-declined": () => "" });
 
 // --- Result composition ------------------------------------------------------
 
+import { Result as BetterResult } from "better-result";
 import { toResult as toResultReact } from "../src/react/index.js";
-import { all, andThen, gen, map, mapError, tryPromise } from "../src/index.js";
+import { all, andThen, gen, map, mapError } from "../src/index.js";
 void toResultReact;
 
 const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 });
@@ -1367,7 +1380,7 @@ declare const parseResult: Result<number, ReturnType<typeof Conflict2>>;
 const genOutcome = gen(function* () {
   const doc = yield* findResult;
   const size = yield* parseResult;
-  return `${doc}:${size}`;
+  return ok(`${doc}:${size}`);
 });
 export type _GenAccumulatesYieldedUnion = Assert<
   Equal<
@@ -1379,7 +1392,7 @@ export type _GenAccumulatesYieldedUnion = Assert<
 // async gen returns a Promise of the same accumulation.
 const genAsyncOutcome = gen(async function* () {
   const doc = yield* findResult;
-  return doc.length;
+  return ok(doc.length);
 });
 export type _GenAsyncIsPromise = Assert<
   Equal<typeof genAsyncOutcome, Promise<Result<number, ReturnType<typeof Missing>>>>
@@ -1387,18 +1400,12 @@ export type _GenAsyncIsPromise = Assert<
 
 // all() collects tuple values positionally and unions the errors.
 const allOutcome = all([findResult, parseResult]);
-type AllValue = Extract<typeof allOutcome, { ok: true }>["value"];
-type AllError = Extract<typeof allOutcome, { ok: false }>["error"];
-export type _AllTupleIsPositional = Assert<Equal<AllValue, readonly [string, number]>>;
+type AllValue = Extract<typeof allOutcome, { status: "ok" }>["value"];
+type AllError = Extract<typeof allOutcome, { status: "error" }>["error"];
+export type _AllTupleIsPositional = Assert<Equal<AllValue, [string, number]>>;
 export type _AllUnionsErrors = Assert<
   Equal<AllError, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
 >;
-const allRecordOutcome = all({ doc: findResult, size: parseResult });
-type AllRecordValue = Extract<typeof allRecordOutcome, { ok: true }>["value"];
-export type _AllRecordPreservesReadonlyKeys = Assert<
-  Equal<AllRecordValue, { readonly doc: string; readonly size: number }>
->;
-
 class SpecializedFailure extends TaggedError<
   "type/specialized",
   { readonly code: string },
@@ -1425,19 +1432,30 @@ export type _MapErrorReplacesSubclassExactly = Assert<
   Equal<typeof remappedSpecialized, Result<string, ReturnType<typeof Missing>>>
 >;
 
-// tryPromise requires a tagged error from the catch handler.
-const adopted = tryPromise(
-  async () => 1,
-  () => Missing({ id: "x" }),
-);
+// tryPromise folds the catch handler's Result into the constrained union.
+const adopted = BetterResult.tryPromise({
+  try: async () => 1,
+  catch: () => Missing({ id: "x" }),
+});
 export type _TryPromiseTagged = Assert<
   Equal<typeof adopted, Promise<Result<number, ReturnType<typeof Missing>>>>
 >;
-void tryPromise(
-  async () => 1,
-  // @ts-expect-error catch must return a tagged error, not an Error subclass
-  (cause) => new Error(String(cause)),
-);
+// Upstream tryPromise accepts any catch-returned error value; the tagged-only
+// rule is the RPC boundary's, so a foreign Error is legal here and fails at
+// the procedure boundary instead.
+void BetterResult.tryPromise({
+  try: async () => 1,
+  catch: (cause: unknown) => new Error(String(cause)),
+});
+
+// InferErr/GenErr spell the error channel of a procedure or composition.
+export type _InferErrSpellsChannel = Assert<
+  Equal<InferErr<typeof genOutcome>, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
+export type _GenErrAccumulates = Assert<
+  Equal<GenErr<YieldResult>, ReturnType<typeof Missing> | ReturnType<typeof Conflict2>>
+>;
+type YieldResult = Err<ReturnType<typeof Missing>> | Err<ReturnType<typeof Conflict2>>;
 
 // --- Regression: an implemented procedure keeps its contract's kind ---------
 // `ProcedureImplementer.handler()` once widened the kind to

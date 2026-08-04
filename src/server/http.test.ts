@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire, type WireCodec, type WireValue } from "../index.js";
 import { createFetchHandler } from "./http.js";
 import { rpc, type ErrorDefinitionMap } from "./contract.js";
-import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION } from "../protocol.js";
 import { serialize } from "../serializer.js";
 
 const POISON = "TOP-SECRET-connection-string-9f83a";
@@ -41,6 +41,20 @@ const leakyPrivate = r
   // Deliberately bypass the public contract type to test the runtime backstop.
   .errors({ PrivateFailure } as unknown as ErrorDefinitionMap)
   .query(() => err(PrivateFailure({ detail: POISON })) as never);
+
+const panicBoom = r
+  .procedure()
+  .input(wire.object({}))
+  .output(wire.object({ ok: wire.boolean }))
+  // A Result callback that throws becomes a better-result Panic — a defect,
+  // not a recoverable error channel. It must surface as server/internal with
+  // the Panic's cause in observability, never as a declared domain error.
+  .query(() => {
+    ok(true).map(() => {
+      throw new Error(`callback threw: ${POISON}`);
+    });
+    return ok({ ok: true });
+  });
 
 const fine = r
   .procedure()
@@ -99,6 +113,7 @@ const explodingStream = r.implement(explodingStreamContract).stream(async functi
 
 const router = r.router({
   boom,
+  panicBoom,
   leakyPrivate,
   fine,
   noHttpStatus,
@@ -109,7 +124,7 @@ const router = r.router({
 });
 
 const post = (path: string, input: unknown) => {
-  const encoded = serialize({ v: 1, path, input });
+  const encoded = serialize({ v: PROTOCOL_VERSION, path, input });
   if (!encoded.ok) throw new Error("failed to encode request envelope");
   return new Request("https://example.test/rpc", {
     method: "POST",
@@ -143,6 +158,28 @@ describe("fetch handler wire boundary", () => {
     expect(text).toContain("server/internal");
     expect(text).toContain("inc_");
     expect(response.status).toBe(500);
+  });
+
+  test("a Result callback Panic becomes a sanitized framework failure, never a domain error", async () => {
+    const internalErrors: unknown[] = [];
+    const handler = createFetchHandler({
+      router,
+      createContext: () => ({}),
+      onInternalError: (details) => internalErrors.push(details),
+    });
+    const response = await handler(post("panicBoom", {}));
+    const text = await response.text();
+    expect(text).not.toContain(POISON);
+    expect(text).toContain("server/internal");
+    expect(text).toContain("inc_");
+    expect(response.status).toBe(500);
+    // The Panic's cause reaches server-side observability in full (including
+    // the diagnostic secret — incident detail), while the wire stays clean.
+    // That split — rich cause inward, sanitized failure outward — is the
+    // boundary rule for defects.
+    expect(JSON.stringify(internalErrors)).toContain("callback threw");
+    expect(JSON.stringify(internalErrors)).toContain(POISON);
+    expect((internalErrors[0] as { phase?: string })?.phase).toBe("handler");
   });
 
   test("a private-visibility error is sanitized to server/internal on the wire", async () => {
@@ -262,17 +299,17 @@ describe("fetch handler wire boundary", () => {
       },
       {
         name: "invalid envelope",
-        request: () => encodedPost({ v: 1, nope: true }),
+        request: () => encodedPost({ v: PROTOCOL_VERSION, nope: true }),
         expected: { tag: "protocol/invalid-request", status: 400, policyStatus: 400 },
       },
       {
         name: "batch limit",
         request: () =>
           encodedPost({
-            v: 1,
+            v: PROTOCOL_VERSION,
             batch: [
-              { v: 1, id: "a", path: "fine", input: { name: "a" } },
-              { v: 1, id: "b", path: "fine", input: { name: "b" } },
+              { v: PROTOCOL_VERSION, id: "a", path: "fine", input: { name: "a" } },
+              { v: PROTOCOL_VERSION, id: "b", path: "fine", input: { name: "b" } },
             ],
           }),
         maxBatchItems: 1,
@@ -315,8 +352,8 @@ describe("fetch handler wire boundary", () => {
         name: "subscription in batch",
         request: () =>
           encodedPost({
-            v: 1,
-            batch: [{ v: 1, id: "s", path: "deniedStream", input: {} }],
+            v: PROTOCOL_VERSION,
+            batch: [{ v: PROTOCOL_VERSION, id: "s", path: "deniedStream", input: {} }],
           }),
         expected: {
           tag: "protocol/invalid-request",
@@ -493,7 +530,7 @@ const postTo = (handler: (r: Request) => Promise<Response>, body: unknown) => {
 describe("response headers", () => {
   test("a login mutation sets an HttpOnly cookie", async () => {
     const response = await postTo(headerHandler, {
-      v: 1,
+      v: PROTOCOL_VERSION,
       path: "login",
       input: { email: "ada@example.com" },
     });
@@ -506,10 +543,10 @@ describe("response headers", () => {
 
   test("a batch shares one response, so its cookies combine rather than overwrite", async () => {
     const response = await postTo(headerHandler, {
-      v: 1,
+      v: PROTOCOL_VERSION,
       batch: [
-        { v: 1, id: "b0", path: "login", input: { email: "grace@example.com" } },
-        { v: 1, id: "b1", path: "remember", input: {} },
+        { v: PROTOCOL_VERSION, id: "b0", path: "login", input: { email: "grace@example.com" } },
+        { v: PROTOCOL_VERSION, id: "b1", path: "remember", input: {} },
       ],
     });
     expect(response.status).toBe(200);
@@ -522,7 +559,7 @@ describe("response headers", () => {
   });
 
   test("a procedure that sets nothing leaves the response untouched", async () => {
-    const response = await postTo(headerHandler, { v: 1, path: "plain", input: {} });
+    const response = await postTo(headerHandler, { v: PROTOCOL_VERSION, path: "plain", input: {} });
     expect(response.headers.get("set-cookie")).toBeNull();
     // The contract digest is still stamped.
     expect(response.headers.get("x-result-rpc-contract")).toBeTruthy();
@@ -593,7 +630,7 @@ describe("the .headers() declaration", () => {
       router,
       createContext: () => ({ requestId: "req_2" }),
     });
-    const response = await postTo(handler, { v: 1, path: "rotated", input: {} });
+    const response = await postTo(handler, { v: PROTOCOL_VERSION, path: "rotated", input: {} });
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("rotated=1");
   });

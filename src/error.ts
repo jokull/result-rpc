@@ -68,7 +68,9 @@ export abstract class TaggedError<
 
   /** Lets a tagged error itself short-circuit a {@link gen} block. */
   *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
-    yield err(this);
+    // err() widens to the constrained Result union; the runtime branch here is
+    // always an Err, so the concrete yield type is preserved for gen.
+    yield err(this) as Err<this>;
     throw new TypeError("A yielded TaggedError cannot resume");
   }
 

@@ -9,3 +9,4 @@ website/dist/
 WAVES.md
 PLAN.md
 src/**/*.d.ts
+*.tgz

@@ -72,7 +72,7 @@ describe("attack-01 projection merge", () => {
 
     const close = runtime.mutation(client.close);
     const result = await close.getCurrentState().mutateAsync({ id: "t1" });
-    expect(result.ok).toBe(true);
+    expect(result.isOk()).toBe(true);
     await sleep(20);
 
     const state = list.getCurrentState();

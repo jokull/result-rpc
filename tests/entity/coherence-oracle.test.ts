@@ -292,7 +292,7 @@ describe("entity coherence oracle", () => {
           const outcome = await mutation
             .getCurrentState()
             .mutateAsync({ id: pick([...db.users.keys()]), name: `name-${step}` });
-          expect(outcome.ok).toBe(true);
+          expect(outcome.isOk()).toBe(true);
           mutation.destroy();
           await settle();
           // I3: freshness by identity — the mutation was the only request.
@@ -304,7 +304,7 @@ describe("entity coherence oracle", () => {
           const outcome = await mutation
             .getCurrentState()
             .mutateAsync({ id: pick([...db.users.keys()]), avatarUrl: `v${step}.png` });
-          expect(outcome.ok).toBe(true);
+          expect(outcome.isOk()).toBe(true);
           mutation.destroy();
           await settle();
           expect(requestCount() - before).toBe(1);
@@ -315,7 +315,7 @@ describe("entity coherence oracle", () => {
           const outcome = await mutation
             .getCurrentState()
             .mutateAsync({ id: pick([...db.docs.keys()]), title: `title-${step}` });
-          expect(outcome.ok).toBe(true);
+          expect(outcome.isOk()).toBe(true);
           mutation.destroy();
           await settle();
           expect(requestCount() - before).toBe(1);
@@ -326,7 +326,7 @@ describe("entity coherence oracle", () => {
           const outcome = await mutation
             .getCurrentState()
             .mutateAsync({ id: pick([...db.docs.keys()]) });
-          expect(outcome.ok).toBe(true);
+          expect(outcome.isOk()).toBe(true);
           mutation.destroy();
           await settle();
           expect(requestCount() - before).toBe(1);
@@ -338,7 +338,7 @@ describe("entity coherence oracle", () => {
             title: `created-${created}`,
             ownerId: pick([...db.users.keys()]),
           });
-          expect(outcome.ok).toBe(true);
+          expect(outcome.isOk()).toBe(true);
           mutation.destroy();
           await settle();
         } else {

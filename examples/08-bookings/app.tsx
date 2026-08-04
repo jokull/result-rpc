@@ -296,7 +296,7 @@ export function AddReviewForm({ hotelId }: { hotelId: string }) {
         void addReview
           .mutateAsync({ hotelId, rating: Number(rating), body })
           .then((result) => {
-            if (result.ok) setBody("");
+            if (result.isOk()) setBody("");
           })
           .catch(() => undefined);
       }}

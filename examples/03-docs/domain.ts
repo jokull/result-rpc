@@ -58,7 +58,7 @@ export type Doc = InputOf<typeof DocCodec>;
 
 export const DocEventCodec = wire.object({
   docId: wire.string,
-  kind: wire.union([wire.literal("renamed"), wire.literal("locked")]),
+  kind: wire.enum(["renamed", "locked"]),
   at: wire.date,
 });
 export type DocEvent = InputOf<typeof DocEventCodec>;

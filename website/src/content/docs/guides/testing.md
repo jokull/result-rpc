@@ -14,7 +14,7 @@ const client = createParityClient(appRouter, {
 const result = await client.doc.byId({ id: "missing" });
 
 expect(result).toEqual({
-  ok: false,
+  status: "error",
   error: {
     _tag: "doc/not-found",
     data: { docId: "missing" },

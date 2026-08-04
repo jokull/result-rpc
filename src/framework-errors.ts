@@ -65,12 +65,7 @@ export const ClientHttpFailure = error({
 export const ClientProtocolViolation = error({
   tag: "client/protocol-violation",
   data: wire.object({
-    reason: wire.union([
-      wire.literal("content-type"),
-      wire.literal("version"),
-      wire.literal("envelope"),
-      wire.literal("unknown-tag"),
-    ]),
+    reason: wire.enum(["content-type", "version", "envelope", "unknown-tag"]),
   }),
   httpStatus: 502,
   retry: "never",
@@ -81,7 +76,7 @@ export const ClientProtocolViolation = error({
 export const ClientDecodeFailure = error({
   tag: "client/decode-failure",
   data: wire.object({
-    target: wire.union([wire.literal("success"), wire.literal("error")]),
+    target: wire.enum(["success", "error"]),
   }),
   httpStatus: 502,
   retry: "never",

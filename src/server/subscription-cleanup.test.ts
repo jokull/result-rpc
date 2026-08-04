@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { err, error, ok, wire } from "../index.js";
 import { serverRpc } from "./index.js";
 import { createFetchHandler } from "./http.js";
-import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION } from "../protocol.js";
 import { serialize } from "../serializer.js";
 
 const Denied = error({ tag: "feed/denied", httpStatus: 401 });
@@ -41,7 +41,7 @@ const drain = async (endWith: "return" | "error"): Promise<Run> => {
     router: app.router({ feed }),
     createContext: () => ({}),
   });
-  const body = serialize({ v: 1, path: "feed", input: {} });
+  const body = serialize({ v: PROTOCOL_VERSION, path: "feed", input: {} });
   if (!body.ok) throw new Error("failed to encode the request envelope");
   const response = await handler(
     new Request("https://example.test/rpc", {

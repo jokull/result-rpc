@@ -1,5 +1,12 @@
 # result-rpc: research synthesis and revised design
 
+> **0.3 update:** this research document predates the 0.3 release. The Result
+> algebra is no longer vendored — result-rpc depends on better-result 3.0 and
+> constrains its error channel to declared tagged errors at the RPC boundary.
+> The ownership boundary, wire protocol (v1, `{ status }` envelope — no
+> version bump pre-1.0), and the per-procedure Result codec are described in
+> ARCHITECTURE.md.
+
 Working premise: one library owns the Result algebra, procedure implementation,
 wire protocol, generated client, reactive query cache, and UI query API. Recoverable
 failures are declared tagged instances with a canonical wire form. There is no public trailing `| Error` and no
@@ -426,7 +433,7 @@ Internally:
 ```ts
 const queryFn = async () => {
   const result = await client.doc.get(input);
-  if (!result.ok) throw result.error;
+  if (result.isErr()) throw result.error;
   return result.value;
 };
 ```

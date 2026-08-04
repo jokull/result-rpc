@@ -162,7 +162,7 @@ const mutationRetryMatrix = async () => {
         ...(retry === undefined ? {} : { retry }),
         optimistic: () => ({ rollback: () => (rolledBack = true) }),
         onFailure: (failure) => failures.push(failure._tag),
-        onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+        onSettled: (result) => settled.push(result.isOk() ? "ok" : result.error._tag),
         onCancel: (_input, context) => {
           cancellations += 1;
           context?.rollback();
@@ -232,7 +232,7 @@ const residualMutationRetryMatrix = async () => {
       const options = {
         ...(retry === undefined ? {} : { retry }),
         onFailure: (failure) => failures.push(failure._tag),
-        onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+        onSettled: (result) => settled.push(result.isOk() ? "ok" : result.error._tag),
         onCancel: () => {
           cancellations += 1;
         },
@@ -261,7 +261,7 @@ const residualMutationRetryMatrix = async () => {
       assert.deepEqual(failures, [expectedTag]);
       assert.deepEqual(settled, [expectedTag]);
       assert.equal(cancellations, 0);
-      assert.equal(outcome.ok, false);
+      assert.equal(outcome.isOk(), false);
       assert.equal(mutation.state, "failure");
       assert.equal(mounted.affected(), 0);
       assert.deepEqual(harness.reactions, []);
@@ -311,7 +311,7 @@ const mutationRetryCallbackFreshness = async () => {
   assert.equal(harness.mutationAttempts["residual-never"], 2);
   assert.deepEqual(retryGenerations, [0, 1]);
   assert.deepEqual(failureGenerations, [1]);
-  assert.equal(outcome.ok, false);
+  assert.equal(outcome.isOk(), false);
   await unmountHarness(harness, mounted);
 };
 
@@ -328,7 +328,7 @@ const mutationDefinitionCollision = async () => {
       retry: false,
       optimistic: () => ({ rollback: () => (rolledBack = true) }),
       onFailure: (failure) => failures.push(failure._tag),
-      onSettled: (result) => settled.push(result.ok ? "ok" : result.error._tag),
+      onSettled: (result) => settled.push(result.isOk() ? "ok" : result.error._tag),
       onCancel: (_input, context) => {
         cleanups += 1;
         context?.rollback();

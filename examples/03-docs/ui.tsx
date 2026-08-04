@@ -181,7 +181,7 @@ export function DocPage({ docId }: { docId: string }) {
 function DocActivity({ docId }: { docId: string }) {
   const client = useResultClient();
   const events = ViewerShell.useSubscription(client.doc.events, { id: docId });
-  if (!events.result?.ok) return null;
+  if (!events.result?.isOk()) return null;
   return (
     <p>
       Last activity: {events.result.value.kind} on {events.result.value.at.toDateString()}

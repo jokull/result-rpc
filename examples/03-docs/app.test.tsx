@@ -87,7 +87,7 @@ test("03-docs: the subscription streams under the same union", async () => {
     events.push(event);
   }
   expect(events).toEqual([
-    { ok: true, value: { docId: "doc_1", kind: "renamed", at: new Date("2026-01-01") } },
+    { status: "ok", value: { docId: "doc_1", kind: "renamed", at: new Date("2026-01-01") } },
   ]);
 });
 

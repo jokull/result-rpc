@@ -50,7 +50,7 @@ export const m${i} = app.procedure()
   s += `export type Inputs = RouterInputs<typeof contract>;\nexport type Outputs = RouterOutputs<typeof contract>;\n`;
   for (let i = 0; i < n; i++) {
     s += `export const r${i} = await client.g${i}.q({ id: "1", n: 1 });
-export const s${i} = r${i}.ok ? r${i}.value.v.a : r${i}.error._tag;\n`;
+export const s${i} = r${i}.status === "ok" ? r${i}.value.v.a : r${i}.error._tag;\n`;
   }
   return s;
 };

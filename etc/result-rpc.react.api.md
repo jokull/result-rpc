@@ -4,9 +4,12 @@
 
 ```ts
 
+import { Err as Err_2 } from 'better-result';
 import { FragmentProps } from 'react';
 import { FunctionComponentElement } from 'react';
+import { Ok as Ok_2 } from 'better-result';
 import { ReactNode } from 'react';
+import { Result as Result_2 } from 'better-result';
 import { SuspenseProps } from 'react';
 
 // @public (undocumented)
@@ -439,13 +442,7 @@ export type ErasedMiddlewareHandler = (args: {
 }) => MaybePromise<Result<unknown, AnyTaggedError>>;
 
 // @public (undocumented)
-export interface Err<E extends AnyTaggedError> {
-    [Symbol.iterator](): Iterator<Err<E>, never>;
-    // (undocumented)
-    readonly error: E;
-    // (undocumented)
-    readonly ok: false;
-}
+export type Err<E extends AnyTaggedError> = Err_2<never, E>;
 
 // @public (undocumented)
 export type ErrorData<TError> = TError extends {
@@ -716,14 +713,8 @@ export type NarrowProcedureClient<TProcedureClient> = true extends IsUnion<TProc
 // @public
 export type NullabilityCaveat = HasStrictNullChecks extends true ? "" : " (strictNullChecks is off, so nullability was not compared)";
 
-// @public
-export interface Ok<T> {
-    [Symbol.iterator](): Iterator<never, T>;
-    // (undocumented)
-    readonly ok: true;
-    // (undocumented)
-    readonly value: T;
-}
+// @public (undocumented)
+export type Ok<T, E extends AnyTaggedError = never> = Ok_2<T, E>;
 
 // @public (undocumented)
 export type OptionalShapeKeys<TShape extends CodecShape> = {
@@ -1006,7 +997,7 @@ export type RegisteredProviderClient = RegisteredClient extends object ? Registe
 export type RequiredShapeKeys<TShape extends CodecShape> = Exclude<keyof TShape, OptionalShapeKeys<TShape>>;
 
 // @public (undocumented)
-export type Result<T, E extends AnyTaggedError> = Ok<T> | Err<E>;
+export type Result<T, E extends AnyTaggedError> = Result_2<T, E>;
 
 // @public (undocumented)
 export interface ResultMutationObserver<TInput, TOutput, TError extends AnyTaggedError> {

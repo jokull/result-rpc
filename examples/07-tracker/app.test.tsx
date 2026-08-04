@@ -167,7 +167,7 @@ test("direct client round-trips success, domain failure, and a Date inside error
   // Assigning a closed issue fails with a real Date on the other side of the wire.
   const closed = await client.issues.assign({ issueId: "issue-2", assigneeId: "user-bob" });
   expect(closed).toEqual(err(issueErrors.closed({ issueId: "issue-2", closedAt: CLOSED_AT })));
-  if (!closed.ok && closed.error._tag === "issue/closed") {
+  if (!closed.isOk() && closed.error._tag === "issue/closed") {
     expect(closed.error.data.closedAt).toBeInstanceOf(Date);
   }
 });
@@ -481,7 +481,7 @@ test("a stale-shaped client gets server/bad-request projected onto fields", asyn
     const create = useResultMutation(looseClient.issues.create);
     async function submit() {
       const result = await create.mutateAsync({ id: "iss_stale", title: "no" });
-      if (!result.ok && result.error._tag === "server/bad-request") {
+      if (!result.isOk() && result.error._tag === "server/bad-request") {
         setFields(fieldIssues(result.error));
       }
     }

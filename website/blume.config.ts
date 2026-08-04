@@ -98,6 +98,7 @@ export default defineConfig({
           "/reference/ticket-demo",
           "/reference/examples",
           "/reference/sharp-edges",
+          "/reference/faq",
           "/reference/agent-skill",
         ],
       },

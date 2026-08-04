@@ -103,8 +103,8 @@ describe("06-sentry", () => {
   test("a defect correlates across the wire by incident id, no request-id plumbing", async () => {
     const world = boot();
     const result = await world.client.charge({ card: "boom" });
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("unreachable");
+    expect(result.isOk()).toBe(false);
+    if (result.isOk()) throw new Error("unreachable");
     if (result.error._tag !== "server/internal") throw new Error(result.error._tag);
     // the exception Sentry captured carries the same incident id the client received
     expect(world.sentry.exceptions).toHaveLength(1);

@@ -1278,7 +1278,7 @@ export const createQueryRuntime = <TClient>(
         queryFn: async ({ signal }: { signal: AbortSignal }) => {
           try {
             const result = await invokeProcedureClient(procedure, input, { signal });
-            if (!result.ok) throw result.error;
+            if (!result.isOk()) throw result.error;
             return result.value;
           } catch (failure) {
             if (isCancelled(failure)) throw new CancelledError({ revert: true });
@@ -1403,7 +1403,7 @@ export const createQueryRuntime = <TClient>(
             );
             if (!cursor.ok) throw new TypeError(`Invalid pagination cursor for ${metadata.path}`);
             const result = await invokePaginatedClient(procedure, input, cursor.value, { signal });
-            if (!result.ok) throw result.error;
+            if (!result.isOk()) throw result.error;
             return result.value;
           } catch (failure) {
             if (isCancelled(failure)) throw new CancelledError({ revert: true });
@@ -1555,7 +1555,7 @@ export const createQueryRuntime = <TClient>(
               signal: activeController!.signal,
             });
             lastTouched = getTouchedEntities(result);
-            if (!result.ok) throw result.error;
+            if (!result.isOk()) throw result.error;
             return result.value;
           },
           retry,
@@ -1775,7 +1775,7 @@ export const createQueryRuntime = <TClient>(
           try {
             for await (const result of currentStream!) {
               if (generation !== activeGeneration) return;
-              if (!result.ok) {
+              if (!result.isOk()) {
                 if (result.error._tag === "client/offline") {
                   state = { ...state, connection: "paused" };
                   notify();
@@ -1815,7 +1815,7 @@ export const createQueryRuntime = <TClient>(
               // says so, not when something refetches. Events take a fresh
               // sequence at arrival: stream order is respected, and a slower
               // mutation response from before the event cannot regress it.
-              if (result.ok) {
+              if (result.status === "ok") {
                 applyEntityWrites(result.value, nextWriteSeq());
                 // Derived from the value the client just decoded, using the
                 // same declared function the server side would apply — which
@@ -1824,12 +1824,12 @@ export const createQueryRuntime = <TClient>(
               }
               state = {
                 ...state,
-                connection: result.ok ? "open" : "closed",
+                connection: result.status === "ok" ? "open" : "closed",
                 result,
-                eventCount: state.eventCount + (result.ok ? 1 : 0),
+                eventCount: state.eventCount + (result.status === "ok" ? 1 : 0),
               };
               notify();
-              if (!result.ok) return;
+              if (result.status === "error") return;
             }
             if (generation === activeGeneration) {
               state = { ...state, connection: "closed" };

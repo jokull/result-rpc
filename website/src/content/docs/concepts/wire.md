@@ -36,7 +36,7 @@ Test the property you care about through a real wire-parity client:
 
 ```ts
 const result = await parityClient.doc.byId({ id: "doc_123" });
-if (result.ok) {
+if (result.status === "ok") {
   result.value.savedAt instanceof Date; // true after encode + HTTP + decode
 }
 ```
@@ -64,8 +64,22 @@ const Author = wire.object({
 ```
 
 It builds that same union, so the encoding — and therefore the contract digest
-— is unchanged. It is shorter, and it says "this field may be absent" rather
+— is unchanged. It is shorter, and it says "this field may be null" rather
 than making the reader infer it from a two-member union.
+
+String literal unions have the same shorthand. The tuple must be non-empty,
+and its values remain literal types without `as const`:
+
+```ts
+const Task = wire.object({
+  status: wire.enum(["open", "blocked", "done"]),
+});
+// InputOf<typeof Task>["status"] is "open" | "blocked" | "done"
+```
+
+Like `wire.nullable`, `wire.enum` is a spelling of the expanded union rather
+than a new wire construct. Its encoding and contract digest are identical to
+`wire.union([wire.literal("open"), wire.literal("blocked"), wire.literal("done")])`.
 
 For a recursive or otherwise richer application type, supply an actual type
 guard. Serializer support alone cannot prove an application shape:

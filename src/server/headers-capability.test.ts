@@ -11,7 +11,7 @@ import { describe, expect, test } from "bun:test";
 import { ok, wire } from "../index.js";
 import { serverRpc } from "./index.js";
 import { createFetchHandler } from "./http.js";
-import { PROTOCOL_CONTENT_TYPE } from "../protocol.js";
+import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION } from "../protocol.js";
 import { serialize } from "../serializer.js";
 
 interface Ctx {
@@ -36,7 +36,7 @@ const post = async (
   handler: (request: Request) => Promise<Response>,
   path: string,
 ): Promise<Response> => {
-  const body = serialize({ v: 1, path, input: {} });
+  const body = serialize({ v: PROTOCOL_VERSION, path, input: {} });
   if (!body.ok) throw new Error("failed to encode the request envelope");
   return handler(
     new Request("https://example.test/rpc", {

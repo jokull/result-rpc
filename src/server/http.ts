@@ -94,14 +94,14 @@ const streamProcedureResponse = (
         let failureEvent: { readonly failure: AnyTaggedError; readonly status: number } | undefined;
         if (next.done) {
           frame = { v: PROTOCOL_VERSION, seq: sequence++, done: true as const };
-        } else if (next.value.ok) {
+        } else if (next.value.status === "ok") {
           const output = encodeUnknownWireValue(procedure._def.output, next.value.value);
           if (!output.ok) throw new TypeError("Unable to encode subscription output");
           frame = {
             v: PROTOCOL_VERSION,
             seq: sequence++,
             done: false as const,
-            response: { v: PROTOCOL_VERSION, ok: true as const, value: output.value },
+            response: { v: PROTOCOL_VERSION, status: "ok" as const, value: output.value },
           };
         } else {
           failureEvent = {
@@ -114,7 +114,7 @@ const streamProcedureResponse = (
             done: false as const,
             response: {
               v: PROTOCOL_VERSION,
-              ok: false as const,
+              status: "error" as const,
               error: next.value.error.toJSON(),
             },
           };
@@ -123,7 +123,7 @@ const streamProcedureResponse = (
         if (!encoded.ok) throw new TypeError("Unable to encode subscription frame");
         controller.enqueue(encoder.encode(`${encoded.value}\n`));
         if (failureEvent) onError?.(failureEvent.failure, failureEvent.status);
-        if (next.done || !next.value.ok) {
+        if (next.done || next.value.status === "error") {
           settled = true;
           detachCaller();
           // The generator is parked at its last `yield` and nothing will resume
@@ -147,7 +147,7 @@ const streamProcedureResponse = (
           done: false,
           response: {
             v: PROTOCOL_VERSION,
-            ok: false,
+            status: "error",
             error: failure.toJSON(),
           },
         });
@@ -239,7 +239,7 @@ const encodeProcedureResult = (
   touched: readonly string[] = [],
 ): Response => {
   const touchedField = touched.length === 0 ? {} : { touched };
-  if (!result.ok) {
+  if (result.status === "error") {
     const status = statusForError(procedure, result.error);
     return finalizeFailure(result.error, status, touched);
   }
@@ -248,7 +248,7 @@ const encodeProcedureResult = (
     throw new TypeError("Unable to encode procedure output");
   }
   return wireResponse(
-    { v: PROTOCOL_VERSION, ok: true, value: encoded.value, ...touchedField },
+    { v: PROTOCOL_VERSION, status: "ok", value: encoded.value, ...touchedField },
     200,
   );
 };
@@ -329,7 +329,7 @@ export const createFetchHandler = <TRouter extends AnyRouter>(
     const response = wireResponse(
       {
         v: PROTOCOL_VERSION,
-        ok: false,
+        status: "error",
         error: failure.toJSON(),
         ...(touched.length === 0 ? {} : { touched }),
       },

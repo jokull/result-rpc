@@ -110,7 +110,7 @@ describe("attack-12 subscriptions vs entity index", () => {
     await sleep(20);
 
     const result = live.getCurrentState().result;
-    if (!result?.ok) throw new Error("expected live result");
+    if (!result?.isOk()) throw new Error("expected live result");
     // DOCUMENTED GAP (roadmap): subscription state is not query-cache data,
     // so identity patches do not reach a stream's latest result. The stream
     // is its own source of truth; the next event supersedes.
