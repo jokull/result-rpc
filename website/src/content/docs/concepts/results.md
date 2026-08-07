@@ -24,24 +24,25 @@ boundary.
 result-rpc tagged errors. Factories come from result-rpc; everything else is
 better-result's own surface.
 
-|                     |                                                |
-| ------------------- | ---------------------------------------------- |
-| Construct           | `ok`, `err`, `isOk`, `isErr` from `result-rpc` |
-| Discriminate        | `result.status === "ok"` or `result.isOk()`    |
-| Transform           | `map`, `mapError`, `andThen`, `tryRecover`     |
-| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`    |
-| Observe             | `tap`, `tapError`, `tapBoth`                   |
-| Adopt throwing code | `tryCatch` / `tryPromise` (`{ try, catch }`)   |
-| Combine             | `all` (tuple, first failure wins)              |
-| Compose             | `gen` (generator style, `yield*`)              |
+|                     |                                              |
+| ------------------- | -------------------------------------------- |
+| Construct           | `ok`, `err` from `result-rpc`                |
+| Discriminate        | `result.status === "ok"` or `result.isOk()`  |
+| Transform           | `map`, `mapError`, `andThen`, `tryRecover`   |
+| Unwrap              | `match`, `matchError`, `unwrapOr`, `unwrap`  |
+| Observe             | `tap`, `tapError`, `tapBoth`                 |
+| Adopt throwing code | `tryCatch` / `tryPromise` (`{ try, catch }`) |
+| Combine             | `all` (tuple, first failure wins)            |
+| Compose             | `gen` (generator style, `yield*`)            |
 
-Combinators beyond `ok`/`err`/`isOk`/`isErr` are re-exported by result-rpc
-(they are better-result's): `map`, `mapError`, `andThen`, `match`,
-`matchError`, `tap*`, `all`, `gen`, `tryRecover`, `unwrap`, `unwrapOr`,
-`tryCatch`, `tryPromise`, and the `InferErr`/`InferOk` types. Calling
-conventions are better-result's, unchanged — `gen` bodies return a Result,
-`tryCatch`/`tryPromise` are passthroughs of `Result.try`/`Result.tryPromise`
-(the `{ try, catch }` form) so the throwing boundary needs no second import.
+Combinators beyond `ok`/`err` are better-result's own surface, imported from
+`better-result` (result-rpc does not re-export them): `map`, `mapError`,
+`andThen`, `match`, `matchError`, `tap*`, `all`, `gen`, `tryRecover`,
+`unwrap`, `unwrapOr`, `tryCatch`, `tryPromise`, and the `InferErr`/`InferOk`
+types. Calling conventions are better-result's, unchanged — `gen` bodies
+return a Result, `tryCatch`/`tryPromise` are passthroughs of
+`Result.try`/`Result.tryPromise` (the `{ try, catch }` form) so the throwing
+boundary needs no second import.
 Renames in 0.3: `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` (value
 fallback) or `match`.
 
@@ -70,9 +71,10 @@ accumulates automatically from everything yielded. A gen body **returns a
 Result** (`return ok(value)`), matching better-result's `Result.gen`:
 
 ```ts
-import { gen, ok } from "result-rpc";
+import { Result } from "better-result";
+import { ok } from "result-rpc";
 
-const outcome = gen(function* () {
+const outcome = Result.gen(function* () {
   const doc = yield* findDoc(id); // Result<Doc, DocNotFound>
   const body = yield* parseBody(doc); // Result<Body, ParseFailure>
   return ok(render(doc, body));
@@ -84,7 +86,10 @@ Pass an async generator to compose awaited Results the same way — the return
 type becomes a `Promise<Result>`:
 
 ```ts
-const outcome = await gen(async function* () {
+import { Result } from "better-result";
+import { ok } from "result-rpc";
+
+const outcome = await Result.gen(async function* () {
   const doc = yield* await fetchDoc(id);
   const body = yield* parseBody(doc);
   return ok(body);
@@ -105,11 +110,12 @@ codec. The registry's `definition.decode` is the shared reification primitive
 framework policy live in the client's own envelope path:
 
 ```ts
-import { gen } from "result-rpc";
+import { Result } from "better-result";
+import { ok } from "result-rpc";
 import { client } from "./rpc-client";
 import { docErrors } from "./errors";
 
-const outcome = await gen(async function* () {
+const outcome = await Result.gen(async function* () {
   // The response crossed HTTP. It is still a result-rpc Result, so yield*
   // unwraps success or propagates its reconstructed TaggedError.
   const doc = yield* await client.doc.byId({ id: "doc_missing" });
@@ -121,7 +127,7 @@ if (outcome.isErr() && docErrors.notFound.is(outcome.error)) {
   outcome.error instanceof Error; // true
   outcome.error.data.docId; // "doc_missing"
 
-  const propagated = gen(function* () {
+  const propagated = Result.gen(function* () {
     return yield* outcome.error; // the reconstructed error is yieldable too
   });
 }
@@ -153,7 +159,8 @@ The service keeps its own precise error vocabulary:
 
 ```ts
 // server/services/rates.ts
-import { defineErrors, err, gen, ok, tryPromise, wire } from "result-rpc";
+import { Result } from "better-result";
+import { defineErrors, err, ok, wire } from "result-rpc";
 
 export const upstream = defineErrors("upstream", {
   unavailable: { data: wire.object({ status: wire.number }), httpStatus: 502, retry: "transient" },
@@ -161,15 +168,15 @@ export const upstream = defineErrors("upstream", {
 });
 
 export const safeJsonFetch = (url: string) =>
-  gen(async function* () {
-    const response = yield* await tryPromise({
+  Result.gen(async function* () {
+    const response = yield* await Result.tryPromise({
       try: () => fetch(url),
       catch: () => upstream.unavailable({ status: 0 }),
     });
     if (!response.ok) {
       return err(upstream.unavailable({ status: response.status }));
     }
-    return yield* await tryPromise({
+    return yield* await Result.tryPromise({
       try: () => response.json() as Promise<unknown>,
       catch: (cause) => upstream.malformed({ reason: String(cause) }),
     });
@@ -189,7 +196,8 @@ collapses them with `mapError`, and only the coarse tag enters the contract:
 
 ```ts
 // server/router.ts
-import { error, err, gen, mapError, ok, wire } from "result-rpc";
+import { Result } from "better-result";
+import { error, err, ok, wire } from "result-rpc";
 import { safeJsonFetch } from "./services/rates";
 
 const RatesUnavailable = error({
@@ -205,8 +213,8 @@ const quote = server
   .output(wire.object({ currency: wire.string, rate: wire.number }))
   .errors({ RatesUnavailable })
   .query(({ input, errors }) =>
-    gen(async function* () {
-      const payload = yield* mapError(
+    Result.gen(async function* () {
+      const payload = yield* Result.mapError(
         await safeJsonFetch(`https://rates.example/api/${input.currency}`),
         () => errors.RatesUnavailable({}), // two granular tags → one declared tag
       );
@@ -253,6 +261,9 @@ Layer middleware resolves to a Result, so `gen` composes there too — the
 layer's declared union is the gate, exactly like a procedure's:
 
 ```ts
+import { Result } from "better-result";
+import { ok } from "result-rpc";
+
 const session = defineLayer({
   name: "session",
   key: "viewer",
@@ -261,7 +272,7 @@ const session = defineLayer({
 });
 
 const sessionMiddleware = session.middleware(server, ({ context, errors }) =>
-  gen(async function* () {
+  Result.gen(async function* () {
     const token = yield* readToken(context.cookie, errors); // Result<Token, SessionExpired>
     const viewer = yield* await lookupViewer(token, errors); // Result<Viewer, SessionRevoked>
     return ok(viewer);

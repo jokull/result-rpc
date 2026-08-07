@@ -6,8 +6,9 @@
  * both of which Start strips from the client build. The grep in NOTES.md
  * is the proof.
  */
+import { matchError } from "better-result";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
-import { err, matchError, ok } from "result-rpc";
+import { err, ok } from "result-rpc";
 import { tryDb } from "result-rpc/db";
 import { createFetchHandler, serverRpc } from "result-rpc/server";
 import {

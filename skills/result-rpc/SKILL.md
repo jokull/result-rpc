@@ -26,13 +26,17 @@ carry the current API, and this file only routes you there.
 `Result<T, E>` is [better-result](https://github.com/dmmulroy/better-result) 3.0's
 class, brought in as a `peerDependencies` entry — one shared `Ok`/`Err` class
 across the app, which is what the boundary's `instanceof` checks rely on.
-result-rpc re-exports the surface you need (`ok`, `err`, `gen`, `tryCatch`,
-`tryPromise`, `InferErr`/`InferOk`/`GenErr`), so code imports from `result-rpc`.
+result-rpc exports the boundary (procedures, errors, wire, client, server)
+plus the constrained construction primitives `ok`/`err` and the types
+(`Result`, `Ok`, `Err`, `InferErr`/`InferOk`/`GenErr`). The rest of the
+algebra — `gen`, `map`, `andThen`, `match`, `all`, `tap`, `unwrap`,
+`tryCatch`, `tryPromise`, `matchError`, ... — comes from better-result:
+`import { Result, matchError } from "better-result"`.
 
 - **Dialect:** `gen` bodies `return ok(x)` — better-result's convention, unchanged.
 - **Division of labor:** better-result owns the Result algebra (`Result.codec`,
   `retry`, `matchError`, Panic); result-rpc owns the boundary, transport, cache,
-  and shells.
+  and shells — the `.handler()` return type enforces the declared-error lane.
 - **Adoption:** a better-result `Result` whose error is already a declared
   result-rpc tagged error flows into a handler unchanged (zero-copy); a foreign
   error folds with `mapError` before the boundary.

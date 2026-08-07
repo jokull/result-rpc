@@ -5,8 +5,9 @@
  * availability aggregate uses `db.select().groupBy(min())`, because a
  * query-relative number is a projection of the INPUT, not of any table row.
  */
+import { matchError } from "better-result";
 import { and, avg, count, eq, gte, lte, min } from "drizzle-orm";
-import { err, matchError, ok } from "../../src/index.js";
+import { err, ok } from "../../src/index.js";
 import { tryDb, type DbError } from "../../src/db.js";
 import { createFetchHandler, serverRpc } from "../../src/server/index.js";
 import {

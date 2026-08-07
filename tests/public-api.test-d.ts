@@ -27,7 +27,6 @@ import {
   wire,
   type WireCodec,
   type WireValue,
-  matchError,
   isTaggedError,
 } from "../src/index.js";
 import {
@@ -1366,9 +1365,8 @@ errorCatalog(nsErrors, { "billing/card-declined": () => "" });
 
 // --- Result composition ------------------------------------------------------
 
-import { Result as BetterResult } from "better-result";
+import { Result as BetterResult, matchError } from "better-result";
 import { toResult as toResultReact } from "../src/react/index.js";
-import { all, andThen, gen, map, mapError } from "../src/index.js";
 void toResultReact;
 
 const Conflict2 = error({ tag: "type/conflict-two", data: wire.object({}), httpStatus: 409 });
@@ -1377,7 +1375,7 @@ declare const findResult: Result<string, ReturnType<typeof Missing>>;
 declare const parseResult: Result<number, ReturnType<typeof Conflict2>>;
 
 // gen accumulates exactly the yielded error union.
-const genOutcome = gen(function* () {
+const genOutcome = BetterResult.gen(function* () {
   const doc = yield* findResult;
   const size = yield* parseResult;
   return ok(`${doc}:${size}`);
@@ -1390,7 +1388,7 @@ export type _GenAccumulatesYieldedUnion = Assert<
 >;
 
 // async gen returns a Promise of the same accumulation.
-const genAsyncOutcome = gen(async function* () {
+const genAsyncOutcome = BetterResult.gen(async function* () {
   const doc = yield* findResult;
   return ok(doc.length);
 });
@@ -1399,7 +1397,7 @@ export type _GenAsyncIsPromise = Assert<
 >;
 
 // all() collects tuple values positionally and unions the errors.
-const allOutcome = all([findResult, parseResult]);
+const allOutcome = BetterResult.all([findResult, parseResult]);
 type AllValue = Extract<typeof allOutcome, { status: "ok" }>["value"];
 type AllError = Extract<typeof allOutcome, { status: "error" }>["error"];
 export type _AllTupleIsPositional = Assert<Equal<AllValue, [string, number]>>;
@@ -1416,18 +1414,20 @@ class SpecializedFailure extends TaggedError<
   }
 }
 declare const specializedResult: Result<string, SpecializedFailure>;
-const mappedSpecialized = map(specializedResult, (value) => value.length);
+const mappedSpecialized = BetterResult.map(specializedResult, (value) => value.length);
 export type _MapPreservesTaggedSubclass = Assert<
   Equal<typeof mappedSpecialized, Result<number, SpecializedFailure>>
 >;
-const chainedSpecialized = andThen(specializedResult, () => parseResult);
+const chainedSpecialized = BetterResult.andThen(specializedResult, () => parseResult);
 export type _AndThenAccumulatesSubclassUnion = Assert<
   Equal<
     typeof chainedSpecialized,
     Result<number, SpecializedFailure | ReturnType<typeof Conflict2>>
   >
 >;
-const remappedSpecialized = mapError(specializedResult, () => Missing({ id: "mapped" }));
+const remappedSpecialized = BetterResult.mapError(specializedResult, () =>
+  Missing({ id: "mapped" }),
+);
 export type _MapErrorReplacesSubclassExactly = Assert<
   Equal<typeof remappedSpecialized, Result<string, ReturnType<typeof Missing>>>
 >;

@@ -8,7 +8,7 @@
  * cross-panel coherence with per-procedure request counters.
  */
 import { useState } from "react";
-import { matchError } from "../../src/index.js";
+import { matchError } from "better-result";
 import { boundaryShells, createResultRpcReact } from "../../src/react/index.js";
 import type { AppClient } from "./client.js";
 import { TourContent, type Locale, type OrderTree } from "./models.js";

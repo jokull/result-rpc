@@ -1,30 +1,34 @@
 /**
- * result-rpc's constrained Result surface over better-result@3.
+ * result-rpc's constrained Result vocabulary over better-result@3.
  *
- * Better Result owns the general-purpose Ok/Err runtime, composition,
- * generator behavior, panic semantics, and Result.codec. result-rpc owns the
- * RPC boundary rule: only declared, serializable, reifiable tagged errors may
- * enter or leave a procedure. The public `Result<T, E>` type therefore
- * constrains `E` to result-rpc tagged errors.
+ * Better Result owns the Ok/Err runtime, the composition algebra, the
+ * generator, panic semantics, and Result.codec. result-rpc owns the RPC
+ * boundary rule: only declared, serializable, reifiable tagged errors may
+ * enter or leave a procedure. That rule is spelled here as the constrained
+ * `Result<T, E extends AnyTaggedError>` type and the `ok`/`err` constructors
+ * pinned to it — the boundary's own code and handlers build Results through
+ * them, so a foreign error lane is rejected at construction, not later.
  *
- * Everything — composition, matching, tap, recovery, the generator, the
- * codec, Panic — is better-result's, re-exported unchanged, never
- * reimplemented. `gen` follows better-result's convention (bodies return a
- * Result, `return ok(value)`); `tryCatch`/`tryPromise` are passthroughs of
- * `Result.try`/`Result.tryPromise` so the throwing boundary never needs a
- * second import.
+ * The algebra (`gen`, `map`, `mapError`, `andThen`, `match`, `matchError`,
+ * `tap`, `tapError`, `tapBoth`, `all`, `tryRecover`, `unwrap`, `unwrapOr`,
+ * `tryCatch`, `tryPromise`, `isOk`, `isErr`) is better-result's and lives
+ * there, imported where it belongs:
  *
- * Breaking changes vs the 0.2 `result.ts`:
- * - Results are better-result `Ok`/`Err` class instances with a
- *   `status: "ok" | "error"` discriminant (`result.ok` is gone — use
- *   `result.status === "ok"` or `result.isOk()`).
- * - `all` is tuple-only; record shapes are folded with `Result.all` + map.
- * - `orElse` → `tryRecover`, `getOrElse` → `unwrapOr` (value fallback) or
- *   `match`.
+ *   import { Result, matchError } from "better-result";    // the algebra
+ *   import { ok, err, server, contract, defineErrors } from "result-rpc";
+ *
+ * Handlers fold foreign error lanes into declared, result-rpc-compatible tags
+ * themselves — `err(declaredTag)` — before returning; the `.handler()` return
+ * type is the compiler-checked enforcement, not a re-export.
+ *
+ * Breaking changes vs the 0.3 `result.ts`:
+ * - The algebra is no longer re-exported. Use `Result.gen`, `Result.map`,
+ *   `Result.try`, ... and `matchError` from better-result directly
+ *   (better-result's guard static is `Result.isError`, not `isErr`).
+ * - `ok`/`err` stay: they are result-rpc's constrained constructors.
  */
 import {
   Result as BetterResult,
-  matchError as betterMatchError,
   type InferErr as BetterInferErr,
   type InferOk as BetterInferOk,
   type Ok as BetterOk,
@@ -39,35 +43,10 @@ export type Err<E extends AnyTaggedError> = BetterErr<never, E>;
 export type InferErr<R> = BetterInferErr<R>;
 /** The success value of a Result. */
 export type InferOk<R> = BetterInferOk<R>;
+/** The union of errors a `gen` body yields — better-result's generator contract. */
+export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
 
 export const ok = <T>(value: T): Result<T, never> => BetterResult.ok(value);
 
 export const err = <E extends AnyTaggedError>(error: E): Result<never, E> =>
   BetterResult.err(error);
-
-export const isOk = <T, E extends AnyTaggedError>(result: Result<T, E>): result is Ok<T, E> =>
-  result.isOk();
-
-export const isErr = <T, E extends AnyTaggedError>(result: Result<T, E>): result is Err<E> =>
-  result.isErr();
-
-// Composition, matching, tap, recovery, and unwrapping are better-result's —
-// re-exported unchanged, never reimplemented.
-export const map = BetterResult.map;
-export const mapError = BetterResult.mapError;
-export const andThen = BetterResult.andThen;
-export const match = BetterResult.match;
-export const matchError = betterMatchError;
-export const tap = BetterResult.tap;
-export const tapError = BetterResult.tapError;
-export const tapBoth = BetterResult.tapBoth;
-export const all = BetterResult.all;
-export const tryRecover = BetterResult.tryRecover;
-export const unwrap = BetterResult.unwrap;
-export const unwrapOr = BetterResult.unwrapOr;
-
-export type GenErr<TYield> = TYield extends Err<infer E> ? E : never;
-
-export const gen = BetterResult.gen;
-export const tryCatch = BetterResult.try;
-export const tryPromise = BetterResult.tryPromise;

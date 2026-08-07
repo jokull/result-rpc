@@ -7,7 +7,8 @@
  * error; gen bodies return a Result (`return ok(...)`), matching
  * better-result's `Result.gen`.
  */
-import { defineErrors, err, gen, ok, tryPromise, wire } from "../../src/index.js";
+import { Result } from "better-result";
+import { defineErrors, err, ok, wire } from "../../src/index.js";
 
 export const upstreamErrors = defineErrors("upstream", {
   unreachable: { data: wire.object({ reason: wire.string }), httpStatus: 502 },
@@ -15,8 +16,8 @@ export const upstreamErrors = defineErrors("upstream", {
 });
 
 export const fetchMemberIds = (fetchDirectory: () => Promise<unknown>) =>
-  gen(async function* () {
-    const payload = yield* await tryPromise({
+  Result.gen(async function* () {
+    const payload = yield* await Result.tryPromise({
       try: fetchDirectory,
       catch: (cause) => upstreamErrors.unreachable({ reason: String(cause) }),
     });

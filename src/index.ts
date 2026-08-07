@@ -1,24 +1,8 @@
-export {
-  all,
-  andThen,
-  err,
-  gen,
-  isErr,
-  isOk,
-  map,
-  mapError,
-  match,
-  matchError,
-  ok,
-  tap,
-  tapBoth,
-  tapError,
-  tryCatch,
-  tryPromise,
-  tryRecover,
-  unwrap,
-  unwrapOr,
-} from "./result.js";
+// The boundary's constrained construction primitives. The composition algebra
+// (`gen`, `map`, `andThen`, `match`, `all`, `tryRecover`, `unwrap`,
+// `tryCatch`, `tryPromise`, `matchError`, ...) is better-result's — import it
+// from there: `import { Result, matchError } from "better-result"`.
+export { err, ok } from "./result.js";
 export type { Err, GenErr, InferErr, InferOk, Ok, Result } from "./result.js";
 export type { RpcConstraintError } from "./type-diagnostics.js";
 export type { MaybePromise } from "./types.js";

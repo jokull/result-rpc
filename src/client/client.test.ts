@@ -1,6 +1,7 @@
 import { PROTOCOL_CONTENT_TYPE, PROTOCOL_VERSION, STREAM_CONTENT_TYPE } from "../protocol.js";
 import { describe, expect, test } from "bun:test";
-import { err, error, gen, isTaggedError, ok, serialize, wire } from "../index.js";
+import { Result as BetterResult } from "better-result";
+import { err, error, isTaggedError, ok, serialize, wire } from "../index.js";
 import { ClientHttpFailure, ClientTimeout } from "../framework-errors.js";
 import { createFetchHandler } from "../server/index.js";
 import { rpc } from "../server/contract.js";
@@ -308,7 +309,7 @@ describe("unary client and server", () => {
   });
 
   test("a Result and its TaggedError remain composable after crossing the wire", async () => {
-    const outcome = await gen(async function* () {
+    const outcome = await BetterResult.gen(async function* () {
       const value = yield* await client.value.byId({ id: "missing" });
       return ok(value.value);
     });
@@ -316,7 +317,7 @@ describe("unary client and server", () => {
     expect(outcome).toEqual(err(NotFound({ id: "missing" })));
     if (!outcome.isOk()) {
       expect(NotFound.is(outcome.error)).toBe(true);
-      const propagated = gen(function* () {
+      const propagated = BetterResult.gen(function* () {
         return yield* outcome.error;
       });
       expect(propagated).toEqual(outcome);

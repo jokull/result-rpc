@@ -6,7 +6,8 @@
  * component's catalog should mention ONLY domain tags — and forgetting one
  * should fail to compile.
  */
-import { errorCatalog, matchError } from "../../src/index.js";
+import { matchError } from "better-result";
+import { errorCatalog } from "../../src/index.js";
 import { createBrowserClient, batchFetchTransport } from "../../src/client/index.js";
 import { boundaryShells, ResultRpcProvider } from "../../src/react/index.js";
 import { todoContract, todoErrors } from "./contract.js";

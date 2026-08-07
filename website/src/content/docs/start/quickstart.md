@@ -22,9 +22,11 @@ npm install result-rpc
 Installing result-rpc brings in its peer dependency
 [`better-result@^3.0.0`](https://github.com/dmmulroy/better-result) — npm 7+ and
 pnpm install peers automatically. The `Result` you compose is better-result's
-class; result-rpc re-exports the surface (`ok`, `err`, `gen`, `tryPromise`,
-`InferErr`/`InferOk`/`GenErr`), and the shared class identity is what the
-boundary's `instanceof` checks rely on. See [Results](/concepts/results/) for
+class; result-rpc exports the constrained construction primitives `ok`/`err`
+and the types (`Result`, `Ok`, `Err`, `InferErr`/`InferOk`/`GenErr`), while
+the rest of the algebra (`gen`, `tryPromise`, ...) is imported from
+`better-result`. The shared class identity is what the boundary's `instanceof`
+checks rely on. See [Results](/concepts/results/) for
 the division of labor and the [FAQ](/reference/faq/) for the identity rule.
 
 This quickstart requires Node.js 20.19.5 or newer, TypeScript 5.4 or newer, and
@@ -152,14 +154,14 @@ on the fetch handler to report the private cause.
 ## Adopt fallible external I/O
 
 An anticipated failed fetch, database call, or SDK call belongs in a declared
-Result branch. Use `tryPromise(fn, onThrow)` at that throwing boundary:
+Result branch. Use `Result.tryPromise(fn, onThrow)` at that throwing boundary:
 
 ```ts
-import { tryPromise } from "result-rpc";
+import { Result } from "better-result";
 
 const response =
   yield *
-  (await tryPromise(
+  (await Result.tryPromise(
     () => fetch(url),
     () => errors.GreetingNotFound({ name: input.name }),
   ));

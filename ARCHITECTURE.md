@@ -116,7 +116,8 @@ widening it and trying to infer the context again.
 Suggested exports:
 
 ```ts
-import { ok, err, match, matchError, error, wire, rpc } from "result-rpc";
+import { Result, matchError } from "better-result";
+import { ok, err, error, wire, rpc } from "result-rpc";
 
 import { createFetchHandler, createServerClient, serverRpc } from "result-rpc/server";
 

@@ -7,8 +7,9 @@
  * imports src/contract.ts (shapes only) via src/client.ts.
  */
 import "server-only";
+import { matchError } from "better-result";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
-import { err, matchError, ok } from "result-rpc";
+import { err, ok } from "result-rpc";
 import { tryDb } from "result-rpc/db";
 import { createFetchHandler, serverRpc } from "result-rpc/server";
 import {

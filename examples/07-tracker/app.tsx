@@ -8,7 +8,8 @@
  * patched in place with zero refetches.
  */
 import { useState } from "react";
-import { errorCatalog, matchError, validateStandard, type ModelValue } from "../../src/index.js";
+import { matchError } from "better-result";
+import { errorCatalog, validateStandard, type ModelValue } from "../../src/index.js";
 import { boundaryShells, createResultRpcReact } from "../../src/react/index.js";
 import type { AppClient } from "./client.js";
 import { SessionLayer } from "./contract.js";

@@ -1,17 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { Result as BetterResult, matchError } from "better-result";
 import { error, wire } from "./index.js";
-import {
-  all,
-  err,
-  gen,
-  matchError,
-  ok,
-  tryCatch,
-  tryPromise,
-  tryRecover,
-  unwrapOr,
-  type Result,
-} from "./result.js";
+import { err, ok, type Result } from "./result.js";
 
 const NotFound = error({
   tag: "thing/not-found",
@@ -50,7 +40,7 @@ describe("result runtime", () => {
   });
 
   test("gen unwraps yielded successes and returns ok", () => {
-    const outcome = gen(function* () {
+    const outcome = BetterResult.gen(function* () {
       const doc = yield* find("one");
       const size = yield* parse(doc);
       return ok(`${doc}/${size}`);
@@ -60,7 +50,7 @@ describe("result runtime", () => {
 
   test("gen short-circuits on the first Err and runs finally blocks", () => {
     let cleaned = false;
-    const outcome = gen(function* () {
+    const outcome = BetterResult.gen(function* () {
       try {
         const doc = yield* find("missing");
         return parse(doc);
@@ -73,7 +63,7 @@ describe("result runtime", () => {
   });
 
   test("yield* err() fails a gen body explicitly", () => {
-    const outcome = gen(function* () {
+    const outcome = BetterResult.gen(function* () {
       if (true as boolean) return yield* err(ParseFailure({ reason: "manual" }));
       return ok(1);
     });
@@ -82,7 +72,7 @@ describe("result runtime", () => {
 
   test("yield* TaggedError fails a gen body directly", () => {
     const failure = NotFound({ id: "missing" });
-    const outcome = gen(function* () {
+    const outcome = BetterResult.gen(function* () {
       return yield* failure;
     });
     expect(outcome).toEqual(err(failure));
@@ -90,13 +80,13 @@ describe("result runtime", () => {
 
   test("gen composes awaited Results through an async generator", async () => {
     const fetchDoc = async (id: string) => find(id);
-    const outcome = await gen(async function* () {
+    const outcome = await BetterResult.gen(async function* () {
       const doc = yield* await fetchDoc("one");
       const size = yield* parse(doc);
       return ok(size * 2);
     });
     expect(outcome).toEqual(ok(14));
-    const failure = await gen(async function* () {
+    const failure = await BetterResult.gen(async function* () {
       const doc = yield* await fetchDoc("missing");
       return ok(doc);
     });
@@ -104,12 +94,12 @@ describe("result runtime", () => {
   });
 
   test("tryCatch passthrough adopts a throwing function behind a tagged error", () => {
-    const good = tryCatch({
+    const good = BetterResult.try({
       try: () => JSON.parse('{"a":1}') as { a: number },
       catch: (cause) => ParseFailure({ reason: String(cause) }),
     });
     expect(good).toEqual(ok({ a: 1 }));
-    const bad = tryCatch({
+    const bad = BetterResult.try({
       try: () => JSON.parse("nope") as never,
       catch: () => ParseFailure({ reason: "invalid json" }),
     });
@@ -117,19 +107,19 @@ describe("result runtime", () => {
   });
 
   test("tryPromise catches rejections and sync throws", async () => {
-    const rejected = await tryPromise({
+    const rejected = await BetterResult.tryPromise({
       try: () => Promise.reject(new Error("boom")),
       catch: () => ParseFailure({ reason: "rejected" }),
     });
     expect(rejected).toEqual(err(ParseFailure({ reason: "rejected" })));
-    const thrown = await tryPromise({
+    const thrown = await BetterResult.tryPromise({
       try: () => {
         throw new Error("early");
       },
       catch: () => ParseFailure({ reason: "threw" }),
     });
     expect(thrown).toEqual(err(ParseFailure({ reason: "threw" })));
-    const good = await tryPromise({
+    const good = await BetterResult.tryPromise({
       try: async () => 3,
       catch: () => ParseFailure({ reason: "" }),
     });
@@ -137,15 +127,17 @@ describe("result runtime", () => {
   });
 
   test("all combines tuples, first failure wins", () => {
-    expect(all([find("a"), parse("xy")])).toEqual(ok(["doc:a", 2]));
-    expect(all([find("missing"), parse("bad")])).toEqual(err(NotFound({ id: "missing" })));
+    expect(BetterResult.all([find("a"), parse("xy")])).toEqual(ok(["doc:a", 2]));
+    expect(BetterResult.all([find("missing"), parse("bad")])).toEqual(
+      err(NotFound({ id: "missing" })),
+    );
   });
 
   test("tryRecover recovers a failure; unwrapOr unwraps with a fallback value", () => {
-    const recovered = tryRecover(find("missing"), () => ok("doc:fallback"));
+    const recovered = BetterResult.tryRecover(find("missing"), () => ok("doc:fallback"));
     expect(recovered).toEqual(ok("doc:fallback"));
-    expect(unwrapOr(find("missing"), "doc:fallback")).toBe("doc:fallback");
-    expect(unwrapOr(find("one"), "unused")).toBe("doc:one");
+    expect(BetterResult.unwrapOr(find("missing"), "doc:fallback")).toBe("doc:fallback");
+    expect(BetterResult.unwrapOr(find("one"), "unused")).toBe("doc:one");
     const failure = err(ParseFailure({ reason: "bad" }));
     if (!failure.isErr()) throw new Error("expected err");
     const message = matchError(failure.error, {

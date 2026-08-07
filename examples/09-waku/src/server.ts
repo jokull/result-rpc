@@ -3,8 +3,9 @@
  * mount. This module closes over the Drizzle driver and a planted secret;
  * if it ever reached a client bundle the grep in NOTES.md would catch it.
  */
+import { matchError } from "better-result";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
-import { err, matchError, ok } from "result-rpc";
+import { err, ok } from "result-rpc";
 import { tryDb } from "result-rpc/db";
 import { createFetchHandler, serverRpc } from "result-rpc/server";
 import {

@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { Result as BetterResult, matchError } from "better-result";
 import {
   TaggedError,
-  andThen,
   defineErrors,
   deserialize,
   err,
   error,
   errorCatalog,
   isTaggedError,
-  matchError,
   ok,
   serialize,
   wire,
@@ -369,7 +368,7 @@ describe("Result", () => {
     const first = ok(1) as
       | ReturnType<typeof ok<number>>
       | ReturnType<typeof err<ReturnType<typeof Offline>>>;
-    const result = andThen(first, () => err(NotFound({ id: "missing" })));
+    const result = BetterResult.andThen(first, () => err(NotFound({ id: "missing" })));
     expect(result.isOk()).toBe(false);
     if (!result.isOk()) {
       const text = matchError(result.error, {

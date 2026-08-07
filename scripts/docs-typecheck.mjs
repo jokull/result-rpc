@@ -7,11 +7,13 @@
  * and an entry-point mistake in ARCHITECTURE.md survived because the API report
  * cannot tell `export type *` from `export *`.
  *
- * Only blocks that import `result-rpc*` are compiled. The rest are fragments
- * referencing locals the page never defines (`app`, `server`, `client`), so
- * compiling them would report noise rather than drift. Bare specifiers are
- * rewritten to the built `dist`, which is what makes a wrong entry point — the
- * exact bug this exists to catch — a failure rather than a resolution.
+ * Only blocks that import `result-rpc*` or `better-result` are compiled. The
+ * rest are fragments referencing locals the page never defines (`app`,
+ * `server`, `client`), so compiling them would report noise rather than drift.
+ * Bare specifiers are rewritten to the built `dist`, which is what makes a
+ * wrong entry point — the exact bug this exists to catch — a failure rather
+ * than a resolution. `better-result` resolves from the repo root's
+ * node_modules (it is a peer dependency of the published package).
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -137,7 +139,9 @@ for (const document of documents) {
   for (const match of source.matchAll(/```(ts|tsx)\n([\s\S]*?)```/g)) {
     const [, language, body] = match;
     const preamble = preambleFor(body);
-    if (!/from "result-rpc/.test(body) && preamble === "") continue;
+    // Blocks that import either package are programs; the rest are fragments
+    // referencing locals the page never defines.
+    if (!/from "(?:result-rpc|better-result)/.test(body) && preamble === "") continue;
     if (isIllustrative(body)) {
       illustrative += 1;
       continue;

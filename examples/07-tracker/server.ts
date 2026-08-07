@@ -3,7 +3,8 @@
  * from the layer, contract implementations, the router, and a fetch-handler
  * factory the tests use.
  */
-import { err, gen, mapError, ok, type ModelValue } from "../../src/index.js";
+import { Result } from "better-result";
+import { err, ok, type ModelValue } from "../../src/index.js";
 import { createFetchHandler, serverRpc } from "../../src/server/index.js";
 import {
   appContract,
@@ -154,9 +155,9 @@ const listUsers = server
   .implement(listUsersContract)
   .use(sessionMiddleware)
   .handler(({ errors, context }) =>
-    gen(async function* () {
+    Result.gen(async function* () {
       // Granular upstream union collapses to one declared tag here.
-      const memberIds = yield* mapError(await fetchMemberIds(context.fetchDirectory), () =>
+      const memberIds = yield* Result.mapError(await fetchMemberIds(context.fetchDirectory), () =>
         errors.unavailable(),
       );
       return ok(
