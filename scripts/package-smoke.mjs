@@ -342,7 +342,6 @@ export default { fetch: handle };
     `import type * as Root from "result-rpc";
 import type * as Server from "result-rpc/server";
 import type * as Client from "result-rpc/client";
-import type * as Db from "result-rpc/db";
 import type * as Query from "result-rpc/query";
 import type * as ReactEntry from "result-rpc/react";
 import type * as Testing from "result-rpc/testing";
@@ -351,7 +350,6 @@ export type EveryPublicSubpath = readonly [
   keyof typeof Root,
   keyof typeof Server,
   keyof typeof Client,
-  keyof typeof Db,
   keyof typeof Query,
   keyof typeof ReactEntry,
   keyof typeof Testing,

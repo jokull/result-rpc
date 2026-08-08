@@ -887,10 +887,12 @@ upstream row or domain type while allowing private source fields to remain
 absent. The source arrives through a type-only import: it catches drift but
 cannot pull a database schema into a client graph or silently widen the wire.
 
-Database failures are a separate concern. `result-rpc/db` ships `tryDb`, an
-ORM-independent Result boundary that recognizes common driver constraint
-codes as private `db/*` composition currency, collapsed to declared domain
-tags at the procedure boundary.
+Database failures are a separate concern, owned by
+[`db-result`](https://github.com/jokull/db-result): a driver-agnostic Result
+boundary on better-result whose `db/*` tags are private composition currency,
+collapsed to declared domain tags at the procedure boundary. result-rpc ships
+no database entry point; the fold is the handler's, and the contract guards
+the lane.
 
 Derivations deliberately NOT taken, evaluated against doctrine:
 

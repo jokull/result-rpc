@@ -74,7 +74,6 @@ jobs:
               "result-rpc",
               "result-rpc/server",
               "result-rpc/client",
-              "result-rpc/db",
               "result-rpc/query",
               "result-rpc/react",
               "result-rpc/testing",

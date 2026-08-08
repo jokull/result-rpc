@@ -280,5 +280,5 @@ Three traps worth knowing before you wire your own:
 
 All three exercise the same app end to end — prefetched paginated feeds,
 skeleton fallbacks, mutations patching server-rendered rows, and a
-`tryDb` constraint surfacing as a domain error — so you can diff them to see
+db-result constraint surfacing as a domain error — so you can diff them to see
 exactly what the framework changes and what it doesn't.

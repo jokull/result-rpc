@@ -45,10 +45,6 @@
       "types": "./dist/client/index.d.ts",
       "import": "./dist/client/index.js"
     },
-    "./db": {
-      "types": "./dist/db.d.ts",
-      "import": "./dist/db.js"
-    },
     "./query": {
       "types": "./dist/query/runtime.d.ts",
       "import": "./dist/query/runtime.js"
@@ -110,6 +106,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-test-renderer": "^19.1.0",
     "better-result": "^3.0.0",
+    "db-result": "^0.2.0",
     "drizzle-orm": "1.0.0-rc.4",
     "next": "16.2.12",
     "oxfmt": "0.61.0",

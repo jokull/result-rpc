@@ -9,7 +9,6 @@ const reports = [
   ["index", "result-rpc.api.md"],
   ["server/index", "result-rpc.server.api.md"],
   ["client/index", "result-rpc.client.api.md"],
-  ["db", "result-rpc.db.api.md"],
   ["query/runtime", "result-rpc.query.api.md"],
   ["react/index", "result-rpc.react.api.md"],
   ["testing/index", "result-rpc.testing.api.md"],

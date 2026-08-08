@@ -25,7 +25,6 @@ export default defineConfig({
         { find: "result-rpc/react", replacement: dist("react/index.js") },
         { find: "result-rpc/server", replacement: dist("server/index.js") },
         { find: "result-rpc/client", replacement: dist("client/index.js") },
-        { find: "result-rpc/db", replacement: dist("db.js") },
         { find: "result-rpc/testing", replacement: dist("testing/index.js") },
         { find: "result-rpc", replacement: dist("index.js") },
       ],

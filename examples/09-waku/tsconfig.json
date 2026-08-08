@@ -15,7 +15,6 @@
       "result-rpc/react": ["../../dist/react/index.d.ts"],
       "result-rpc/server": ["../../dist/server/index.d.ts"],
       "result-rpc/client": ["../../dist/client/index.d.ts"],
-      "result-rpc/db": ["../../dist/db.d.ts"],
       "result-rpc/query": ["../../dist/query/runtime.d.ts"]
     }
   },

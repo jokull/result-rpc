@@ -6,10 +6,10 @@
  * both of which Start strips from the client build. The grep in NOTES.md
  * is the proof.
  */
-import { matchError } from "better-result";
+import { matchErrorPartial } from "better-result";
 import { asc, count, desc, eq, gt, sql, sum } from "drizzle-orm";
+import { tryDb } from "db-result/sqlite";
 import { err, ok } from "result-rpc";
-import { tryDb } from "result-rpc/db";
 import { createFetchHandler, serverRpc } from "result-rpc/server";
 import {
   addSpotContract,
@@ -85,21 +85,17 @@ const addSpot = server.implement(addSpotContract).handler(async ({ input, errors
   // constraint outcome into a Result instead of a thrown driver error.
   const inserted = await tryDb(context.db.insert(spots).values(row).returning());
   if (inserted.status === "error") {
-    return matchError(inserted.error, {
-      "db/unique-violation": () => err(errors.nameTaken({ name: input.name })),
-      "db/foreign-key-violation": (e) => {
+    return matchErrorPartial(
+      inserted.error,
+      {
+        "db/unique-violation": () => err(errors.nameTaken({ name: input.name })),
+      },
+      // Every other db-result tag (connection, contention, syntax, ...) is a
+      // genuine defect — rethrow; the incident pipeline sanitizes it.
+      (e) => {
         throw e;
       },
-      "db/not-null-violation": (e) => {
-        throw e;
-      },
-      "db/check-violation": (e) => {
-        throw e;
-      },
-      "db/query-failure": (e) => {
-        throw e;
-      },
-    });
+    );
   }
   return ok(inserted.value[0]!);
 });

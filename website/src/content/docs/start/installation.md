@@ -51,7 +51,6 @@ import { createFetchHandler, serverRpc } from "result-rpc/server";
 import { batchFetchTransport, createBrowserClient } from "result-rpc/client";
 import { createQueryRuntime } from "result-rpc/query";
 import { defineShell, layerShell, ResultRpcProvider, useResultQuery } from "result-rpc/react";
-import { tryDb } from "result-rpc/db";
 import { createParityClient } from "result-rpc/testing";
 ```
 
@@ -62,7 +61,6 @@ import { createParityClient } from "result-rpc/testing";
 | `result-rpc/client`  | Browser clients, transports, and client-originated failures                        |
 | `result-rpc/query`   | The React-free query runtime, including server-side prefetching                    |
 | `result-rpc/react`   | Providers, hooks, shells, and hydration boundaries                                 |
-| `result-rpc/db`      | ORM-independent database Result helpers                                            |
 | `result-rpc/testing` | Test clients that exercise the real wire boundary                                  |
 
 > **Keep implementations out of browser bundles.** Put the contract in a shared

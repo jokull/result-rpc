@@ -5,10 +5,10 @@
  * availability aggregate uses `db.select().groupBy(min())`, because a
  * query-relative number is a projection of the INPUT, not of any table row.
  */
-import { matchError } from "better-result";
+import { matchErrorPartial } from "better-result";
 import { and, avg, count, eq, gte, lte, min } from "drizzle-orm";
+import { tryDb, type DbError } from "db-result/sqlite";
 import { err, ok } from "../../src/index.js";
-import { tryDb, type DbError } from "../../src/db.js";
 import { createFetchHandler, serverRpc } from "../../src/server/index.js";
 import {
   addReviewContract,
@@ -235,15 +235,19 @@ const addReview = server
     // or rethrown as a defect, and none ever appears in `.errors()`.
     const inserted = await tryDb(context.db.insert(reviews).values(review));
     if (!inserted.isOk()) {
-      return matchError(inserted.error, {
-        "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId: input.hotelId })),
-        // The hotel id is the only client-supplied reference (the author comes
-        // from the session), so a foreign-key failure means the hotel is gone.
-        "db/foreign-key-violation": () => err(errors.notFound({ hotelId: input.hotelId })),
-        "db/not-null-violation": unexpectedDb,
-        "db/check-violation": unexpectedDb,
-        "db/query-failure": unexpectedDb,
-      });
+      return matchErrorPartial(
+        inserted.error,
+        {
+          "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId: input.hotelId })),
+          // The hotel id is the only client-supplied reference (the author comes
+          // from the session), so a foreign-key failure means the hotel is gone.
+          "db/foreign-key-violation": () => err(errors.notFound({ hotelId: input.hotelId })),
+        },
+        // Every other db-result tag (connection, contention, syntax, ...) is a
+        // genuine defect: rethrow, and the incident pipeline logs the cause and
+        // ships a sanitized server/internal.
+        unexpectedDb,
+      );
     }
     return ok({
       review: { id: review.id, rating: review.rating, body: review.body },

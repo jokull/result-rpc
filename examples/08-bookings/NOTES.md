@@ -123,8 +123,9 @@ otherwise carry, at every call site, for the life of the app.
 ### Addendum: the pre-check SELECT vs `tryDb`
 
 Round three replaced `reviews.add`'s validity checks with constraints +
-`tryDb` (the ORM-independent Result boundary in `result-rpc/db`), and the
-ledger entry is stark:
+`tryDb` (the ORM-independent Result boundary in
+[db-result](https://github.com/jokull/db-result)), and the ledger entry is
+stark:
 
 - **Pre-check idiom (before):** SELECT the hotel (1 round trip, 4 lines),
   and to enforce "one review per user per hotel" it would have needed a

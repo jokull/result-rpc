@@ -1,54 +1,42 @@
 ---
 title: "Database errors"
-description: "Turn common database constraint failures into private tagged values."
+description: "Fold database constraint failures into declared domain tags."
 ---
 
-`result-rpc/db` provides an ORM-independent Result boundary for database
-operations. `tryDb` accepts any thenable—or a thunk for drivers that may throw
-while preparing a query—and classifies common SQLite and PostgreSQL failures:
+Database error handling is no longer part of result-rpc. It lives in
+[`db-result`](https://github.com/jokull/db-result), a driver-agnostic Result
+boundary built on better-result that classifies every driver failure into a
+`db/*` tagged error (constraints, contention, connection, syntax — same
+vocabulary across pg, SQLite, D1, mysql, mssql, Prisma, Kysely, and Drizzle)
+and retries only what is provably safe.
 
 ```ts
-import { tryDb } from "result-rpc/db";
+import { matchErrorPartial } from "better-result";
+import { tryDb } from "db-result/sqlite"; // or /pg /mysql2 /mssql /d1
 
 const inserted = await tryDb(db.insert(reviews).values(row).returning());
 if (inserted.status === "error") {
-  return matchError(inserted.error, {
-    "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId })),
-    "db/foreign-key-violation": () => err(errors.hotelNotFound({ hotelId })),
-    "db/not-null-violation": () => err(errors.invalid({})),
-    "db/check-violation": () => err(errors.invalid({})),
-    "db/query-failure": () => err(errors.unavailable({})),
-  });
+  return matchErrorPartial(
+    inserted.error,
+    {
+      "db/unique-violation": () => err(errors.alreadyReviewed({ hotelId })),
+    },
+    (unhandled) => {
+      throw unhandled;
+    },
+  );
 }
 ```
 
 Attempting the insert is the uniqueness check. Unlike a SELECT-first check,
 the constraint remains correct when two requests race.
 
-## Private composition currency
+## The boundary folds the lane
 
-Every `db/*` error is private. It belongs inside server implementation code,
-not in a procedure's declared wire union:
-
-| Tag                        | Meaning                                |
-| -------------------------- | -------------------------------------- |
-| `db/unique-violation`      | A unique or primary-key constraint hit |
-| `db/foreign-key-violation` | A referenced row does not exist        |
-| `db/not-null-violation`    | A required value was absent            |
-| `db/check-violation`       | A database check rejected the value    |
-| `db/query-failure`         | No more specific classification        |
-
-Collapse that vocabulary into the procedure's domain errors at the handler
-boundary. An uncollapsed database error is rejected by the contract and
-sanitized to `server/internal` rather than leaking driver details.
-
-## Cause retention
-
-The tagged database error retains the original failure locally as its
-standard, non-enumerable `Error.cause`. `tryDb` follows ordinary cause chains
-and the common payload slots used by Effect Cause, allowing it to see through
-ORM and driver wrappers.
-
-The cause is diagnostic context only. SQL text, parameters, driver internals,
-and the cause itself are absent from `toJSON()`, encoded Results, and RPC
-responses.
+The `db/*` tags are private composition currency, not wire errors: fold them
+into your procedure's declared domain errors at the handler boundary.
+result-rpc's contract rejects any undeclared error lane, so an uncollapsed
+database error is sanitized to `server/internal` rather than leaking driver
+details. The fold is mechanical — `matchErrorPartial` lists the tags you
+handle, and its terminal arm is typed as the remainder the compiler lists for
+you.

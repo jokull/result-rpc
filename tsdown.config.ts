@@ -9,7 +9,6 @@ export default defineConfig({
     index: "src/index.ts",
     "server/index": "src/server/index.ts",
     "client/index": "src/client/index.ts",
-    db: "src/db.ts",
     "query/runtime": "src/query/runtime.ts",
     "react/index": "src/react/index.tsx",
     "testing/index": "src/testing/index.ts",

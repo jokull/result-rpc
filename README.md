@@ -98,8 +98,12 @@ The package keeps runtime boundaries explicit:
 | `result-rpc/client`  | Browser clients and transports                              |
 | `result-rpc/query`   | React-free query runtime, including SSR work                |
 | `result-rpc/react`   | Providers, hooks, shells, and hydration boundaries          |
-| `result-rpc/db`      | ORM-independent database Result helpers                     |
 | `result-rpc/testing` | Wire-parity test clients                                    |
+
+Database error handling is not an entry point — it lives in
+[`db-result`](https://github.com/jokull/db-result), a driver-agnostic Result
+boundary built on better-result. Fold its `db/*` tags into declared domain
+errors at the handler boundary; the procedure contract guards the lane.
 
 Browser code imports the shared contract, never the implemented server router.
 That boundary keeps handlers, database drivers, secrets, and server-only error

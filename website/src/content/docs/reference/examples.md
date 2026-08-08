@@ -123,8 +123,8 @@ worth what they cost" with numbers:
   request.
 - The locale trap closed by a composite `["id","locale"]` key; `min()`
   aggregates that stay query-relative while the entity inside them
-  patches; derived summaries refreshed by `.affects`; and `tryDb` turning
-  a UNIQUE constraint into a domain error — the insert _is_ the
+  patches; derived summaries refreshed by `.affects`; and a db-result
+  constraint turning into a domain error — the insert _is_ the
   uniqueness check, no pre-check SELECT anywhere.
 
 Its `NOTES.md` is the model-vs-pick-vs-one-off decision table applied to
@@ -136,8 +136,8 @@ Bun).
 
 Rungs 09–11 are the **same app on three frameworks** — a feed of travel spots
 on Drizzle 1.0 + SQLite, with cursor pagination, an entity-returning mutation, a
-one-off aggregate kept fresh by `.affects()`, a `tryDb` constraint surfacing as
-a domain error, and shimmer skeletons. Their contract, models, schema, and
+one-off aggregate kept fresh by `.affects()`, a db-result constraint surfacing
+as a domain error, and shimmer skeletons. Their contract, models, schema, and
 components are byte-identical across all three, so a diff shows you exactly what
 each framework changes and what it doesn't. See the [RSC
 guide](/guides/rsc/) for the shared pattern.

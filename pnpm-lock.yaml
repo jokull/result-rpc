@@ -45,6 +45,9 @@ importers:
       better-result:
         specifier: ^3.0.0
         version: 3.0.0
+      db-result:
+        specifier: ^0.2.0
+        version: 0.2.0(drizzle-orm@1.0.0-rc.4(bun-types@1.3.14))
       drizzle-orm:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4(bun-types@1.3.14)
@@ -1308,6 +1311,21 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+
+  db-result@0.2.0:
+    resolution: {integrity: sha512-g72Dq3TYS9FxnQrIMMbuFxhTdQrp/oMcZbllBQwvKjwa4s//tDZqrz2Xk3fpXomeIESCuzpt1W6Ek+iiuZseOw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@prisma/client': '>=6.0.0'
+      drizzle-orm: '>=1.0.0-rc.0'
+      kysely: '>=0.29.0'
+    peerDependenciesMeta:
+      '@prisma/client':
+        optional: true
+      drizzle-orm:
+        optional: true
+      kysely:
+        optional: true
 
   defu@6.1.7:
     resolution: {integrity: sha512-7z22QmUWiQ/2d0KkdYmANbRUVABpZ9SNYyH5vx6PZ+nE5bcC0l7uFvEfHlyld/HcGBFTL536ClDt3DEcSlEJAQ==}
@@ -3169,6 +3187,12 @@ snapshots:
       which: 2.0.2
 
   csstype@3.2.3: {}
+
+  db-result@0.2.0(drizzle-orm@1.0.0-rc.4(bun-types@1.3.14)):
+    dependencies:
+      better-result: 3.0.0
+    optionalDependencies:
+      drizzle-orm: 1.0.0-rc.4(bun-types@1.3.14)
 
   defu@6.1.7: {}
 
