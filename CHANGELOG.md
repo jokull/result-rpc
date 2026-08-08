@@ -87,7 +87,7 @@
   ```ts
   const result = await repository.findUser(id);
   return result.mapError((cause) =>
-    RepositoryUnavailable({ operation: "findUser", causeName: cause.name })
+    RepositoryUnavailable({ operation: "findUser", causeName: cause.name }),
   );
   ```
 
