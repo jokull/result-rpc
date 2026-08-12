@@ -89,7 +89,8 @@
     "release:check": "node scripts/release-check.mjs",
     "api:report": "pnpm build && node scripts/api-report.mjs --update",
     "api:report:check": "pnpm build && node scripts/api-report.mjs",
-    "bench:types": "node bench/types.mjs"
+    "bench:types": "node bench/types.mjs",
+    "prepare": "bun run build"
   },
   "dependencies": {
     "@tanstack/query-core": "^5.101.4",
