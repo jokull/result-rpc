@@ -9,6 +9,7 @@ import { InferErr as InferErr_2 } from 'better-result';
 import { InferOk as InferOk_2 } from 'better-result';
 import { Ok as Ok_2 } from 'better-result';
 import { Result as Result_2 } from 'better-result';
+import { Temporal } from 'temporal-polyfill';
 
 // @public (undocumented)
 export interface AffectsEntry {
@@ -731,6 +732,9 @@ export interface ExternalWireSchemaOptions {
 
 // @public (undocumented)
 export type ExtraDefinitionKeys<TExpected extends ErrorDefinitionMap, TActual extends ErrorDefinitionMap> = Exclude<keyof TActual, keyof TExpected> | IncompatibleDefinitionKeys<TExpected, TActual>;
+
+// @public (undocumented)
+export const failure: (message: string, path?: readonly (string | number)[]) => DecodeResult<never>;
 
 // @public
 export const fieldIssues: (failure: ServerBadRequest) => Readonly<Record<string, readonly string[]>>;
@@ -1771,6 +1775,9 @@ export interface SubscriptionProcedureManifest<TTypes extends AnyProcedureTypes 
     readonly middlewares: readonly RuntimeMiddleware[];
 }
 
+// @public (undocumented)
+export const success: <T>(value: T) => DecodeResult<T>;
+
 // @public
 export abstract class TaggedError<Tag extends string = string, Data extends WireValue = WireValue, Visibility extends ErrorVisibility = ErrorVisibility> extends Error {
     [Symbol.iterator](): Generator<Err<this>, never, unknown>;
@@ -1830,6 +1837,14 @@ export interface WireCodec<Input, Encoded extends WireValue = WireValue> {
 }
 
 // @public (undocumented)
+export interface WireCodecOptions<TInput, TEncoded extends WireValue> {
+    readonly decode: (value: unknown) => DecodeResult<TInput>;
+    readonly encode: (input: TInput) => DecodeResult<TEncoded>;
+    readonly id: string;
+    readonly wire: WireCodec<TEncoded, TEncoded>;
+}
+
+// @public (undocumented)
 export type WireGuard<T> = (value: unknown) => value is T;
 
 // @public
@@ -1841,10 +1856,16 @@ export interface WireNamespace {
     // (undocumented)
     readonly boolean: WireCodec<boolean, boolean>;
     // (undocumented)
+    readonly codec: <TInput, TEncoded extends WireValue>(options: WireCodecOptions<TInput, TEncoded>) => WireCodec<TInput, TEncoded>;
+    // (undocumented)
     readonly date: WireCodec<Date, Date>;
+    // (undocumented)
+    readonly duration: WireCodec<Temporal.Duration, Temporal.Duration>;
     readonly enum: <const TValues extends readonly [string, ...string[]]>(values: TValues) => WireCodec<TValues[number], TValues[number]>;
     // (undocumented)
     readonly finiteNumber: WireCodec<number, number>;
+    // (undocumented)
+    readonly instant: WireCodec<Temporal.Instant, Temporal.Instant>;
     // (undocumented)
     readonly integer: (options?: IntegerOptions) => WireCodec<number, number>;
     // (undocumented)
@@ -1860,6 +1881,15 @@ export interface WireNamespace {
     readonly optional: <TInput, TEncoded extends WireValue>(codec: WireCodec<TInput, TEncoded>) => WireCodec<TInput | undefined, TEncoded | undefined> & {
         readonly optional: true;
     };
+    readonly plainDate: WireCodec<Temporal.PlainDate, Temporal.PlainDate>;
+    // (undocumented)
+    readonly plainDateTime: WireCodec<Temporal.PlainDateTime, Temporal.PlainDateTime>;
+    // (undocumented)
+    readonly plainMonthDay: WireCodec<Temporal.PlainMonthDay, Temporal.PlainMonthDay>;
+    // (undocumented)
+    readonly plainTime: WireCodec<Temporal.PlainTime, Temporal.PlainTime>;
+    // (undocumented)
+    readonly plainYearMonth: WireCodec<Temporal.PlainYearMonth, Temporal.PlainYearMonth>;
     // (undocumented)
     readonly record: <TInput, TEncoded extends WireValue>(codec: WireCodec<TInput, TEncoded>) => WireCodec<Readonly<Record<string, TInput>>, Readonly<Record<string, TEncoded>>>;
     // (undocumented)
@@ -1876,6 +1906,8 @@ export interface WireNamespace {
     readonly union: <const TCodecs extends readonly AnyWireCodec[]>(codecs: TCodecs) => WireCodec<InputOf<TCodecs[number]>, EncodedOf<TCodecs[number]>>;
     // (undocumented)
     readonly url: WireCodec<URL, URL>;
+    // (undocumented)
+    readonly zonedDateTime: WireCodec<Temporal.ZonedDateTime, Temporal.ZonedDateTime>;
 }
 
 // @public (undocumented)
@@ -1885,7 +1917,7 @@ export type WireScalar = undefined | null | boolean | string | number | bigint;
 export type WireTypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView;
 
 // @public (undocumented)
-export type WireValue = WireScalar | Date | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
+export type WireValue = WireScalar | Date | Temporal.PlainDate | Temporal.PlainDateTime | Temporal.PlainTime | Temporal.PlainYearMonth | Temporal.PlainMonthDay | Temporal.Instant | Temporal.ZonedDateTime | Temporal.Duration | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
     readonly [key: string]: WireValue;
 };
 

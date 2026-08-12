@@ -1,4 +1,9 @@
 import { parse, stringify } from "devalue";
+// devalue revives Temporal values from the global `Temporal` object
+// (`Temporal[name].from(...)`). No Node version in the supported range ships
+// it natively, so install the polyfill's idempotent global entry — it only
+// defines `globalThis.Temporal` when absent, and never shadows a native one.
+import "temporal-polyfill/global";
 
 export const SERIALIZER_NAME = "devalue" as const;
 export const SERIALIZER_VERSION = 1 as const;

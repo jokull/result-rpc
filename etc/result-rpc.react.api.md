@@ -11,6 +11,7 @@ import { Ok as Ok_2 } from 'better-result';
 import { ReactNode } from 'react';
 import { Result as Result_2 } from 'better-result';
 import { SuspenseProps } from 'react';
+import { Temporal } from 'temporal-polyfill';
 
 // @public (undocumented)
 export interface AffectsEntry {
@@ -1413,7 +1414,7 @@ export type WireScalar = undefined | null | boolean | string | number | bigint;
 export type WireTypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView;
 
 // @public (undocumented)
-export type WireValue = WireScalar | Date | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
+export type WireValue = WireScalar | Date | Temporal.PlainDate | Temporal.PlainDateTime | Temporal.PlainTime | Temporal.PlainYearMonth | Temporal.PlainMonthDay | Temporal.Instant | Temporal.ZonedDateTime | Temporal.Duration | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
     readonly [key: string]: WireValue;
 };
 

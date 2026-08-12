@@ -89,15 +89,17 @@
     "release:check": "node scripts/release-check.mjs",
     "api:report": "pnpm build && node scripts/api-report.mjs --update",
     "api:report:check": "pnpm build && node scripts/api-report.mjs",
-    "bench:types": "node bench/types.mjs"
+    "bench:types": "node bench/types.mjs",
+    "postinstall": "bun run build"
   },
   "dependencies": {
     "@tanstack/query-core": "^5.101.4",
-    "devalue": "5.8.2"
+    "devalue": "5.8.2",
+    "temporal-polyfill": "^1.0.3"
   },
   "devDependencies": {
     "@arethetypeswrong/core": "0.18.5",
-    "@changesets/cli": "2.31.1",
+    "@changesets/cli": "3.0.0",
     "@microsoft/api-extractor": "7.58.12",
     "@tanstack/react-router": "^1.170.18",
     "@types/bun": "^1.3.14",

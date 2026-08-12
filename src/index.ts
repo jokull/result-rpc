@@ -210,6 +210,7 @@ export type {
 } from "./server/contract.js";
 
 export { wire } from "./wire.js";
+export { failure, success } from "./wire.js";
 export type {
   AnyWireCodec,
   CodecIssue,
@@ -225,6 +226,7 @@ export type {
   ShapeEncoded,
   ShapeInput,
   WireCodec,
+  WireCodecOptions,
   WireGuard,
   WireNamespace,
   WireScalar,
