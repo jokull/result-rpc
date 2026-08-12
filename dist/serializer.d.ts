@@ -1,3 +1,4 @@
+import "temporal-polyfill/global";
 export declare const SERIALIZER_NAME: "devalue";
 export declare const SERIALIZER_VERSION: 1;
 export declare const DEFAULT_MAX_WIRE_BYTES = 1048576;

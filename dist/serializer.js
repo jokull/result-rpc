@@ -1,4 +1,5 @@
 import { parse, stringify } from "devalue";
+import "temporal-polyfill/global";
 //#region src/serializer.ts
 const SERIALIZER_VERSION = 1;
 const DEFAULT_MAX_WIRE_BYTES = 1048576;

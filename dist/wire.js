@@ -4,7 +4,7 @@ import { Temporal } from "temporal-polyfill";
 const isWireValue = (value, seen = /* @__PURE__ */ new WeakSet()) => {
 	if (value === void 0 || value === null || typeof value === "boolean" || typeof value === "string" || typeof value === "number" || typeof value === "bigint") return true;
 	if (typeof value !== "object") return false;
-	if (value instanceof Date || value instanceof RegExp || value instanceof URL || value instanceof URLSearchParams || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
+	if (value instanceof Date || value instanceof Temporal.PlainDate || value instanceof Temporal.PlainDateTime || value instanceof Temporal.PlainTime || value instanceof Temporal.PlainYearMonth || value instanceof Temporal.PlainMonthDay || value instanceof Temporal.Instant || value instanceof Temporal.ZonedDateTime || value instanceof Temporal.Duration || value instanceof RegExp || value instanceof URL || value instanceof URLSearchParams || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
 	if (seen.has(value)) return true;
 	seen.add(value);
 	if (Array.isArray(value)) return value.every((entry) => isWireValue(entry, seen));
@@ -206,38 +206,28 @@ const codec = (options) => ({
 	}
 });
 /**
-* A Temporal value projected to its canonical string on the wire and rebuilt
-* with `Temporal.X.from` on the other side. `from` may throw for a valid
-* string that is not a valid value of the type, so decode guards the call.
+* An identity codec for one of the eight calendar/clock-oriented Temporal
+* classes. Temporal values are native wire citizens, exactly like `Date`:
+* devalue carries them as their canonical ISO string and revives them with
+* `Temporal.X.from` (the serializer imports the polyfill's global entry, so
+* revival works on runtimes without native Temporal). `Temporal.TimeZone`
+* and `Temporal.Calendar` are identifier strings in the spec, so they travel
+* as plain `wire.string`.
 */
-const temporalString = (name, id, isInstance, from, to) => codec({
-	id,
-	wire: stringCodec,
-	encode: (input) => isInstance(input) ? success(to(input)) : failure(`Expected a Temporal.${name} value`),
-	decode: (value) => {
-		try {
-			return success(from(value));
-		} catch {
-			return failure(`Expected a valid Temporal.${name} value`);
-		}
-	}
+const temporalCodec = (className, wireName, isInstance) => ({
+	kind: `temporal/${wireName}`,
+	schema: schemaOf(`temporal/${wireName}`),
+	encode: (input) => isInstance(input) ? success(input) : failure(`Expected a Temporal.${className} value`),
+	decode: (value) => isInstance(value) ? success(value) : failure(`Expected a Temporal.${className} value`)
 });
-/**
-* The Temporal suite: every calendar- and clock-oriented Temporal class,
-* carried on the wire as its canonical ISO string and restored with
-* `Temporal.X.from`. `Temporal.TimeZone` and `Temporal.Calendar` are
-* identifier strings in the spec, so they travel as plain `wire.string`.
-*/
-const temporalWire = {
-	plainDate: temporalString("PlainDate", "temporal/plain-date:v1", (value) => value instanceof Temporal.PlainDate, (wire) => Temporal.PlainDate.from(wire), (value) => value.toString()),
-	plainDateTime: temporalString("PlainDateTime", "temporal/plain-date-time:v1", (value) => value instanceof Temporal.PlainDateTime, (wire) => Temporal.PlainDateTime.from(wire), (value) => value.toString()),
-	plainTime: temporalString("PlainTime", "temporal/plain-time:v1", (value) => value instanceof Temporal.PlainTime, (wire) => Temporal.PlainTime.from(wire), (value) => value.toString()),
-	plainYearMonth: temporalString("PlainYearMonth", "temporal/plain-year-month:v1", (value) => value instanceof Temporal.PlainYearMonth, (wire) => Temporal.PlainYearMonth.from(wire), (value) => value.toString()),
-	plainMonthDay: temporalString("PlainMonthDay", "temporal/plain-month-day:v1", (value) => value instanceof Temporal.PlainMonthDay, (wire) => Temporal.PlainMonthDay.from(wire), (value) => value.toString()),
-	instant: temporalString("Instant", "temporal/instant:v1", (value) => value instanceof Temporal.Instant, (wire) => Temporal.Instant.from(wire), (value) => value.toString()),
-	zonedDateTime: temporalString("ZonedDateTime", "temporal/zoned-date-time:v1", (value) => value instanceof Temporal.ZonedDateTime, (wire) => Temporal.ZonedDateTime.from(wire), (value) => value.toString()),
-	duration: temporalString("Duration", "temporal/duration:v1", (value) => value instanceof Temporal.Duration, (wire) => Temporal.Duration.from(wire), (value) => value.toString())
-};
+const plainDateCodec = temporalCodec("PlainDate", "plain-date", (value) => value instanceof Temporal.PlainDate);
+const plainDateTimeCodec = temporalCodec("PlainDateTime", "plain-date-time", (value) => value instanceof Temporal.PlainDateTime);
+const plainTimeCodec = temporalCodec("PlainTime", "plain-time", (value) => value instanceof Temporal.PlainTime);
+const plainYearMonthCodec = temporalCodec("PlainYearMonth", "plain-year-month", (value) => value instanceof Temporal.PlainYearMonth);
+const plainMonthDayCodec = temporalCodec("PlainMonthDay", "plain-month-day", (value) => value instanceof Temporal.PlainMonthDay);
+const instantCodec = temporalCodec("Instant", "instant", (value) => value instanceof Temporal.Instant);
+const zonedDateTimeCodec = temporalCodec("ZonedDateTime", "zoned-date-time", (value) => value instanceof Temporal.ZonedDateTime);
+const durationCodec = temporalCodec("Duration", "duration", (value) => value instanceof Temporal.Duration);
 const nullCodec = {
 	kind: "null",
 	schema: schemaOf("null"),
@@ -404,6 +394,14 @@ const wire = {
 	bigint: bigintCodec,
 	undefined: undefinedCodec,
 	date: dateCodec,
+	plainDate: plainDateCodec,
+	plainDateTime: plainDateTimeCodec,
+	plainTime: plainTimeCodec,
+	plainYearMonth: plainYearMonthCodec,
+	plainMonthDay: plainMonthDayCodec,
+	instant: instantCodec,
+	zonedDateTime: zonedDateTimeCodec,
+	duration: durationCodec,
 	regexp: regexpCodec,
 	url: urlCodec,
 	null: nullCodec,
@@ -418,10 +416,9 @@ const wire = {
 	object,
 	serializable,
 	codec,
-	temporal: temporalWire,
 	standard
 };
 //#endregion
-export { encodeProcedureInput, encodeUnknownWireValue, failure, isWireValue, success, temporalWire, wire };
+export { encodeProcedureInput, encodeUnknownWireValue, failure, isWireValue, success, wire };
 
 //# sourceMappingURL=wire.js.map

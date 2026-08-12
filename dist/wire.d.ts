@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from "./standard-schema.js";
 import { Temporal } from "temporal-polyfill";
 export type WireScalar = undefined | null | boolean | string | number | bigint;
 export type WireTypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array | DataView;
-export type WireValue = WireScalar | Date | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
+export type WireValue = WireScalar | Date | Temporal.PlainDate | Temporal.PlainDateTime | Temporal.PlainTime | Temporal.PlainYearMonth | Temporal.PlainMonthDay | Temporal.Instant | Temporal.ZonedDateTime | Temporal.Duration | RegExp | URL | URLSearchParams | ArrayBuffer | WireTypedArray | readonly WireValue[] | ReadonlyMap<WireValue, WireValue> | ReadonlySet<WireValue> | {
     readonly [key: string]: WireValue;
 };
 /** Runtime counterpart of {@link WireValue}, used at untrusted wire boundaries. */
@@ -70,22 +70,6 @@ export interface WireCodecOptions<TInput, TEncoded extends WireValue> {
     /** Wire value back to application value. Receives only values `wire` accepts. */
     readonly decode: (value: unknown) => DecodeResult<TInput>;
 }
-/**
- * The Temporal suite: every calendar- and clock-oriented Temporal class,
- * carried on the wire as its canonical ISO string and restored with
- * `Temporal.X.from`. `Temporal.TimeZone` and `Temporal.Calendar` are
- * identifier strings in the spec, so they travel as plain `wire.string`.
- */
-export declare const temporalWire: {
-    readonly plainDate: WireCodec<Temporal.PlainDate, string>;
-    readonly plainDateTime: WireCodec<Temporal.PlainDateTime, string>;
-    readonly plainTime: WireCodec<Temporal.PlainTime, string>;
-    readonly plainYearMonth: WireCodec<Temporal.PlainYearMonth, string>;
-    readonly plainMonthDay: WireCodec<Temporal.PlainMonthDay, string>;
-    readonly instant: WireCodec<Temporal.Instant, string>;
-    readonly zonedDateTime: WireCodec<Temporal.ZonedDateTime, string>;
-    readonly duration: WireCodec<Temporal.Duration, string>;
-};
 export interface IntegerOptions {
     readonly min?: number;
     readonly max?: number;
@@ -145,8 +129,21 @@ export interface WireNamespace {
     readonly object: <const TShape extends CodecShape>(shape: TShape) => WireCodec<ShapeInput<TShape>, ShapeEncoded<TShape>>;
     readonly serializable: <T>(guard: WireGuard<T>, options: ExternalWireSchemaOptions) => WireCodec<T, T & WireValue>;
     readonly codec: <TInput, TEncoded extends WireValue>(options: WireCodecOptions<TInput, TEncoded>) => WireCodec<TInput, TEncoded>;
-    /** The Temporal suite: each calendar/clock class as a string-projected codec. */
-    readonly temporal: typeof temporalWire;
+    /**
+     * The eight calendar- and clock-oriented Temporal classes as native wire
+     * citizens, like `date`. Each travels as its canonical ISO string on the
+     * wire and is revived with `Temporal.X.from` by the serializer. The
+     * `Temporal.TimeZone` and `Temporal.Calendar` classes are identifier
+     * strings in the spec, so they travel as plain `wire.string`.
+     */
+    readonly plainDate: WireCodec<Temporal.PlainDate, Temporal.PlainDate>;
+    readonly plainDateTime: WireCodec<Temporal.PlainDateTime, Temporal.PlainDateTime>;
+    readonly plainTime: WireCodec<Temporal.PlainTime, Temporal.PlainTime>;
+    readonly plainYearMonth: WireCodec<Temporal.PlainYearMonth, Temporal.PlainYearMonth>;
+    readonly plainMonthDay: WireCodec<Temporal.PlainMonthDay, Temporal.PlainMonthDay>;
+    readonly instant: WireCodec<Temporal.Instant, Temporal.Instant>;
+    readonly zonedDateTime: WireCodec<Temporal.ZonedDateTime, Temporal.ZonedDateTime>;
+    readonly duration: WireCodec<Temporal.Duration, Temporal.Duration>;
     readonly standard: <TSchema extends StandardSchemaV1<unknown, unknown>>(schema: TSchema, options: ExternalWireSchemaOptions) => WireCodec<TSchema extends StandardSchemaV1<unknown, infer TOutput> ? TOutput : never, WireValue>;
 }
 export declare const wire: WireNamespace;
