@@ -36,16 +36,17 @@ The concept mapping is mechanical:
 
 | tRPC                                         | result-rpc                                                                  |
 | -------------------------------------------- | --------------------------------------------------------------------------- |
-| `initTRPC.context<Ctx>().create()`           | `serverRpc.context<Ctx>()`                                                  |
-| `t.procedure.input(z...).query(fn)`          | `server.procedure().input(wire...).output(wire...).errors({...}).query(fn)` |
+| `initTRPC.context<Ctx>().create()`           | `rpc.context<Ctx>()` (browser-safe contract) + `serverRpc.context<Ctx>()` (server) |
+| `t.procedure.input(z...).output(...)` — the definition | `app.procedure().input(wire...).output(wire...).errors({...}).query()` — in the contract, no handler |
+| `.query(fn)` / `.mutation(fn)` — the resolver | `server.implement(contract).handler(fn)`                                    |
 | `throw new TRPCError({ code })`              | `return err(errors.SomeError({...}))`                                       |
 | `t.middleware` + `ctx` spread                | `server.middleware<Added>().errors({...}).use(...)`                         |
-| `protectedProcedure`                         | `server.procedure().use(authenticated)` — same pattern                      |
+| `protectedProcedure`                         | an `authenticated` middleware, applied per `server.implement(contract).use(authenticated)` |
 | `httpBatchLink`                              | `batchFetchTransport`                                                       |
 | `@trpc/react-query` hooks                    | `useResultQuery` / shell hooks                                              |
 | `errorFormatter`                             | gone — error data is a wire codec, not a formatted shape                    |
 | adapter `onError`                            | `onError` + `onInternalError` on `createFetchHandler`                       |
-| `createCaller`                               | `createServerClient`                                                        |
+| `createCaller`                               | `createServerClient(router, { context })`                                   |
 | `ctx.resHeaders` / `responseMeta`            | `.headers()` on the procedure, then `context.headers`                       |
 | `queryClient.setDefaultOptions({ onError })` | a shell                                                                     |
 
@@ -62,7 +63,11 @@ response headers](/concepts/context/#setting-response-headers-and-logging-someon
 Two things have no tRPC equivalent and are the actual work: every procedure
 declares its error union (this is where the two-failure-channel debt gets paid
 down, one procedure at a time), and interceptor logic moves into shells. There
-is no codemod; each procedure is a five-minute mechanical rewrite.
+is no codemod; each procedure is a five-minute mechanical rewrite — the one
+`.query(fn)` splits into a handler-free declaration on the browser-safe
+`contract` and a `server.implement(contract).handler(fn)` on the server, which
+is what lets the coexistence client above import a `contract` and never the
+router.
 
 During coexistence the two stacks keep **separate caches** — a result-rpc
 mutation does not invalidate tRPC queries or vice versa. Migrate whole
