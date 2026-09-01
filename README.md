@@ -61,6 +61,10 @@ Nothing was removed from the operation. The mounted shell chain owns the other
 tags and provides the corresponding behavior: a login dialog, offline banner,
 redirect, retry surface, or error-boundary escalation.
 
+result-rpc won the **Spínat** competition (#9) at
+[naglasúpan](https://naglasupan.is), Iceland's community of builders.
+[Read the results →](https://naglasupan.is/projects/naglasupan/articles/spinat-competition-9-results)
+
 ## Install
 
 ```sh
