@@ -1225,7 +1225,7 @@ superlinear growth is what eventually makes an API package unusable
 will serialize" is the terminal form). `pnpm bench:types` generates a synthetic
 consumer at three sizes, measures instantiations, and fails the build if the
 marginal cost per procedure grows more than 15% against
-`bench/baseline.json`.
+`scripts/bench-types.baseline.json`.
 
 Measured, at the time of writing:
 

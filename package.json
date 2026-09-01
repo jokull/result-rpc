@@ -89,7 +89,7 @@
     "release:check": "node scripts/release-check.mjs",
     "api:report": "pnpm build && node scripts/api-report.mjs --update",
     "api:report:check": "pnpm build && node scripts/api-report.mjs",
-    "bench:types": "node bench/types.mjs",
+    "bench:types": "node scripts/bench-types.mjs",
     "postinstall": "bun run build"
   },
   "dependencies": {

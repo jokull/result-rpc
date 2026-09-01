@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+scripts/.work/
 .DS_Store
 .blume/
 website/dist/

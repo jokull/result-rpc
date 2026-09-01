@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const work = join(here, ".work");
-const baselinePath = join(here, "baseline.json");
+const baselinePath = join(here, "bench-types.baseline.json");
 const SIZES = [25, 50, 100];
 const LAYER_DEPTHS = [1, 3, 6, 10];
 const MIDDLEWARE_DEPTHS = [1, 3, 6, 10, 15];
