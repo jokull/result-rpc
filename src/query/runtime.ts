@@ -38,7 +38,7 @@ const wireOnlineManager = () => {
   });
 };
 import { err, ok, type Result } from "../result.js";
-import { encodeProcedureInput } from "../wire.js";
+import { encodeProcedureInput, encodeUnknownWireValue } from "../wire.js";
 import {
   DEFAULT_MAX_WIRE_BYTES,
   deserialize,
@@ -755,19 +755,31 @@ const decodeThroughCodec = (
   procedure: {
     readonly _def: {
       readonly pagination?: PaginationManifest | undefined;
-      readonly output: {
-        readonly decode: (value: unknown) => import("../wire.js").DecodeResult<unknown>;
-      };
+      readonly output: import("../wire.js").AnyWireCodec;
     };
   },
   value: unknown,
 ): { readonly ok: true; readonly value: unknown } | { readonly ok: false } => {
-  if (procedure._def.pagination) {
-    const normalized = normalizeInfiniteData(value, procedure._def.output.decode);
-    return normalized ? { ok: true, value: normalized } : { ok: false };
+  // Cached data is the APPLICATION value, not the wire value: for a
+  // transforming `wire.codec` the two differ, so decoding it directly would
+  // reject it or decode it twice. Round-trip instead — encode validates the
+  // application side, decode rebuilds it (and with it, entity brands).
+  const { output } = procedure._def;
+  const roundTrip = (page: unknown): import("../wire.js").DecodeResult<unknown> => {
+    const encoded = encodeUnknownWireValue(output, page);
+    return encoded.ok ? output.decode(encoded.value) : encoded;
+  };
+  try {
+    if (procedure._def.pagination) {
+      const normalized = normalizeInfiniteData(value, roundTrip);
+      return normalized ? { ok: true, value: normalized } : { ok: false };
+    }
+    const decoded = roundTrip(value);
+    return decoded.ok ? { ok: true, value: decoded.value } : { ok: false };
+  } catch {
+    // A custom codec's encode met a value it was never written to handle.
+    return { ok: false };
   }
-  const decoded = procedure._def.output.decode(value);
-  return decoded.ok ? { ok: true, value: decoded.value } : { ok: false };
 };
 
 /** One query entry of a query-core `DehydratedState`, as our payload carries it. */

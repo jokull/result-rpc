@@ -24,4 +24,10 @@ already-cached key.
   write-through — previously this depended on the removed observe-time
   re-decode.
 
+- Cached values are normalized by encoding and then decoding through the output
+  codec. Hydration previously decoded the cached application value as if it were
+  wire data, which silently corrupted outputs using a transforming `wire.codec`
+  whose application and wire types overlap, and dropped the hydrated entry when
+  they did not.
+
 No API changes.

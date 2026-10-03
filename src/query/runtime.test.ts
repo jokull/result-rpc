@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { err, error, ok, wire } from "../index.js";
+import { err, error, ok, success, wire } from "../index.js";
 import { createFixtureClient } from "../testing/index.js";
 import { cancelled, fetchTransport, type ClientTransport } from "../client/transport.js";
 import { createFetchHandler } from "../server/index.js";
@@ -392,6 +392,56 @@ describe("reactive query runtime", () => {
     source.clear();
     matching.clear();
     stale.clear();
+  });
+
+  test("a transforming output codec survives hydrate and cache.update unchanged", async () => {
+    // Application value is dollars, wire value is cents. Both are numbers, so
+    // decoding an application value as if it were wire data would not fail —
+    // it would silently divide by 100 a second time.
+    const dollars = wire.codec({
+      id: "test/dollars",
+      wire: wire.number,
+      encode: (value: number) => success(Math.round(value * 100)),
+      decode: (cents: number) => success(cents / 100),
+    });
+    const pricing = rpc.context<object>();
+    const price = pricing
+      .procedure()
+      .input(wire.object({ id: wire.string }))
+      .output(wire.object({ id: wire.string, amount: dollars }))
+      .query(({ input }) => ok({ id: input.id, amount: 12.5 }));
+    const priceRouter = pricing.router({ price });
+    const handler = createFetchHandler({ router: priceRouter, createContext: () => ({}) });
+    const client = createFixtureClient({
+      router: priceRouter,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          handler(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+
+    const serverRuntime = createQueryRuntime({ client });
+    await serverRuntime.prefetch(client.price, { id: "p_1" });
+    expect(serverRuntime.cache.get(client.price, { id: "p_1" })).toEqual({
+      id: "p_1",
+      amount: 12.5,
+    });
+
+    const browserRuntime = createQueryRuntime({ client });
+    browserRuntime.hydrate(serverRuntime.dehydrate());
+    expect(browserRuntime.cache.get(client.price, { id: "p_1" })).toEqual({
+      id: "p_1",
+      amount: 12.5,
+    });
+
+    browserRuntime.cache.update(client.price, { id: "p_2" }, () => ({ id: "p_2", amount: 3 }));
+    expect(browserRuntime.cache.get(client.price, { id: "p_2" })).toEqual({
+      id: "p_2",
+      amount: 3,
+    });
+    serverRuntime.clear();
+    browserRuntime.clear();
   });
 
   test("hydrating a payload leaves queries outside it untouched", async () => {
