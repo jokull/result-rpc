@@ -44,4 +44,9 @@ export default defineConfig({
     level: "error",
   },
   failOnWarn: true,
+  checks: {
+    // unbundle emits one output per module, so the "use client" directives in
+    // src/react survive verbatim; rolldown's bundling caveat does not apply.
+    moduleLevelDirective: false,
+  },
 });

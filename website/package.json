@@ -14,22 +14,22 @@
   },
   "dependencies": {
     "@astrojs/react": "^6.0.2",
-    "astro": "^7.1.1",
+    "astro": "^7.3.5",
     "blume": "1.2.1",
-    "motion": "^12.43.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "motion": "^13.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.6",
-    "@astrojs/cloudflare": "14.1.5",
+    "@astrojs/check": "^0.9.10",
+    "@astrojs/cloudflare": "14.3.3",
     "@astrojs/mdx": "7.0.3",
-    "@cloudflare/vite-plugin": "1.48.0",
+    "@cloudflare/vite-plugin": "1.62.4",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "takumi-js": "2.4.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "takumi-js": "2.14.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.146.0"
   }
 }

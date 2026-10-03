@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  node-20-package:
-    name: Packed package · Node 20.19
+  min-node-package:
+    name: Packed package · Node 22.18
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -30,10 +30,8 @@ jobs:
           version: 11.9.0
           run_install: false
 
-      # Tooling runs on a Node pnpm supports: pnpm 11.9.0 declares
-      # engines.node ">=22.13" and aborts on Node 20 with
-      # ERR_UNKNOWN_BUILTIN_MODULE. The package under test still gets exercised
-      # on 20.19.5 below — only the build of it needs a newer Node.
+      # Tooling runs on the current LTS. The package under test still gets
+      # exercised on the minimum supported Node (22.18.0) below.
       - name: Install Node 24 for tooling
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -50,14 +48,14 @@ jobs:
           mkdir -p artifacts
           npm pack --ignore-scripts --pack-destination artifacts
 
-      - name: Install Node 20.19.5
+      - name: Install Node 22.18.0
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20.19.5
+          node-version: 22.18.0
 
-      # package.json declares engines.node ">=20.19.5". This is the step that
+      # package.json declares engines.node ">=22.18.0". This is the step that
       # makes that a tested claim rather than an assertion: the packed tarball
-      # is installed with npm — which ships with Node 20, unlike pnpm — and
+      # is installed with npm — which ships with Node, unlike pnpm — and
       # every published entry point is imported on the minimum supported Node.
       - name: Load every entry point on the minimum supported Node
         run: |
