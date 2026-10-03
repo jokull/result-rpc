@@ -7,6 +7,7 @@ import {
   onlineManager,
   QueryClient,
   QueryObserver,
+  type DehydratedState,
   type InfiniteData,
   type QueryObserverResult,
   type MutationObserverResult,
@@ -50,6 +51,7 @@ import {
   getClientRouter,
   getProcedureClientMetadata,
   getTouchedEntities,
+  registerStagedHydrate,
 } from "../client/client-metadata.js";
 import type {
   AffectsEntry,
@@ -269,16 +271,6 @@ const invokePaginatedClient = <TProcedureClient extends PaginatedProcedureClient
       Page<PaginatedClientItem<TProcedureClient>, PaginatedClientCursor<TProcedureClient>>,
       ProcedureClientError<TProcedureClient>
     >
-  >;
-
-const decodePaginatedPage = <TProcedureClient extends PaginatedProcedureClientLike>(
-  procedure: ClientProcedureSource<TProcedureClient>,
-  value: unknown,
-) =>
-  // Source capability and output codec are one associated record; successful
-  // decode proves the page specialization lost at the erased metadata edge.
-  procedure._def.output.decode(value) as import("../wire.js").DecodeResult<
-    Page<PaginatedClientItem<TProcedureClient>, PaginatedClientCursor<TProcedureClient>>
   >;
 
 const normalizePaginatedCursor = <TProcedureClient extends PaginatedProcedureClientLike>(
@@ -752,6 +744,71 @@ const normalizeInfiniteData = <TPage>(
 };
 
 /**
+ * Runs a value in the cache's shape through the procedure's declared output
+ * codec: the whole value for a unary query, page by page for a paginated one
+ * (its cache entry is `InfiniteData`, the codec describes one page). Decode
+ * is the only pass that knows where the entities are, so it is also the only
+ * pass that brands them — every framework write of app- or wire-sourced data
+ * goes through here before it is trusted.
+ */
+const decodeThroughCodec = (
+  procedure: {
+    readonly _def: {
+      readonly pagination?: PaginationManifest | undefined;
+      readonly output: {
+        readonly decode: (value: unknown) => import("../wire.js").DecodeResult<unknown>;
+      };
+    };
+  },
+  value: unknown,
+): { readonly ok: true; readonly value: unknown } | { readonly ok: false } => {
+  if (procedure._def.pagination) {
+    const normalized = normalizeInfiniteData(value, procedure._def.output.decode);
+    return normalized ? { ok: true, value: normalized } : { ok: false };
+  }
+  const decoded = procedure._def.output.decode(value);
+  return decoded.ok ? { ok: true, value: decoded.value } : { ok: false };
+};
+
+/** One query entry of a query-core `DehydratedState`, as our payload carries it. */
+interface DehydratedQueryEntry {
+  readonly queryKey: readonly unknown[];
+  readonly queryHash: string;
+  readonly state: {
+    readonly status: "pending" | "success" | "error";
+    readonly data: unknown;
+    readonly error: unknown;
+    readonly dataUpdatedAt: number;
+    readonly isInvalidated: boolean;
+  };
+}
+
+interface DehydratedPayload {
+  readonly queries: readonly DehydratedQueryEntry[];
+  readonly mutations: readonly unknown[];
+}
+
+const isDehydratedQueryEntry = (value: unknown): value is DehydratedQueryEntry =>
+  typeof value === "object" &&
+  value !== null &&
+  "queryHash" in value &&
+  typeof value.queryHash === "string" &&
+  "queryKey" in value &&
+  Array.isArray(value.queryKey) &&
+  "state" in value &&
+  typeof value.state === "object" &&
+  value.state !== null;
+
+const asDehydratedPayload = (value: unknown): DehydratedPayload | undefined => {
+  if (value === null || typeof value !== "object") return undefined;
+  const queries = "queries" in value ? value.queries : [];
+  const mutations = "mutations" in value ? value.mutations : [];
+  if (!Array.isArray(queries) || !Array.isArray(mutations)) return undefined;
+  if (!queries.every(isDehydratedQueryEntry)) return undefined;
+  return { queries, mutations };
+};
+
+/**
  * Re-wraps a settled query or mutation state as the same `Result` the
  * imperative client returns — for handing a hook outcome to Result-typed
  * code. `undefined` while the state is still pending or idle.
@@ -1179,9 +1236,23 @@ export const createQueryRuntime = <TClient>(
     key: queryKey,
     get: (procedure, input) => queryClient.getQueryData(queryKey(procedure, input)),
     update: (procedure, input, updater) => {
+      const metadata = metadataFor(procedure);
       const key = queryKey(procedure, input);
       const previous = queryClient.getQueryData(key);
-      queryClient.setQueryData(key, updater);
+      queryClient.setQueryData(key, (current: unknown) => {
+        // setQueryData typed this slot's data by the key alone; the updater's
+        // signature is the typed view of the same cache slot.
+        const next = (updater as (current: unknown) => unknown)(current);
+        if (next === undefined) return undefined;
+        // An app-made value is unbranded: brands live on object identity and
+        // the updater built fresh objects. Structural sharing recovers a brand
+        // from the OLD side when keys match, but an EMPTY slot has no old side
+        // — so decode at write time, exactly as a fetched result is, and
+        // entity patches reach the inserted row. The type system is the
+        // contract for app writes; a value the codec rejects is stored as is.
+        const decoded = decodeThroughCodec(metadata.procedure, next);
+        return decoded.ok ? decoded.value : next;
+      });
       return () => queryClient.setQueryData(key, previous);
     },
     invalidate: async (procedure, input) => {
@@ -1221,6 +1292,118 @@ export const createQueryRuntime = <TClient>(
     },
   };
 
+  /** Version checks plus deserialization — everything that can reject a payload. */
+  const decodeDehydrated = (state: DehydratedQueryRuntime): DehydratedPayload => {
+    if (state.v !== 1 || state.serializer !== SERIALIZER_VERSION) {
+      throw new TypeError("Unsupported result-rpc query cache version");
+    }
+    if (state.contract !== contractVersion) {
+      throw new TypeError(
+        `Dehydrated query cache contract ${String(state.contract)} does not match client contract ${contractVersion}`,
+      );
+    }
+    const decoded = deserialize(state.payload, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
+    const payload = decoded.ok ? asDehydratedPayload(decoded.value) : undefined;
+    if (!payload) throw new TypeError("Invalid result-rpc query cache payload");
+    return payload;
+  };
+
+  /**
+   * Merges a deserialized payload into the cache and normalizes exactly the
+   * entries it wrote. Scoped to the payload — never the whole cache — so
+   * hydrating one route segment cannot notify observers of unrelated keys.
+   */
+  const applyHydration = (payload: DehydratedPayload): void => {
+    // Snapshot every query holding an unreconciled local write before the
+    // merge. Comparing the payload's timestamps against ours is not an
+    // option — they come from different clocks — so the rule is decided on
+    // provenance instead: a confirmed write outranks a snapshot, and the
+    // disagreement is settled by a refetch rather than by guessing.
+    const pendingLocalWrites = new Map<
+      string,
+      { readonly key: readonly unknown[]; readonly data: unknown; readonly updatedAt: number }
+    >();
+    for (const hash of unreconciledLocalWrites) {
+      const query = queryClient.getQueryCache().get(hash);
+      if (query?.state.status !== "success" || query.state.data === undefined) continue;
+      pendingLocalWrites.set(hash, {
+        key: query.queryKey,
+        data: query.state.data,
+        updatedAt: query.state.dataUpdatedAt,
+      });
+    }
+    hydrateQueryClient(queryClient, {
+      // The payload came from query-core's own dehydrate; our entry type is
+      // the structural subset of its query shape that the merge reads.
+      queries: [...payload.queries] as DehydratedState["queries"],
+      mutations: [...payload.mutations] as DehydratedState["mutations"],
+    });
+    // Normalize every entry the merge wrote through its output codec NOW, not
+    // at observe time: decode re-brands the entities, the share pass carries
+    // the brands onto the retained objects, and the success event indexes
+    // them — so patches and touch-invalidation reach hydrated queries that
+    // no component has observed yet. query-core stores the payload's own
+    // objects, so identity tells an entry it wrote from one it skipped
+    // because the cache already held something newer; a skipped entry is
+    // left untouched and its observers hear nothing.
+    const router = getClientRouter(clientIdentity);
+    if (router) {
+      for (const entry of payload.queries) {
+        const query = queryClient.getQueryCache().get(entry.queryHash);
+        if (!query) continue;
+        const path = entry.queryKey[0];
+        const procedure = typeof path === "string" ? router.procedures.get(path) : undefined;
+        if (!procedure || procedure._def.kind !== "query") continue;
+        if (entry.state.status === "error") {
+          if (query.state.error !== entry.state.error) continue;
+          // A dehydrated failure arrives as the wire shape it was sent as.
+          // Reify it through the procedure's own registry, exactly like a
+          // failure off the transport, so shells claim it and `matchError`
+          // narrows it identically whether it was fetched or hydrated.
+          const encoded = query.state.error;
+          if (isTaggedError(encoded) || !isEncodedTaggedError(encoded)) continue;
+          const definition = Object.values(procedure._def.definitions as ErrorDefinitionMap).find(
+            (candidate) => candidate.tag === encoded._tag,
+          );
+          const reified = definition?.decode(encoded);
+          if (reified?.ok) query.setState({ error: reified.value as Error });
+          else queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+          continue;
+        }
+        if (entry.state.status !== "success" || entry.state.data === undefined) continue;
+        if (query.state.data !== entry.state.data) continue;
+        const normalized = decodeThroughCodec(procedure, query.state.data);
+        if (!normalized.ok) {
+          queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
+          continue;
+        }
+        // Preserve staleness: the freshness clock and any pending
+        // invalidation survive, or a remount would trust stale data as fresh
+        // and skip its refetch.
+        const wasInvalidated = query.state.isInvalidated;
+        queryClient.setQueryData(query.queryKey, normalized.value, {
+          updatedAt: query.state.dataUpdatedAt,
+        });
+        if (wasInvalidated) query.invalidate();
+      }
+    }
+    for (const [hash, saved] of pendingLocalWrites) {
+      const query = queryClient.getQueryCache().get(hash);
+      if (!query || query.state.data === saved.data) continue;
+      // The payload disagreed with a confirmed write. Keep the write visible
+      // and mark the query for reconciliation: showing the older snapshot
+      // under staleTime would strand it with no path back to the truth.
+      suppressReindex += 1;
+      try {
+        queryClient.setQueryData(saved.key, saved.data, { updatedAt: saved.updatedAt });
+      } finally {
+        suppressReindex -= 1;
+      }
+      unreconciledLocalWrites.add(hash);
+      query.invalidate();
+    }
+  };
+
   const runtime: QueryRuntime<TClient> = {
     client: options.client,
     cache,
@@ -1244,24 +1427,6 @@ export const createQueryRuntime = <TClient>(
 
       const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
       const key = queryKey(procedure, input);
-      const hydratedState = queryClient.getQueryState(key);
-      if (hydratedState?.status === "success") {
-        const decoded = metadata.procedure._def.output.decode(hydratedState.data);
-        if (!decoded.ok) {
-          queryClient.removeQueries({ queryKey: key, exact: true });
-        } else {
-          // Normalize/copy rich values through the declared output codec
-          // before trust — WITHOUT laundering staleness: preserve both the
-          // freshness clock and any pending invalidation, or a remount would
-          // trust stale data as fresh and skip its refetch.
-          queryClient.setQueryData(key, decoded.value, {
-            updatedAt: hydratedState.dataUpdatedAt,
-          });
-          if (hydratedState.isInvalidated) {
-            queryClient.getQueryCache().find({ queryKey: key, exact: true })?.invalidate();
-          }
-        }
-      }
       // Read retry lazily on every attempt — see the mutation counterpart.
       const retry = (failureCount: number, failure: unknown) => {
         const configured = queryOptions.retry;
@@ -1356,24 +1521,6 @@ export const createQueryRuntime = <TClient>(
       }
       const definitions: ErrorDefinitionMap = metadata.procedure._def.definitions;
       const key = queryKey(procedure, input);
-
-      // Hydrated pages are normalized through the page codec before trust —
-      // per page, because the cached shape is InfiniteData, not one page.
-      // Staleness is preserved exactly as for unary queries.
-      const hydratedState = queryClient.getQueryState(key);
-      if (hydratedState?.status === "success") {
-        const normalized = normalizeInfiniteData<TPage>(hydratedState.data, (value) =>
-          decodePaginatedPage<TProcedureClient>(metadata.procedure, value),
-        );
-        if (!normalized) {
-          queryClient.removeQueries({ queryKey: key, exact: true });
-        } else {
-          queryClient.setQueryData(key, normalized, { updatedAt: hydratedState.dataUpdatedAt });
-          if (hydratedState.isInvalidated) {
-            queryClient.getQueryCache().find({ queryKey: key, exact: true })?.invalidate();
-          }
-        }
-      }
 
       const retry = (failureCount: number, failure: unknown) => {
         const configured = queryOptions.retry;
@@ -1907,112 +2054,7 @@ export const createQueryRuntime = <TClient>(
         payload: encoded.value,
       };
     },
-    hydrate: (state) => {
-      if (state.v !== 1 || state.serializer !== SERIALIZER_VERSION) {
-        throw new TypeError("Unsupported result-rpc query cache version");
-      }
-      if (state.contract !== contractVersion) {
-        throw new TypeError(
-          `Dehydrated query cache contract ${String(state.contract)} does not match client contract ${contractVersion}`,
-        );
-      }
-      const decoded = deserialize(state.payload, { maxBytes: DEFAULT_MAX_WIRE_BYTES });
-      if (!decoded.ok || decoded.value === null || typeof decoded.value !== "object") {
-        throw new TypeError("Invalid result-rpc query cache payload");
-      }
-      // Snapshot every query holding an unreconciled local write before the
-      // merge. Comparing the payload's timestamps against ours is not an
-      // option — they come from different clocks — so the rule is decided on
-      // provenance instead: a confirmed write outranks a snapshot, and the
-      // disagreement is settled by a refetch rather than by guessing.
-      const pendingLocalWrites = new Map<
-        string,
-        { readonly key: readonly unknown[]; readonly data: unknown; readonly updatedAt: number }
-      >();
-      for (const hash of unreconciledLocalWrites) {
-        const query = queryClient.getQueryCache().get(hash);
-        if (query?.state.status !== "success" || query.state.data === undefined) continue;
-        pendingLocalWrites.set(hash, {
-          key: query.queryKey,
-          data: query.state.data,
-          updatedAt: query.state.dataUpdatedAt,
-        });
-      }
-      hydrateQueryClient(queryClient, decoded.value);
-      // Normalize every hydrated query through its output codec NOW, not at
-      // observe time: decode re-brands the entities, the share pass carries
-      // the brands onto the retained objects, and the success event indexes
-      // them — so patches and touch-invalidation reach hydrated queries that
-      // no component has observed yet.
-      const router = getClientRouter(clientIdentity);
-      if (router) {
-        for (const query of queryClient.getQueryCache().getAll()) {
-          const path = query.queryKey[0];
-          const procedure = typeof path === "string" ? router.procedures.get(path) : undefined;
-          if (!procedure || procedure._def.kind !== "query") continue;
-          if (query.state.status === "error") {
-            // A dehydrated failure arrives as the wire shape it was sent as.
-            // Reify it through the procedure's own registry, exactly like a
-            // failure off the transport, so shells claim it and `matchError`
-            // narrows it identically whether it was fetched or hydrated.
-            const encoded = query.state.error;
-            if (isTaggedError(encoded) || !isEncodedTaggedError(encoded)) continue;
-            const definition = Object.values(procedure._def.definitions as ErrorDefinitionMap).find(
-              (candidate) => candidate.tag === encoded._tag,
-            );
-            const reified = definition?.decode(encoded);
-            if (reified?.ok) query.setState({ error: reified.value as Error });
-            else queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
-            continue;
-          }
-          if (query.state.status !== "success" || query.state.data === undefined) continue;
-          const pagination = procedure._def.pagination;
-          if (pagination) {
-            // Paginated entries hold InfiniteData — normalize page by page
-            // through the page codec so every row re-brands and re-indexes.
-            const normalized = normalizeInfiniteData(
-              query.state.data,
-              procedure._def.output.decode,
-            );
-            if (!normalized) {
-              queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
-            } else {
-              const wasInvalidated = query.state.isInvalidated;
-              queryClient.setQueryData(query.queryKey, normalized, {
-                updatedAt: query.state.dataUpdatedAt,
-              });
-              if (wasInvalidated) query.invalidate();
-            }
-            continue;
-          }
-          const normalized = procedure._def.output.decode(query.state.data);
-          if (!normalized.ok) {
-            queryClient.removeQueries({ queryKey: query.queryKey, exact: true });
-          } else {
-            const wasInvalidated = query.state.isInvalidated;
-            queryClient.setQueryData(query.queryKey, normalized.value, {
-              updatedAt: query.state.dataUpdatedAt,
-            });
-            if (wasInvalidated) query.invalidate();
-          }
-        }
-      }
-      for (const [hash, saved] of pendingLocalWrites) {
-        const query = queryClient.getQueryCache().get(hash);
-        if (!query || query.state.data === saved.data) continue;
-        // The payload disagreed with a confirmed write. Keep the write visible
-        // and mark the query for reconciliation: showing the older snapshot
-        // under staleTime would strand it with no path back to the truth.
-        suppressReindex += 1;
-        try {
-          queryClient.setQueryData(saved.key, saved.data, { updatedAt: saved.updatedAt });
-        } finally {
-          suppressReindex -= 1;
-        }
-        unreconciledLocalWrites.add(hash);
-        query.invalidate();
-      }
-    },
+    hydrate: (state) => applyHydration(decodeDehydrated(state)),
     clear: () => {
       queryClient.unmount();
       queryClient.clear();
@@ -2022,5 +2064,21 @@ export const createQueryRuntime = <TClient>(
       entityWriteSeq.clear();
     },
   };
+  // The React bindings hydrate during render for first paint. Entries whose
+  // query does not exist yet have no observers and merge silently now; the
+  // rest are handed back to run after commit, where notifying is legal.
+  registerStagedHydrate(runtime, (state) => {
+    const payload = decodeDehydrated(state);
+    const queryCache = queryClient.getQueryCache();
+    const fresh: DehydratedQueryEntry[] = [];
+    const existing: DehydratedQueryEntry[] = [];
+    for (const entry of payload.queries) {
+      (queryCache.get(entry.queryHash) ? existing : fresh).push(entry);
+    }
+    if (fresh.length > 0) applyHydration({ ...payload, queries: fresh });
+    if (existing.length === 0) return undefined;
+    // Mutations (none, by our dehydrate) merged in the first phase.
+    return () => applyHydration({ queries: existing, mutations: [] });
+  });
   return runtime;
 };

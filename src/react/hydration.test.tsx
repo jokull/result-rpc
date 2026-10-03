@@ -89,6 +89,22 @@ const makeWorld = () => {
   };
 };
 
+// React reports a store update issued from inside another component's render.
+const RENDER_PHASE_UPDATE = "Cannot update a component";
+const captureConsoleErrors = () => {
+  const calls: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => {
+    calls.push(args.map(String).join(" "));
+  };
+  return {
+    renderPhaseUpdates: () => calls.filter((call) => call.includes(RENDER_PHASE_UPDATE)),
+    restore: () => {
+      console.error = original;
+    },
+  };
+};
+
 // The RSC server phase: a fresh runtime over an in-process server client,
 // prefetch, then dehydrate. Mirrors a React.cache'd per-request runtime.
 const serverDehydrate = async (
@@ -204,6 +220,199 @@ describe("RSC hydration boundary", () => {
     expect(seen).not.toContain("pending");
     expect(world.requestCount()).toBe(0);
     act(() => renderer!.unmount());
+  });
+
+  test("observing a cached success during render does not update sibling observers", async () => {
+    const world = makeWorld();
+    const runtime = createQueryRuntime({ client: world.client });
+    await runtime.prefetch(world.client.getUser, { id: "u_1" });
+
+    function FirstObserver() {
+      useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      return createElement("span", null, "first");
+    }
+
+    function SecondObserver() {
+      useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      return createElement("span", null, "second");
+    }
+
+    function App({ second }: { second: boolean }) {
+      return createElement(
+        "div",
+        null,
+        createElement(FirstObserver),
+        second ? createElement(SecondObserver) : null,
+      );
+    }
+
+    const calls: unknown[][] = [];
+    const consoleError = console.error;
+    console.error = (...args: unknown[]) => calls.push(args);
+    try {
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(
+          createElement(ResultRpcProvider, { runtime }, createElement(App, { second: false })),
+        );
+      });
+      await act(async () => {
+        renderer!.update(
+          createElement(ResultRpcProvider, { runtime }, createElement(App, { second: true })),
+        );
+      });
+
+      expect(calls.some((args) => String(args[0]).includes("Cannot update a component"))).toBe(
+        false,
+      );
+      act(() => renderer!.unmount());
+    } finally {
+      console.error = consoleError;
+      runtime.clear();
+    }
+  });
+
+  test("a boundary mounted later hydrates a new key without updating a sibling mid-render", async () => {
+    const world = makeWorld();
+    const stateA = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_1" });
+    });
+    const stateB = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_2" });
+    });
+    const runtime = createQueryRuntime({ client: world.client });
+
+    const bStates: string[] = [];
+    function ObserveA() {
+      const q = useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      return createElement("span", null, q.state);
+    }
+    function ObserveB() {
+      const q = useResultQuery(world.client.getUser, { id: "u_2" }, { staleTime: 60_000 });
+      bStates.push(q.state);
+      return createElement("span", null, q.state);
+    }
+    function App({ second }: { second: boolean }) {
+      return createElement(
+        ResultRpcProvider,
+        { runtime },
+        createElement(ResultRpcHydrationBoundary, { state: stateA }, createElement(ObserveA)),
+        second
+          ? createElement(ResultRpcHydrationBoundary, { state: stateB }, createElement(ObserveB))
+          : null,
+      );
+    }
+
+    world.resetCount();
+    const errors = captureConsoleErrors();
+    try {
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(createElement(App, { second: false }));
+      });
+      await act(async () => {
+        renderer!.update(createElement(App, { second: true }));
+      });
+      expect(errors.renderPhaseUpdates()).toEqual([]);
+      // The new key was unknown to the cache, so it still hydrated in render:
+      // first paint is success, with no fetch.
+      expect(bStates[0]).toBe("success");
+      expect(world.requestCount()).toBe(0);
+      act(() => renderer!.unmount());
+    } finally {
+      errors.restore();
+      runtime.clear();
+    }
+  });
+
+  test("a boundary mounted later with newer data for an observed key applies after commit", async () => {
+    const world = makeWorld();
+    const first = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_1" });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    world.store.set("u_1", "Ada Lovelace");
+    const newer = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_1" });
+    });
+    const runtime = createQueryRuntime({ client: world.client });
+
+    const names: string[] = [];
+    function Detail() {
+      const q = useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      if (q.state === "success") names.push((q.value as { name: string }).name);
+      return createElement("span", null, q.state);
+    }
+    function App({ second }: { second: boolean }) {
+      return createElement(
+        ResultRpcProvider,
+        { runtime },
+        createElement(ResultRpcHydrationBoundary, { state: first }, createElement(Detail)),
+        second ? createElement(ResultRpcHydrationBoundary, { state: newer }) : null,
+      );
+    }
+
+    world.resetCount();
+    const errors = captureConsoleErrors();
+    try {
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(createElement(App, { second: false }));
+      });
+      expect(names.at(-1)).toBe("Ada");
+      await act(async () => {
+        renderer!.update(createElement(App, { second: true }));
+      });
+      // The key already existed (and was observed), so the write waited for
+      // commit — the observer still received the newer server data, and
+      // nothing was fetched.
+      expect(errors.renderPhaseUpdates()).toEqual([]);
+      expect(names.at(-1)).toBe("Ada Lovelace");
+      expect(world.requestCount()).toBe(0);
+      act(() => renderer!.unmount());
+    } finally {
+      errors.restore();
+      runtime.clear();
+    }
+  });
+
+  test("a provider whose hydrate prop changes identity does not update observers mid-render", async () => {
+    const world = makeWorld();
+    const stateA = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_1" });
+    });
+    const stateB = await serverDehydrate(world.router, world.store, async (runtime, sc) => {
+      await runtime.prefetch(sc.getUser, { id: "u_2" });
+    });
+    const runtime = createQueryRuntime({ client: world.client });
+
+    function ObserveA() {
+      const q = useResultQuery(world.client.getUser, { id: "u_1" }, { staleTime: 60_000 });
+      return createElement("span", null, q.state);
+    }
+
+    const errors = captureConsoleErrors();
+    try {
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(
+          createElement(ResultRpcProvider, { runtime, hydrate: stateA }, createElement(ObserveA)),
+        );
+      });
+      await act(async () => {
+        renderer!.update(
+          createElement(ResultRpcProvider, { runtime, hydrate: stateB }, createElement(ObserveA)),
+        );
+      });
+      expect(errors.renderPhaseUpdates()).toEqual([]);
+      expect(runtime.cache.get(world.client.getUser, { id: "u_2" })).toMatchObject({
+        name: "Grace",
+      });
+      act(() => renderer!.unmount());
+    } finally {
+      errors.restore();
+      runtime.clear();
+    }
   });
 
   test("a client mutation patches a server-hydrated entity at one request", async () => {

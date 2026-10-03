@@ -394,6 +394,68 @@ describe("reactive query runtime", () => {
     stale.clear();
   });
 
+  test("hydrating a payload leaves queries outside it untouched", async () => {
+    const twoValues = createFetchHandler({
+      router,
+      createContext: () => ({
+        values: new Map([
+          ["one", "first"],
+          ["two", "second"],
+        ]),
+      }),
+    });
+    const client = createFixtureClient({
+      router,
+      transport: fetchTransport({
+        url: "https://example.test/rpc",
+        fetch: (async (input: string | URL | Request, init?: RequestInit) =>
+          twoValues(new Request(input, init))) as typeof globalThis.fetch,
+      }),
+    });
+    // The payload carries "two" (unknown to the browser) and an OLDER "one".
+    const serverRuntime = createQueryRuntime({ client });
+    await serverRuntime.prefetch(client.value.byId, { id: "one" });
+    await serverRuntime.prefetch(client.value.byId, { id: "two" });
+    const dehydrated = serverRuntime.dehydrate();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const browserRuntime = createQueryRuntime({ client });
+    await browserRuntime.prefetch(client.value.byId, { id: "one" });
+    const observer = browserRuntime.observe(
+      client.value.byId,
+      { id: "one" },
+      { staleTime: 60_000 },
+    );
+    let notifications = 0;
+    const stop = observer.subscribe(() => {
+      notifications += 1;
+    });
+    const before = observer.getCurrentState();
+    expect(before.state).toBe("success");
+
+    browserRuntime.hydrate(dehydrated);
+
+    // Normalization is scoped to what the merge wrote: the newer local "one"
+    // was skipped, so its observer hears nothing and keeps its identity, while
+    // "two" arrives.
+    expect(notifications).toBe(0);
+    const after = observer.getCurrentState();
+    expect(after.state === "success" && before.state === "success").toBe(true);
+    if (after.state === "success" && before.state === "success") {
+      expect(after.value).toBe(before.value);
+      expect(after.updatedAt).toBe(before.updatedAt);
+    }
+    expect(browserRuntime.cache.get(client.value.byId, { id: "two" })).toEqual({
+      id: "two",
+      value: "second",
+    });
+
+    stop();
+    observer.destroy();
+    serverRuntime.clear();
+    browserRuntime.clear();
+  });
+
   test("rejects hydrated success data that fails the procedure output codec", () => {
     const client = createFixtureClient({
       router,

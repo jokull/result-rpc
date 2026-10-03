@@ -921,11 +921,13 @@ The round produced these load-bearing mechanisms:
   entity-aware), and unbranded app-made copies recover the old side's brand
   when the model key matches. Without it, the first patch (or any refetch)
   evicted entities from the index — the one-shot-patch bug.
-- **Hydrate-time normalization**: `hydrate()` re-decodes every hydrated
-  query through its output codec immediately, so brands and the index exist
-  before any observe.
+- **Hydrate-time normalization**: `hydrate()` re-decodes each query the
+  payload wrote through its output codec immediately, so brands and the index
+  exist before any observe. Queries outside the payload are not touched, and
+  observing never writes to the cache. `cache.update` decodes at write time so
+  an entity inserted into an empty slot is branded too.
 - **Staleness preservation**: every framework write into the cache (patches,
-  observe/hydrate normalization) preserves `dataUpdatedAt` and re-marks
+  hydrate normalization) preserves `dataUpdatedAt` and re-marks
   `isInvalidated` — a patch is entity-partial and must never satisfy a
   pending invalidation or reset the staleTime clock.
 - **Entity-scoped rollback**: `updateEntity`'s rollback re-patches the
