@@ -402,7 +402,7 @@ describe("reactive query runtime", () => {
       id: "test/dollars",
       wire: wire.number,
       encode: (value: number) => success(Math.round(value * 100)),
-      decode: (cents: number) => success(cents / 100),
+      decode: (cents) => success((cents as number) / 100),
     });
     const pricing = rpc.context<object>();
     const price = pricing
