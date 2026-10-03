@@ -109,6 +109,31 @@ describe("attack-03 unbranded copies", () => {
     runtime.clear();
   });
 
+  test("3c: cache.update into an EMPTY slot brands the inserted row — entity patches reach it", async () => {
+    const { client } = boot();
+    const runtime = createQueryRuntime({ client });
+
+    // No old side for the share pass to recover a brand from: the row the
+    // app inserts must be decoded at write time or it is invisible to the
+    // index — before AND after a component observes the slot.
+    expect(runtime.cache.get(client.me, {})).toBeUndefined();
+    runtime.cache.update(client.me, {}, () => ({ id: "u1", name: "J", avatarUrl: "ghost.png" }));
+    runtime.cache.updateEntity(User, "u1", () => ({ avatarUrl: "patched-1.png" }));
+    expect(runtime.cache.get(client.me, {})?.avatarUrl).toBe("patched-1.png");
+
+    const header = runtime.observe(client.me, {}, { staleTime: 60_000 });
+    const stop = header.subscribe(() => undefined);
+    await sleep(10);
+    runtime.cache.updateEntity(User, "u1", () => ({ avatarUrl: "patched-2.png" }));
+    const state = header.getCurrentState();
+    if (state.state !== "success") throw new Error("unreachable");
+    expect(state.value.avatarUrl).toBe("patched-2.png");
+
+    stop();
+    header.destroy();
+    runtime.clear();
+  });
+
   test("3b: structuredClone strips the brand — the clone collects nothing", () => {
     const decoded = User.all("test fixture").decode({ id: "u1", name: "J", avatarUrl: "v1.png" });
     if (!decoded.ok) throw new Error("decode failed");

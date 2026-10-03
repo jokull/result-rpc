@@ -791,7 +791,7 @@ export const patchEntity = <TModel extends AnyModel>(
  *
  * - the incoming side is branded → the result (retained old object, mixed
  *   copy, or the new object itself) carries that brand. Branding the RETAINED
- *   old object is what makes SSR hydration work — the observe-time re-decode
+ *   old object is what makes SSR hydration work — the hydrate-time re-decode
  *   deep-equals the hydrated value, the old object is kept, and it inherits
  *   the decode pass's brand.
  * - only the OLD side is branded (an app updater spread an entity) → the

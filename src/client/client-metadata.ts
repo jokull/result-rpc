@@ -1,6 +1,7 @@
 import type { AnyPublicErrorDefinition } from "../error.js";
 import { effectiveContractVersion, type EffectiveContractVersion } from "../contract-digest.js";
 import type { EntityCacheKey } from "../model.js";
+import type { DehydratedQueryRuntime } from "../query/runtime.js";
 import { createProcedureClientErrorRegistry } from "./base-client.js";
 import type {
   AnyProcedureClientTypes,
@@ -30,6 +31,36 @@ interface ClientRuntimeMetadata {
 
 const clientRuntimeMetadata = new WeakMap<object, ClientRuntimeMetadata>();
 const touchedByResult = new WeakMap<object, readonly EntityCacheKey[]>();
+
+/**
+ * Render-safe hydration, registered per query runtime for the React bindings.
+ *
+ * A payload hydrated during render must not notify mounted observers — React
+ * reports a store update from inside another component's render. A payload
+ * entry whose query does not exist yet has no observers (an observer builds
+ * its query on construction), so writing it in render is silent and keeps
+ * server data available for the first paint. Entries whose query already
+ * exists are the ones with observers; those come back as a thunk for the
+ * caller to run after commit. Kept beside the other identity-keyed registries
+ * rather than on `QueryRuntime`, so the public surface carries no React-only
+ * phase.
+ *
+ * Hydrates the payload's entries that have no cache entry yet and returns a
+ * thunk that hydrates the rest, or `undefined` when nothing remains. Throws
+ * exactly as `runtime.hydrate` does for a version or payload mismatch.
+ */
+export type StagedHydrate = (state: DehydratedQueryRuntime) => (() => void) | undefined;
+const stagedHydrates = new WeakMap<object, StagedHydrate>();
+
+export const registerStagedHydrate = (runtime: object, hydrate: StagedHydrate): void => {
+  stagedHydrates.set(runtime, hydrate);
+};
+
+export const stagedHydrateOf = (runtime: object): StagedHydrate => {
+  const hydrate = stagedHydrates.get(runtime);
+  if (!hydrate) throw new TypeError("Expected a result-rpc query runtime");
+  return hydrate;
+};
 
 export const registerClientIdentity = (
   value: object,

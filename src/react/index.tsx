@@ -64,6 +64,7 @@ import type {
 } from "../query/runtime.js";
 
 import { createQueryRuntime } from "../query/runtime.js";
+import { stagedHydrateOf } from "../client/client-metadata.js";
 import { shouldRetryMutation } from "../query/mutation-retry.js";
 export { SERIALIZER_VERSION, toResult } from "../query/runtime.js";
 export type {
@@ -359,21 +360,52 @@ const useProvidedRuntime = <TClient extends object>(
   useOwnedRuntimeCleanup(owned);
   const runtime = props.runtime ?? owned;
   if (runtime === undefined) throw new TypeError("ResultRpcProvider requires client or runtime");
-  const hydrated = useRef<
-    { readonly runtime: QueryRuntime<TClient>; readonly state: DehydratedQueryRuntime } | undefined
-  >(undefined);
+  useStagedHydration(runtime, props.hydrate);
+  return runtime;
+};
+
+interface StagedHydration {
+  readonly runtime: QueryRuntime<unknown>;
+  readonly state: DehydratedQueryRuntime;
+  /** Entries for queries that already existed at render time; runs after commit. */
+  commit: (() => void) | undefined;
+}
+
+/**
+ * Applies a dehydrated payload once per distinct (runtime, state) pair, in
+ * two phases. During render, only entries whose query does not exist yet are
+ * merged: nothing observes them, so the write notifies no one, and children
+ * read server data on their first render (no loading flash, no fetch).
+ * Entries whose query already exists may have mounted observers; writing
+ * those in render would update another component mid-render, so they are
+ * merged after commit, where query-core's own newer-wins rule still applies.
+ * A serializer/contract mismatch is skipped with a dev warning, never thrown.
+ */
+const useStagedHydration = (
+  runtime: QueryRuntime<unknown>,
+  state: DehydratedQueryRuntime | undefined,
+): void => {
+  const hydrated = useRef<StagedHydration | undefined>(undefined);
   if (
-    props.hydrate !== undefined &&
-    (hydrated.current?.runtime !== runtime || hydrated.current.state !== props.hydrate)
+    state !== undefined &&
+    (hydrated.current?.runtime !== runtime || hydrated.current.state !== state)
   ) {
-    hydrated.current = { runtime, state: props.hydrate };
+    const current: StagedHydration = { runtime, state, commit: undefined };
+    hydrated.current = current;
     try {
-      runtime.hydrate(props.hydrate);
+      current.commit = stagedHydrateOf(runtime)(state);
     } catch (cause) {
       warnHydrationSkew(cause);
     }
   }
-  return runtime;
+  useEffect(() => {
+    const current = hydrated.current;
+    if (current?.runtime !== runtime || current.state !== state || !current.commit) return;
+    const commit = current.commit;
+    // Cleared before running so Strict Mode's replayed effect is a no-op.
+    current.commit = undefined;
+    commit();
+  }, [runtime, state]);
 };
 
 const ResultRpcProviderImpl = <TClient extends object>(props: ResultRpcProviderProps<TClient>) => {
@@ -435,22 +467,17 @@ export interface ResultRpcHydrationBoundaryProps {
  * runtime. Hydrated entities are indexed exactly as fetched ones are, so a
  * client mutation patches server-rendered rows with zero refetch.
  *
- * Hydration happens during render (before children read the cache, so the
- * first paint has the data), once per distinct `state`, and never crashes the
- * tree: a serializer/contract-version mismatch across a deploy is skipped with
- * a dev warning and the client fetches fresh.
+ * Queries the cache has never seen hydrate during render (before children
+ * read the cache, so the first paint has the data); queries that already
+ * exist — and so may already be observed — hydrate after commit, so a
+ * boundary mounted later never updates a sibling mid-render. Each happens
+ * once per distinct `state`, and never crashes the tree: a
+ * serializer/contract-version mismatch across a deploy is skipped with a dev
+ * warning and the client fetches fresh.
  */
 export const ResultRpcHydrationBoundary = (props: ResultRpcHydrationBoundaryProps) => {
   const runtime = useRuntime();
-  const hydrated = useRef<DehydratedQueryRuntime | undefined>(undefined);
-  if (props.state !== undefined && hydrated.current !== props.state) {
-    hydrated.current = props.state;
-    try {
-      runtime.hydrate(props.state);
-    } catch (cause) {
-      warnHydrationSkew(cause);
-    }
-  }
+  useStagedHydration(runtime, props.state);
   return createElement(Fragment, null, props.children);
 };
 
