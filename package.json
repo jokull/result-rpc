@@ -71,7 +71,7 @@
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
     "test": "bun test src examples tests",
-    "test:demo": "npm --prefix demo install && npm --prefix demo test",
+    "test:demo": "pnpm build && npm --prefix demo install && npm --prefix demo test",
     "test:package": "node scripts/package-smoke.mjs",
     "test:release": "node --test scripts/release-plan.test.mjs",
     "test:diagnostics": "node scripts/diagnostic-smoke.mjs",
@@ -89,8 +89,7 @@
     "release:check": "node scripts/release-check.mjs",
     "api:report": "pnpm build && node scripts/api-report.mjs --update",
     "api:report:check": "pnpm build && node scripts/api-report.mjs",
-    "bench:types": "node scripts/bench-types.mjs",
-    "postinstall": "bun run build"
+    "bench:types": "node scripts/bench-types.mjs"
   },
   "dependencies": {
     "@tanstack/query-core": "^5.104.0",
