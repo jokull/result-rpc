@@ -165,6 +165,7 @@ export const useClaimObserver = (
 
     const release = () => {
       if (current) releaseFrom(current);
+      // oxlint-disable-next-line react/immutability -- closure state of this memo factory, not render state
       current = undefined;
       currentError = undefined;
       // A previous initial-Suspense attempt can have the same React operation

@@ -101,7 +101,7 @@ yourself. `release:check` enforces that the entry exists.
 
 ## Gates
 
-- Pull requests and `main` run packed-consumer checks on Node 20.19.5.
+- Pull requests and `main` run packed-consumer checks on Node 22.18.0.
 - Node 24 runs the complete source, declaration, diagnostics, package,
   React 18/19, Vite, Worker, Next RSC, entity-performance, type-scaling, demo,
   and documentation matrix.

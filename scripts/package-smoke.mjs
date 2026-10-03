@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -33,7 +34,10 @@ const installFixture = (cwd) => {
 };
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const temporary = mkdtempSync(join(tmpdir(), "result-rpc-package-smoke-"));
+// Vite resolves its root to a real path, so module ids are real paths too;
+// keep the fixture on the same side of macOS's /var -> /private/var symlink
+// or the relative-path graph assertions below match nothing.
+const temporary = mkdtempSync(join(realpathSync(tmpdir()), "result-rpc-package-smoke-"));
 const fixture = join(temporary, "consumer");
 const nextFixture = join(temporary, "next-consumer");
 const packDirectory = join(temporary, "pack");
@@ -230,9 +234,9 @@ try {
         private: true,
         type: "module",
         dependencies: {
-          "@types/react": "19.2.17",
+          "@types/react": "19.3.0",
           "better-result": "^3.0.0",
-          react: "19.2.8",
+          react: "19.3.0",
           "result-rpc": `file:${tarball}`,
         },
       },
@@ -448,7 +452,7 @@ export type EveryPublicSubpath = readonly [
   }
 
   runReactLifecycleSmoke(tarball, "18.3.1");
-  runReactLifecycleSmoke(tarball, "19.2.8");
+  runReactLifecycleSmoke(tarball, "19.3.0");
 
   const devPort = await availablePort();
   const devOutput = [];
@@ -532,16 +536,16 @@ export type EveryPublicSubpath = readonly [
         type: "module",
         scripts: { dev: "next dev", build: "next build" },
         dependencies: {
-          next: "16.2.12",
-          react: "19.2.8",
-          "react-dom": "19.2.8",
+          next: "16.3.8",
+          react: "19.3.0",
+          "react-dom": "19.3.0",
           "result-rpc": `file:${tarball}`,
           "server-only": "0.0.1",
         },
         devDependencies: {
-          "@types/node": "22.20.1",
-          "@types/react": "19.2.17",
-          "@types/react-dom": "19.2.3",
+          "@types/node": "22.20.5",
+          "@types/react": "19.3.0",
+          "@types/react-dom": "19.3.0",
           typescript: "7.0.2",
         },
       },
@@ -835,7 +839,7 @@ export default async function Page({
   }
 
   console.log(
-    "package smoke: TS 5.4/5.9/7 declarations, React 18.3/19.2 claims and mutation retries, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
+    "package smoke: TS 5.4/5.9/7 declarations, React 18.3/19.3 claims and mutation retries, packed exports, Vite 8 browser/worker, and Next dev/prod graphs passed",
   );
 } finally {
   rmSync(temporary, { recursive: true, force: true });

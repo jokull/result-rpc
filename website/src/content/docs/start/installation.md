@@ -14,7 +14,7 @@ npm install result-rpc
 
 Requirements:
 
-- Node.js 20.19.5 or newer
+- Node.js 22.18.0 or newer
 - TypeScript 5.4 or newer
 - React 18.3 or newer when using `result-rpc/react`
 

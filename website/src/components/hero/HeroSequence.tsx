@@ -236,6 +236,7 @@ const useBeats = (runKey: string, offsets: readonly number[], enabled: boolean) 
 
   useEffect(() => {
     if (!enabled) {
+      // oxlint-disable-next-line react/set-state-in-effect -- jump to the final beat when playback is disabled
       setBeat(offsets.length);
       return undefined;
     }

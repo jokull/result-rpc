@@ -68,14 +68,14 @@ test("runs pagination, detail, and mutation through the production RPC wire", as
 });
 
 test("keeps server-only implementation out of browser assets", async () => {
-  const files = await readdir(new URL("../dist/client/assets/", import.meta.url));
+  // Walk the whole client output: the chunk directory moved between vinext
+  // releases (assets/ -> _next/static/chunks/).
+  const client = new URL("../dist/client/", import.meta.url);
+  const files = await readdir(client, { recursive: true });
   const scripts = files.filter((file) => file.endsWith(".js"));
+  assert.ok(scripts.length > 0, "no browser scripts found in dist/client");
   const browserCode = (
-    await Promise.all(
-      scripts.map((file) =>
-        readFile(new URL(`../dist/client/assets/${file}`, import.meta.url), "utf8"),
-      ),
-    )
+    await Promise.all(scripts.map((file) => readFile(new URL(file, client), "utf8")))
   ).join("\n");
   assert.doesNotMatch(browserCode, /RESULT_RPC_DEMO_SERVER_GRAPH_DO_NOT_SHIP/);
   assert.doesNotMatch(browserCode, /CREATE TABLE IF NOT EXISTS tickets/);

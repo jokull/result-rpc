@@ -74,7 +74,7 @@ npm install result-rpc
 Also available through `pnpm add result-rpc`, `yarn add result-rpc`, or
 `bun add result-rpc`.
 
-Requirements: Node.js 20.19.5 or newer and TypeScript 5.4 or newer. The React
+Requirements: Node.js 22.18.0 or newer and TypeScript 5.4 or newer. The React
 bindings require React 18.3 or newer. Published declarations are tested with
 TypeScript 5.4, 5.9, and 7.0.
 

@@ -29,7 +29,7 @@ the rest of the algebra (`gen`, `tryPromise`, ...) is imported from
 checks rely on. See [Results](/concepts/results/) for
 the division of labor and the [FAQ](/reference/faq/) for the identity rule.
 
-This quickstart requires Node.js 20.19.5 or newer, TypeScript 5.4 or newer, and
+This quickstart requires Node.js 22.18.0 or newer, TypeScript 5.4 or newer, and
 React 18.3 or newer. See [Installation](/start/installation/) for other package
 managers and the package's runtime entry points.
 
@@ -113,7 +113,7 @@ export const handler = createFetchHandler({
 ```
 
 `handler` is a `(request: Request) => Promise<Response>` — mount it on any
-fetch-native server (Bun, Deno, Cloudflare Workers, Node 20+, Hono, Next
+fetch-native server (Bun, Deno, Cloudflare Workers, Node 22+, Hono, Next
 route handlers).
 
 For a concrete Hono + Vite development setup, mount that fetch handler on a
