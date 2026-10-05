@@ -1,0 +1,22 @@
+{
+  // Test-only Wrangler config for `createTestHarness` (cf has no harness yet).
+  // Mirrors cloudflare.config.ts; the Worker itself is the Build Output that
+  // `vinext build` writes through the Cloudflare Vite plugin.
+  "name": "result-rpc-demo",
+  "main": "../.cloudflare/output/v0/workers/default/bundle/index.js",
+  "no_bundle": true,
+  "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }],
+  "compatibility_date": "2026-07-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../.cloudflare/output/v0/workers/default/assets",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "result-rpc-demo",
+      "database_id": "caedc918-a787-468f-b668-9f6386f5f91d",
+    },
+  ],
+}

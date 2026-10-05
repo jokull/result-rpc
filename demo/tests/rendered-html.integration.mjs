@@ -11,7 +11,7 @@ import { accessErrors, authErrors, ticketErrors } from "../shared/errors.ts";
 const server = createTestHarness({
   workers: [
     {
-      configPath: fileURLToPath(new URL("../dist/server/wrangler.json", import.meta.url)),
+      configPath: fileURLToPath(new URL("./wrangler.test.jsonc", import.meta.url)),
     },
   ],
 });
@@ -70,10 +70,10 @@ test("runs pagination, detail, and mutation through the production RPC wire", as
 test("keeps server-only implementation out of browser assets", async () => {
   // Walk the whole client output: the chunk directory moved between vinext
   // releases (assets/ -> _next/static/chunks/).
-  const client = new URL("../dist/client/", import.meta.url);
+  const client = new URL("../.cloudflare/output/v0/workers/default/assets/", import.meta.url);
   const files = await readdir(client, { recursive: true });
   const scripts = files.filter((file) => file.endsWith(".js"));
-  assert.ok(scripts.length > 0, "no browser scripts found in dist/client");
+  assert.ok(scripts.length > 0, "no browser scripts found in the Build Output assets");
   const browserCode = (
     await Promise.all(scripts.map((file) => readFile(new URL(file, client), "utf8")))
   ).join("\n");

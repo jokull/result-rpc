@@ -20,8 +20,8 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
+      // Reads cloudflare.config.ts from the project root.
       cloudflare({
-        configPath: "./wrangler.jsonc",
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
       }),
     ],

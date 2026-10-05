@@ -42,19 +42,21 @@ result-rpc.com Cloudflare account:
 npm run deploy
 ```
 
-`demo.result-rpc.com` is a Worker Custom Domain declared in `wrangler.jsonc`,
+`demo.result-rpc.com` is a Worker Custom Domain declared in `cloudflare.config.ts`,
 so Cloudflare owns its DNS record and certificate lifecycle.
 
 The Worker configuration is the source of truth for runtime and binding types:
 
 ```bash
 npm run cf-typegen
-npm run cf-types:check
 ```
 
-`wrangler types` generates `worker-configuration.d.ts` from `wrangler.jsonc`,
-including the exact APIs selected by its compatibility date and flags. The same
-config is consumed by the Cloudflare Vite plugin.
+`cf workers types` generates `.cloudflare/types/index.d.ts` (gitignored) from
+`cloudflare.config.ts`, including the exact APIs selected by its compatibility date and flags. The same
+config is consumed by the Cloudflare Vite plugin, which needs a 2.x beta for
+`cloudflare.config.ts` support. `tests/wrangler.test.jsonc` is a Wrangler config
+used only by the test harness, which cannot read `cloudflare.config.ts`; keep it
+in step with the config.
 
 ## Verification
 

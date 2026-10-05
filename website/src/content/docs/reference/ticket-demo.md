@@ -79,8 +79,8 @@ npm --prefix demo install
 npm --prefix demo run dev
 ```
 
-The Worker configuration is the source of truth. `wrangler types` generates the
-binding and runtime declarations from `demo/wrangler.jsonc`; there is no
+The Worker configuration is the source of truth. `cf workers types` generates the
+binding and runtime declarations from `demo/cloudflare.config.ts`; there is no
 `@cloudflare/workers-types` dependency.
 
 ```bash

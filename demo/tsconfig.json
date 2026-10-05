@@ -13,7 +13,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "types": ["./worker-configuration.d.ts"],
+    "types": ["./.cloudflare/types/index.d.ts"],
     "plugins": [
       {
         "name": "next"
